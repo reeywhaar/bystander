@@ -157,3 +157,62 @@ func TestTagPathsAreScoped(t *testing.T) {
 		t.Error("bob can resolve alice's tag")
 	}
 }
+
+// A feed's tags have to read in the same sequence wherever they appear. Unordered, the row
+// under a feed said "Tech · Design" while the dialog showed the same two as "Design, Tech".
+func TestAFeedsTagsComeBackInOneOrder(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	p := principal(t, s)
+
+	// Created in an order that is not their sorted order.
+	var ids []string
+	for _, name := range []string{"Tech", "Art", "Design", "Comics"} {
+		tag, err := s.CreateTag(ctx, p.ID, name, "", DefaultPriority)
+		if err != nil {
+			t.Fatalf("CreateTag(%q): %v", name, err)
+		}
+		ids = append(ids, tag.ID)
+	}
+
+	feed, err := s.UpsertFeed(ctx, "https://example.com/rss", "Example", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	// Attached in yet another order.
+	sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, []string{ids[0], ids[2]})
+	if err != nil {
+		t.Fatalf("Subscribe(): %v", err)
+	}
+
+	names := func(tagIDs []string) []string {
+		out := make([]string, 0, len(tagIDs))
+		for _, id := range tagIDs {
+			tag, err := s.TagByID(ctx, p.ID, id)
+			if err != nil {
+				t.Fatalf("TagByID(): %v", err)
+			}
+			out = append(out, tag.Name)
+		}
+		return out
+	}
+
+	one, err := s.SubscriptionByID(ctx, p.ID, sub.ID)
+	if err != nil {
+		t.Fatalf("SubscriptionByID(): %v", err)
+	}
+	if got := strings.Join(names(one.TagIDs), ", "); got != "Design, Tech" {
+		t.Errorf("one subscription's tags = %q, want them sorted", got)
+	}
+
+	all, err := s.ListSubscriptions(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ListSubscriptions(): %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("%d subscriptions", len(all))
+	}
+	if got := strings.Join(names(all[0].TagIDs), ", "); got != "Design, Tech" {
+		t.Errorf("the listing's tags = %q, want the same order", got)
+	}
+}

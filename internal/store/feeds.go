@@ -405,10 +405,16 @@ func (s *Store) ListSubscriptions(ctx context.Context, principalID string) ([]*S
 	// subscription row by its tag count and leave this loop de-duplicating feeds it had
 	// already scanned.
 	tagRows, err := s.main.QueryContext(ctx,
+		// Ordered the same way ListTags orders them, so a feed's tags read in the same
+		// sequence wherever they appear. Unordered, the row under a feed said "Tech ·
+		// Design" while the dialog showed the same two as "Design, Tech" — the same
+		// answer twice, in two different orders, which reads as two different answers.
 		`SELECT st.subscription_id, st.tag_id
 		   FROM subscription_tags st
 		   JOIN subscriptions s ON s.id = st.subscription_id
-		  WHERE s.principal_id = ?`, principalID)
+		   JOIN tags t ON t.id = st.tag_id
+		  WHERE s.principal_id = ?
+		  ORDER BY ifnull(t.parent_id,''), t.name`, principalID)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +444,11 @@ func (s *Store) SubscriptionByID(ctx context.Context, principalID, id string) (*
 	}
 
 	tagRows, err := s.main.QueryContext(ctx,
-		`SELECT tag_id FROM subscription_tags WHERE subscription_id = ?`, id)
+		`SELECT st.tag_id
+		   FROM subscription_tags st
+		   JOIN tags t ON t.id = st.tag_id
+		  WHERE st.subscription_id = ?
+		  ORDER BY ifnull(t.parent_id,''), t.name`, id)
 	if err != nil {
 		return nil, err
 	}
