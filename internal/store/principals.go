@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 	"unicode"
@@ -51,6 +52,10 @@ type Principal struct {
 	Role       Role
 	CreatedAt  time.Time
 	DisabledAt time.Time // zero when enabled
+
+	// RecoveryEmail is an address this account can be recovered through, or empty. It is
+	// stored ahead of anything that can send to it — see the migration.
+	RecoveryEmail string
 
 	// hash is the bcrypt hash. Unexported so it cannot be serialised into a response by
 	// somebody adding a json tag to a struct they did not read to the bottom of.
@@ -134,7 +139,7 @@ func insertPrincipal(ctx context.Context, tx *sql.Tx, p *Principal, now time.Tim
 	return p, nil
 }
 
-const principalColumns = `id, username, password_hash, role, created_at, disabled_at`
+const principalColumns = `id, username, password_hash, role, created_at, disabled_at, recovery_email`
 
 func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 	var (
@@ -143,7 +148,7 @@ func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 		created  int64
 		disabled sql.NullInt64
 	)
-	if err := row.Scan(&p.ID, &p.Username, &p.hash, &role, &created, &disabled); err != nil {
+	if err := row.Scan(&p.ID, &p.Username, &p.hash, &role, &created, &disabled, &p.RecoveryEmail); err != nil {
 		return nil, err
 	}
 	p.Role = Role(role)
@@ -268,6 +273,76 @@ func (s *Store) SetPassword(ctx context.Context, id, password string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// ChangePassword replaces somebody's own password, having checked they know the old one.
+//
+// The check is the point. A session that has been left open on a shared machine is enough
+// to read somebody's feeds; it should not also be enough to take the account. Knowing the
+// current password is the one thing an attacker holding a cookie does not.
+//
+// Every *other* session ends, and this one does not. "Changing my password signs out my
+// other devices" is what people mean by it, and signing them out of the tab they are
+// typing in would be a strange way to confirm it worked.
+func (s *Store) ChangePassword(ctx context.Context, id, current, next, keepToken string) error {
+	p, err := s.PrincipalByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(p.hash), []byte(current)) != nil {
+		return Invalid("that is not your current password")
+	}
+	if current == next {
+		return Invalid("that is the password you already have")
+	}
+	if err := ValidatePassword(next); err != nil {
+		return err
+	}
+
+	hashed, err := hashPassword(next)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.main.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE principals SET password_hash = ? WHERE id = ?`, hashed, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM sessions WHERE principal_id = ? AND id_hash <> ?`,
+		id, hashToken(keepToken)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetRecoveryEmail records where an account could be recovered from. Empty clears it.
+func (s *Store) SetRecoveryEmail(ctx context.Context, id, address string) error {
+	address = strings.TrimSpace(address)
+	if address != "" {
+		// net/mail rather than a regular expression. Every hand-written email pattern is
+		// wrong in one of two directions, and this one is the parser the rest of the
+		// program would use to send anything anyway.
+		parsed, err := mail.ParseAddress(address)
+		if err != nil {
+			return Invalid("%q does not look like an email address", address)
+		}
+		// ParseAddress accepts "Name <a@b>"; only the address itself is wanted.
+		address = parsed.Address
+	}
+
+	res, err := s.main.ExecContext(ctx,
+		`UPDATE principals SET recovery_email = ? WHERE id = ?`, address, id)
+	if err != nil {
+		return err
+	}
+	return expectOne(res, NotFound("no account %s", id))
 }
 
 // SetDisabled switches an account off or back on.
