@@ -91,9 +91,19 @@ export function ReaderPage({ me }: { me: Me }) {
               </a>{" "}
               is kept for a month.
             </p>
-            <div className="flex flex-col items-end gap-1">
+            {/* Left-aligned when it wraps under the paragraph, right-aligned when it sits
+                beside it. `items-end` alone left the button floating at an indent that
+                matched nothing on the page. */}
+            <div className="flex flex-col items-start gap-1 sm:items-end">
               <Button
-                onClick={() => regenerate.mutate()}
+                onClick={() =>
+                  regenerate.mutate(undefined, {
+                    // The page underneath has been replaced entirely, and this button is
+                    // at the bottom of the old one. Staying put would land somebody in the
+                    // middle of a page they have not seen the top of.
+                    onSuccess: () => window.scrollTo({ top: 0 }),
+                  })
+                }
                 disabled={regenerate.isPending}
               >
                 {regenerate.isPending ? "Composing…" : "Make a different page"}

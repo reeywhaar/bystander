@@ -144,6 +144,8 @@ describe("ReaderPage", () => {
         "nothing new has been published since this page was made",
       ),
     ).toBeInTheDocument();
+    // A refusal must not scroll: nothing was replaced.
+    expect(window.scrollY).toBe(0);
     expect(screen.getByRole("link", { name: "Story a_1" })).toBeInTheDocument();
   });
 });
