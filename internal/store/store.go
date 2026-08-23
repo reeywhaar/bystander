@@ -76,11 +76,11 @@ func Open(dir string) (*Store, error) {
 	s := &Store{main: main, derived: derived, now: time.Now}
 
 	ctx := context.Background()
-	if err := migrate(ctx, main, MainFile, mainMigrations); err != nil {
+	if err := migrate(ctx, main, MainFile, mainMigrations()); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := migrate(ctx, derived, DerivedFile, derivedMigrations); err != nil {
+	if err := migrate(ctx, derived, DerivedFile, derivedMigrations()); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func verifyPragmas(db *sql.DB, path string) error {
 //
 // Each runs in its own transaction that also stamps the version, so a failure leaves the
 // database at the last version that fully applied rather than half way through one.
-func migrate(ctx context.Context, db *sql.DB, name string, migrations []string) error {
+func migrate(ctx context.Context, db *sql.DB, name string, migrations []Migration) error {
 	var version int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("%s: read user_version: %w", name, err)
@@ -196,21 +196,26 @@ func migrate(ctx context.Context, db *sql.DB, name string, migrations []string) 
 	}
 
 	for i := version; i < len(migrations); i++ {
+		// Named rather than numbered wherever it is said out loud: "20260823061500_
+		// article_window.sql failed" is a file somebody can open, and "migration 2"
+		// is a thing they have to go and count.
+		step := migrations[i]
+
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("%s: migration %d: %w", name, i+1, err)
+			return fmt.Errorf("%s: %s: %w", name, step.Name, err)
 		}
-		if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {
+		if _, err := tx.ExecContext(ctx, step.SQL); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("%s: migration %d: %w", name, i+1, err)
+			return fmt.Errorf("%s: %s: %w", name, step.Name, err)
 		}
 		// PRAGMA takes no bind parameters, and i+1 is not user input.
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("%s: migration %d: set user_version: %w", name, i+1, err)
+			return fmt.Errorf("%s: %s: set user_version: %w", name, step.Name, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("%s: migration %d: commit: %w", name, i+1, err)
+			return fmt.Errorf("%s: %s: commit: %w", name, step.Name, err)
 		}
 	}
 	return nil

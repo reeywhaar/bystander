@@ -48,8 +48,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 		db   *sql.DB
 		want int
 	}{
-		{MainFile, second.main, len(mainMigrations)},
-		{DerivedFile, second.derived, len(derivedMigrations)},
+		{MainFile, second.main, len(mainMigrations())},
+		{DerivedFile, second.derived, len(derivedMigrations())},
 	} {
 		var version int
 		if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
