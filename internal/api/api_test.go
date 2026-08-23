@@ -473,3 +473,63 @@ func TestDiscoverDeduplicates(t *testing.T) {
 		t.Fatalf("%d candidates, want 1 after deduplication", len(found.Candidates))
 	}
 }
+
+// A site that declares no feed and serves one anyway is the ordinary case for anything
+// rendered client-side — Reddit's front page is a script shell while reddit.com/.rss is a
+// perfectly good Atom feed. Refusing those would refuse a large part of the web.
+func TestDiscoverGuessesTheUsualAddresses(t *testing.T) {
+	for _, path := range []string{"/.rss", "/feed", "/index.xml", "/atom.xml"} {
+		t.Run(path, func(t *testing.T) {
+			h := newHarness(t)
+			h.signIn(store.RoleUser, "alice")
+			site := newSilentSite(t, path, 3)
+
+			var found struct {
+				Candidates []candidateBody `json:"candidates"`
+			}
+			h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+				map[string]string{"url": site.URL}), http.StatusOK, &found)
+
+			if len(found.Candidates) != 1 {
+				t.Fatalf("%d candidates, want the one at %s: %+v", len(found.Candidates), path, found.Candidates)
+			}
+			if !contains(found.Candidates[0].URL, path) {
+				t.Errorf("found %q, want the feed at %s", found.Candidates[0].URL, path)
+			}
+			if found.Candidates[0].Title != "The Example" {
+				t.Errorf("title = %q, want the feed's own", found.Candidates[0].Title)
+			}
+		})
+	}
+}
+
+// Guessing must not turn every 200 into a feed. A site that answers its home page for
+// anything — a soft 404 — offers nothing, and saying so is the honest answer.
+func TestDiscoverDoesNotInventFeeds(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	// Answers 200 with HTML for every path, including the guessed ones.
+	soft404 := newPlainPage(t, `<!doctype html><html><head><title>Everything is fine</title></head><body>hi</body></html>`)
+
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": soft404.URL}), http.StatusBadRequest, nil)
+}
+
+// A declared feed is the site's own answer, so nothing should be guessed at on top of it.
+func TestDeclaredFeedsAreNotSupplementedByGuesses(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	posts := newFeedServer(t, 3)
+	site := newSiteWithFeeds(t, map[string]string{"Posts": posts.URL})
+
+	var found struct {
+		Candidates []candidateBody `json:"candidates"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": site.URL}), http.StatusOK, &found)
+	if len(found.Candidates) != 1 {
+		t.Fatalf("%d candidates, want only the declared one", len(found.Candidates))
+	}
+}

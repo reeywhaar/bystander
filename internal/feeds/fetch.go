@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -182,9 +183,135 @@ func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (*
 
 	candidates := feedLinks(body, finalURL)
 	if len(candidates) == 0 {
+		// Plenty of sites serve a feed and never say so. Reddit's front page is a script
+		// shell that declares nothing while reddit.com/.rss is a perfectly good Atom feed;
+		// the same is true of anything rendered client-side. Guessing the handful of
+		// addresses that convention settled on costs a few requests and is the difference
+		// between "that page does not offer a feed" and a working subscription.
+		candidates = f.probe(ctx, finalURL, now)
+	}
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf("%w: %s", ErrNotAFeed, canonical)
 	}
 	return &Discovery{Candidates: candidates}, nil
+}
+
+// wellKnownFeedPaths are where a site that declares nothing still tends to keep a feed.
+//
+// Ordered by how likely each is to be the *main* feed rather than a secondary one, because
+// that order is what the picker shows.
+var wellKnownFeedPaths = []string{
+	"feed",      // WordPress, and the most common by a distance
+	".rss",      // Reddit, and anything modelled on it
+	"rss",       //
+	"index.xml", // Hugo
+	"atom.xml",  // Jekyll and friends
+	"feed.xml",  //
+	"rss.xml",   //
+	"feeds/all.atom.xml",
+}
+
+// probeTimeout bounds the whole guessing phase, however many addresses it tries.
+//
+// Separate from requestTimeout, and much shorter: somebody is watching a spinner, every
+// one of these is a guess that will usually 404, and a site slow enough to need thirty
+// seconds for a guess is not a site worth guessing about.
+const probeTimeout = 10 * time.Second
+
+// probe asks the addresses a site did not mention.
+//
+// Concurrent, because most of these are 404s and doing them one at a time would turn a
+// second into ten. Results keep the order of wellKnownFeedPaths rather than the order they
+// happened to arrive in, so the list somebody is shown is stable between attempts.
+func (f *Fetcher) probe(ctx context.Context, from string, now time.Time) []Candidate {
+	targets := probeTargets(from)
+	if len(targets) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	found := make([]*Candidate, len(targets))
+	var wg sync.WaitGroup
+	// Four at a time: enough to keep the wall clock down, few enough not to look like a
+	// burst to whoever is being asked.
+	slots := make(chan struct{}, 4)
+
+	for i, target := range targets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+
+			body, finalURL, err := f.get(ctx, target)
+			if err != nil {
+				return
+			}
+			// A soft 404 — a site answering 200 with its home page — parses as nothing,
+			// which is exactly how it should be treated.
+			parsed, err := Parse(strings.NewReader(body), finalURL, "", now)
+			if err != nil || (len(parsed.Items) == 0 && parsed.Title == "") {
+				return
+			}
+			found[i] = &Candidate{URL: finalURL, Title: parsed.Title}
+		}()
+	}
+	wg.Wait()
+
+	var out []Candidate
+	seen := make(map[string]bool)
+	for _, candidate := range found {
+		if candidate == nil || seen[candidate.URL] {
+			continue
+		}
+		seen[candidate.URL] = true
+		out = append(out, *candidate)
+	}
+	return out
+}
+
+// probeTargets is every address worth guessing, relative to what was pasted.
+//
+// Both the directory somebody gave us and the site root, because a feed for
+// example.com/blog/ lives at /blog/feed far more often than at /feed — and when the two
+// are the same, which is the usual case, the list is just the one.
+func probeTargets(from string) []string {
+	base, err := url.Parse(from)
+	if err != nil {
+		return nil
+	}
+
+	directory := *base
+	if i := strings.LastIndex(directory.Path, "/"); i >= 0 {
+		directory.Path = directory.Path[:i+1]
+	} else {
+		directory.Path = "/"
+	}
+	directory.RawQuery, directory.Fragment = "", ""
+
+	root := directory
+	root.Path = "/"
+
+	bases := []url.URL{directory}
+	if directory.Path != "/" {
+		bases = append(bases, root)
+	}
+
+	var out []string
+	seen := make(map[string]bool)
+	for _, b := range bases {
+		for _, suffix := range wellKnownFeedPaths {
+			target := b.JoinPath(suffix).String()
+			if seen[target] {
+				continue
+			}
+			seen[target] = true
+			out = append(out, target)
+		}
+	}
+	return out
 }
 
 // Resolve turns what somebody typed into one feed, ready to subscribe to.

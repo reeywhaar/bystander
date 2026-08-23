@@ -157,24 +157,28 @@ func newFeedServer(t *testing.T, items int) *feedServer {
 		fs.hits++
 		w.Header().Set("Content-Type", "application/rss+xml")
 
-		var body strings.Builder
-		body.WriteString(`<?xml version="1.0"?><rss version="2.0"><channel>`)
-		body.WriteString(`<title>The Example</title><link>https://example.com</link>`)
-		for i := range items {
-			body.WriteString(`<item>`)
-			body.WriteString(`<title>Story ` + itoa(i) + `</title>`)
-			body.WriteString(`<link>https://example.com/story-` + itoa(i) + `</link>`)
-			body.WriteString(`<guid>https://example.com/story-` + itoa(i) + `</guid>`)
-			body.WriteString(`<description><![CDATA[<p>A summary of story ` + itoa(i) +
-				`</p><script>alert(1)</script><img src="/pic-` + itoa(i) + `.png">]]></description>`)
-			body.WriteString(`<pubDate>Mon, 0` + itoa(1+i%9) + ` Aug 2026 12:00:00 GMT</pubDate>`)
-			body.WriteString(`</item>`)
-		}
-		body.WriteString(`</channel></rss>`)
-		io.WriteString(w, body.String())
+		io.WriteString(w, rssBody(items))
 	}))
 	t.Cleanup(fs.Close)
 	return fs
+}
+
+func rssBody(items int) string {
+	var body strings.Builder
+	body.WriteString(`<?xml version="1.0"?><rss version="2.0"><channel>`)
+	body.WriteString(`<title>The Example</title><link>https://example.com</link>`)
+	for i := range items {
+		body.WriteString(`<item>`)
+		body.WriteString(`<title>Story ` + itoa(i) + `</title>`)
+		body.WriteString(`<link>https://example.com/story-` + itoa(i) + `</link>`)
+		body.WriteString(`<guid>https://example.com/story-` + itoa(i) + `</guid>`)
+		body.WriteString(`<description><![CDATA[<p>A summary of story ` + itoa(i) +
+			`</p><script>alert(1)</script><img src="/pic-` + itoa(i) + `.png">]]></description>`)
+		body.WriteString(`<pubDate>Mon, 0` + itoa(1+i%9) + ` Aug 2026 12:00:00 GMT</pubDate>`)
+		body.WriteString(`</item>`)
+	}
+	body.WriteString(`</channel></rss>`)
+	return body.String()
 }
 
 func itoa(n int) string {
@@ -200,6 +204,27 @@ func newSiteWithFeeds(t *testing.T, feeds map[string]string) *httptest.Server {
 	}
 	return newPlainPage(t, `<!doctype html><html><head><title>A Site</title>`+
 		links.String()+`</head><body>a site</body></html>`)
+}
+
+// newSilentSite is a site that declares no feed and serves one anyway, at a conventional
+// address — the shape of every client-rendered site, Reddit included.
+func newSilentSite(t *testing.T, feedPath string, items int) *httptest.Server {
+	t.Helper()
+
+	fs := &feedServer{}
+	fs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == feedPath {
+			fs.hits++
+			w.Header().Set("Content-Type", "application/rss+xml")
+			io.WriteString(w, rssBody(items))
+			return
+		}
+		// Everything else is the script shell, with not a <link rel="alternate"> in it.
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, `<!doctype html><html><head><title>A Site</title></head><body><div id="app"></div></body></html>`)
+	}))
+	t.Cleanup(fs.Close)
+	return fs.Server
 }
 
 // newPlainPage serves one HTML document, for the discovery cases.
