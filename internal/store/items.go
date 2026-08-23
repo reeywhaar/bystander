@@ -178,6 +178,75 @@ func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []st
 	return out, nil
 }
 
+// Backfill returns, per feed, the newest articles this principal has already been shown.
+//
+// The complement of Candidates, and the reason it exists: a page with room left over and
+// nothing fresh to put in it looks broken rather than honest. Filling the rest with things
+// already seen keeps the shape of a front page, and costs nothing — those articles were
+// going to be pruned unread either way.
+//
+// exclude is what the page already holds, so an article drawn fresh is not offered back.
+func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan time.Time, exclude map[string]bool) (map[string][]*Item, error) {
+	out := make(map[string][]*Item, len(feedIDs))
+
+	for _, feedID := range feedIDs {
+		seen, err := s.shownHashes(ctx, principalID, feedID)
+		if err != nil {
+			return nil, err
+		}
+		if len(seen) == 0 {
+			continue
+		}
+
+		since := int64(0)
+		if !notOlderThan.IsZero() {
+			since = unix(notOlderThan)
+		}
+		// Things seen but never read come first.
+		//
+		// Both are repeats, but they are not equally good ones: an article that went past
+		// unread is closer to new than one somebody has already finished with. read_articles
+		// lives in this same database, so the preference is a join rather than a second
+		// query and a sort in Go.
+		rows, err := s.derived.QueryContext(ctx,
+			`SELECT `+prefixed(itemColumns, "i")+`
+			   FROM items i
+			   LEFT JOIN read_articles r ON r.item_id = i.id AND r.principal_id = ?
+			  WHERE i.feed_id = ? AND i.published_at >= ?
+			  ORDER BY (r.item_id IS NOT NULL), i.published_at DESC
+			  LIMIT ?`,
+			principalID, feedID, since, perFeed*4)
+		if err != nil {
+			return nil, err
+		}
+
+		var items []*Item
+		for rows.Next() {
+			item, err := scanItem(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			// Only what has been shown, and not what is already on the page.
+			if !seen[string(GUIDHash(item.GUID))] || exclude[item.ID] {
+				continue
+			}
+			items = append(items, item)
+			if len(items) == perFeed {
+				break
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		if len(items) > 0 {
+			out[feedID] = items
+		}
+	}
+	return out, nil
+}
+
 // shownHashes is what this principal has already been shown from one feed.
 func (s *Store) shownHashes(ctx context.Context, principalID, feedID string) (map[string]bool, error) {
 	rows, err := s.derived.QueryContext(ctx,
@@ -196,6 +265,16 @@ func (s *Store) shownHashes(ctx context.Context, principalID, feedID string) (ma
 		seen[string(hash)] = true
 	}
 	return seen, rows.Err()
+}
+
+// prefixed qualifies a column list for a join, so "id, feed_id" becomes "i.id, i.feed_id".
+// The alternative is a second copy of the list that drifts from the first.
+func prefixed(columns, table string) string {
+	parts := strings.Split(columns, ", ")
+	for i, part := range parts {
+		parts[i] = table + "." + strings.TrimSpace(part)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // GUIDHash is how an already-shown article is remembered: a truncated digest rather than

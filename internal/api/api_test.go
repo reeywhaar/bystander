@@ -324,12 +324,15 @@ func TestReadArticlesSurviveTheirPage(t *testing.T) {
 		t.Fatalf("%d articles remembered after regenerating, want 1", len(afterwards))
 	}
 
-	// …and the article itself must not come back onto a page.
+	// It may come back — a page with room left over is filled from what has been seen
+	// before rather than left short — but it must come back *read*. An article somebody
+	// finished with last week reappearing as though it were new is the one thing a page
+	// that repeats itself must not do.
 	var next editionBody
 	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &next)
 	for _, article := range next.Items {
-		if article.ID == read.ID {
-			t.Errorf("%q was read, and is on the page again", article.Title)
+		if article.ID == read.ID && article.ReadAt == nil {
+			t.Errorf("%q was read, and came back looking new", article.Title)
 		}
 	}
 }

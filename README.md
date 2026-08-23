@@ -66,9 +66,10 @@ Two things bound it:
   publisher posting forty times a day is drawn no more often than one posting twice, at the
   same priority. A feed's share of the page is its share of the priorities — which is what
   the slider says, and the only thing it says.
-- **A short page is an honest page.** When your feeds have published little, the page is
-  shorter. It is never padded with things you have already seen, and never reaches back
-  through an archive.
+- **A page is filled out rather than left half empty.** When your feeds have published
+  little, the rest of the page comes from what you have already been shown — the ones that
+  went past unread first, and anything you actually read comes back greyed rather than
+  pretending to be new. When there is nothing left at all, the page really is short.
 
 Each article is given a **slot** — lead, feature, standard or brief — when the page is
 made, and stored. The browser renders slots; it does not choose them. That is why the page

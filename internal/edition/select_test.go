@@ -38,8 +38,8 @@ func TestSelectIsDeterministic(t *testing.T) {
 	src := sources(feed("a", 50, 40), feed("b", 50, 40), feed("c", 50, 40))
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"a", "b", "c"}}}
 
-	first := Select(buckets, src, 20, 12345)
-	second := Select(buckets, src, 20, 12345)
+	first := Select(buckets, src, nil, 20, 12345)
+	second := Select(buckets, src, nil, 20, 12345)
 
 	if len(first) != len(second) {
 		t.Fatalf("two runs of one seed gave %d and %d articles", len(first), len(second))
@@ -69,7 +69,7 @@ func TestPriorityShiftsTheOdds(t *testing.T) {
 			list = append(list, feed(fmt.Sprintf("quiet%d", i), 10, 100))
 		}
 		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
-		for _, pick := range Select(buckets, sources(list...), 10, int64(seed)) {
+		for _, pick := range Select(buckets, sources(list...), nil, 10, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -91,7 +91,7 @@ func TestZeroPriorityNeverAppears(t *testing.T) {
 	for seed := range 50 {
 		src := sources(feed("on", 50, 50), feed("off", 0, 50))
 		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"on", "off"}}}
-		for _, pick := range Select(buckets, src, 20, int64(seed)) {
+		for _, pick := range Select(buckets, src, nil, 20, int64(seed)) {
 			if pick.Item.FeedID == "off" {
 				t.Fatalf("seed %d drew from a feed at priority zero", seed)
 			}
@@ -102,7 +102,7 @@ func TestZeroPriorityNeverAppears(t *testing.T) {
 func TestAllZeroTerminates(t *testing.T) {
 	src := sources(feed("a", 0, 10), feed("b", 0, 10))
 	buckets := []Bucket{{TagID: "t1", Priority: 0, FeedIDs: []string{"a", "b"}}}
-	if got := Select(buckets, src, 20, 1); len(got) != 0 {
+	if got := Select(buckets, src, nil, 20, 1); len(got) != 0 {
 		t.Fatalf("Select() returned %d articles from an all-zero pool", len(got))
 	}
 }
@@ -117,7 +117,7 @@ func TestVolumeDoesNotBuyAShareOfThePage(t *testing.T) {
 	for seed := range 100 {
 		src := sources(feed("prolific", 50, 500), feed("occasional", 50, 200))
 		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"prolific", "occasional"}}}
-		for _, pick := range Select(buckets, src, size, int64(seed)) {
+		for _, pick := range Select(buckets, src, nil, size, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -138,7 +138,7 @@ func TestASmallFeedDoesNotStarveThePage(t *testing.T) {
 	src := sources(feed("plenty", 50, 500), feed("trickle", 50, 5))
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"plenty", "trickle"}}}
 
-	picks := Select(buckets, src, size, 7)
+	picks := Select(buckets, src, nil, size, 7)
 	if len(picks) != size {
 		t.Fatalf("Select() returned %d articles, want a full page of %d", len(picks), size)
 	}
@@ -160,7 +160,7 @@ func TestPriorityDecidesWithFewFeeds(t *testing.T) {
 	for seed := range 200 {
 		src := sources(feed("loud", 90, 200), feed("quiet", 10, 200))
 		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"loud", "quiet"}}}
-		for _, pick := range Select(buckets, src, size, int64(seed)) {
+		for _, pick := range Select(buckets, src, nil, size, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -186,7 +186,7 @@ func TestNoDuplicatesAcrossBuckets(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
-	for _, pick := range Select(buckets, src, 20, 3) {
+	for _, pick := range Select(buckets, src, nil, 20, 3) {
 		if seen[pick.Item.ID] {
 			t.Fatalf("article %q appears twice", pick.Item.ID)
 		}
@@ -199,7 +199,7 @@ func TestExhaustedPoolGivesAShortPage(t *testing.T) {
 	src := sources(feed("a", 50, 3), feed("b", 50, 2))
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"a", "b"}}}
 
-	got := Select(buckets, src, 60, 9)
+	got := Select(buckets, src, nil, 60, 9)
 	if len(got) != 5 {
 		t.Fatalf("Select() returned %d articles, want the 5 that exist", len(got))
 	}
@@ -220,7 +220,7 @@ func TestSlotsByRank(t *testing.T) {
 	}
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
 
-	picks := Select(buckets, sources(list...), 50, 11)
+	picks := Select(buckets, sources(list...), nil, 50, 11)
 	if len(picks) < 10 {
 		t.Fatalf("only %d articles selected; the rest of this test needs a full page", len(picks))
 	}
@@ -252,7 +252,7 @@ func TestArticlesWithNothingToShowBecomeBriefs(t *testing.T) {
 	}}
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"bare"}}}
 
-	picks := Select(buckets, sources(bare), 10, 1)
+	picks := Select(buckets, sources(bare), nil, 10, 1)
 	if len(picks) != 1 {
 		t.Fatalf("Select() returned %d articles, want 1", len(picks))
 	}
@@ -267,7 +267,7 @@ func TestUntaggedBucketIsOrdinary(t *testing.T) {
 	// The empty TagID is what "no tag" looks like, and nothing treats it specially.
 	buckets := []Bucket{{TagID: "", Priority: store.DefaultPriority, FeedIDs: []string{"loose"}}}
 
-	if got := Select(buckets, src, 5, 2); len(got) != 5 {
+	if got := Select(buckets, src, nil, 5, 2); len(got) != 5 {
 		t.Fatalf("Select() returned %d articles from the untagged bucket, want 5", len(got))
 	}
 }

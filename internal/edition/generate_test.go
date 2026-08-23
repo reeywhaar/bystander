@@ -258,3 +258,126 @@ func isConflict(err error) bool {
 	}
 	return false
 }
+
+// A page with room left over and nothing fresh to put in it looks broken rather than
+// honest, so the rest is filled from what has been seen before.
+func TestAShortPageIsFilledFromWhatWasSeen(t *testing.T) {
+	in := newInstance(t, 12)
+	in.size(t, 10)
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+	if got := len(in.titles(t)); got != 10 {
+		t.Fatalf("the first page holds %d, want 10", got)
+	}
+
+	// Only two articles left unshown, and a page that wants ten.
+	in.scheduledTurn(t, now.Add(24*time.Hour))
+
+	second := in.titles(t)
+	if len(second) != 10 {
+		t.Fatalf("the second page holds %d articles, want a full 10 — eight of them repeats",
+			len(second))
+	}
+
+	// The two that had never been shown are certainly on it.
+	seen := map[string]bool{}
+	for _, title := range second {
+		seen[title] = true
+	}
+	if !seen["Story 10"] || !seen["Story 11"] {
+		t.Errorf("the unshown articles are missing from %v", second)
+	}
+}
+
+// A repeat that was actually read comes back greyed. One that merely went past unread comes
+// back plain, which is fair — it was never read.
+func TestARepeatKeepsItsReadMark(t *testing.T) {
+	in := newInstance(t, 10)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	read := items[0].Item
+	if err := in.store.SetRead(ctx, in.principal.ID, read.ID, true); err != nil {
+		t.Fatalf("SetRead(): %v", err)
+	}
+
+	// Nothing fresh at all, so the whole next page is repeats.
+	in.scheduledTurn(t, now.Add(24*time.Hour))
+
+	_, next, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if len(next) == 0 {
+		t.Fatal("the page came back empty rather than repeating")
+	}
+
+	marked, plain := 0, 0
+	for _, entry := range next {
+		if entry.Item.ID == read.ID {
+			if !entry.Read() {
+				t.Errorf("%q was read and came back looking new", entry.Item.Title)
+			}
+			marked++
+			continue
+		}
+		if entry.Read() {
+			t.Errorf("%q was never read and came back marked", entry.Item.Title)
+		}
+		plain++
+	}
+	if marked == 0 {
+		t.Error("the article that was read did not come back at all")
+	}
+	if plain == 0 {
+		t.Error("nothing unread came back")
+	}
+}
+
+// Preferring what went past unread: those are closer to new than what somebody has already
+// finished with.
+func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
+	in := newInstance(t, 20)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	// Show everything across two pages, reading the first page through.
+	in.scheduledTurn(t, now)
+	_, first, _ := in.store.CurrentEdition(ctx, in.principal.ID)
+	for _, entry := range first {
+		if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
+			t.Fatalf("SetRead(): %v", err)
+		}
+	}
+	in.scheduledTurn(t, now.Add(24*time.Hour))
+
+	// Now everything has been shown; ten were read and ten were not. A page of ten should
+	// be the ten nobody read.
+	in.scheduledTurn(t, now.Add(48*time.Hour))
+
+	_, third, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if len(third) != 10 {
+		t.Fatalf("the page holds %d, want 10", len(third))
+	}
+
+	wasRead := 0
+	for _, entry := range third {
+		if entry.Read() {
+			wasRead++
+		}
+	}
+	if wasRead > 3 {
+		t.Errorf("%d of 10 had already been read; unread repeats should come first", wasRead)
+	}
+}

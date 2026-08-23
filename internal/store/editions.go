@@ -87,8 +87,16 @@ func (s *Store) ReplaceEdition(ctx context.Context, principalID string, seed int
 		return nil, fmt.Errorf("create edition: %w", err)
 	}
 
+	// read_at is carried over from the month-long record rather than left null.
+	//
+	// It only ever fires for an article being shown again — a fresh one has never been on
+	// a page, so nobody can have read it. Without this, an article somebody read last week
+	// would come back looking new, which is the one thing a page that repeats itself must
+	// not do.
 	item, err := tx.PrepareContext(ctx,
-		`INSERT INTO edition_items (edition_id, item_id, rank, slot) VALUES (?, ?, ?, ?)`)
+		`INSERT INTO edition_items (edition_id, item_id, rank, slot, read_at)
+		 VALUES (?, ?, ?, ?,
+		   (SELECT read_at FROM read_articles WHERE principal_id = ? AND item_id = ?))`)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +112,8 @@ func (s *Store) ReplaceEdition(ctx context.Context, principalID string, seed int
 	defer shown.Close()
 
 	for _, pick := range picks {
-		if _, err := item.ExecContext(ctx, ed.ID, pick.Item.ID, pick.Rank, string(pick.Slot)); err != nil {
+		if _, err := item.ExecContext(ctx, ed.ID, pick.Item.ID, pick.Rank, string(pick.Slot),
+			principalID, pick.Item.ID); err != nil {
 			return nil, fmt.Errorf("place article %s: %w", pick.Item.ID, err)
 		}
 		if _, err := shown.ExecContext(ctx, principalID, pick.Item.FeedID, GUIDHash(pick.Item.GUID), unix(now)); err != nil {

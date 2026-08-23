@@ -66,8 +66,16 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	if err != nil {
 		return nil, err
 	}
-	if len(candidates) == 0 {
-		return nil, nil
+
+	// What has already been shown, in case there is not enough fresh to fill the page. Read
+	// before sampling rather than after coming up short, because the alternative is a
+	// second pass over the same feeds and the query is cheap either way.
+	//
+	// Fetched with no exclusions: Select draws from one pool at a time and will not offer
+	// an article it has already placed.
+	seenBefore, err := g.store.Backfill(ctx, principalID, feedIDs, candidateDepth, notOlderThan, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	// One seed, drawn once and stored with the edition. Drawing it twice would leave the
@@ -75,7 +83,8 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	// only thing the column is for.
 	s := seed()
 	buckets, sources := plan(subs, tags, candidates)
-	picks := Select(buckets, sources, settings.EditionSize, s)
+	_, repeats := plan(subs, tags, seenBefore)
+	picks := Select(buckets, sources, repeats, settings.EditionSize, s)
 	if len(picks) == 0 {
 		return nil, nil
 	}

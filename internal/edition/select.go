@@ -56,30 +56,47 @@ type Bucket struct {
 // priority sliders did precisely nothing. A feed's share of the page is now its share of
 // the weights, which is what the slider says it is.
 //
-// A short result is an honest result. When the pool runs dry the page is shorter, and it
-// is never padded with articles already shown or with a reach back through the archive.
-func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) []store.Pick {
+// # When there is not enough fresh
+//
+// A page with room left over and nothing new to put in it looks broken rather than honest,
+// so the remainder is drawn from `seen` — articles this person has already been shown. The
+// same weighting decides which, so a page that has to repeat itself repeats the feeds
+// somebody said they cared about.
+//
+// Nothing is invented: an article that was actually read comes back with its read mark
+// intact (see store.ReplaceEdition), so it arrives greyed rather than pretending to be new.
+// One that was merely shown and never read comes back plain, which is fair — it was never
+// read. And when both pools are dry the page really is short, which is still the honest
+// answer.
+func Select(buckets []Bucket, sources, seen map[string]*Source, size int, seed int64) []store.Pick {
 	if size <= 0 {
 		return nil
 	}
 
-	// Weight zero means never. Zero-weight entries are removed here rather than drawn and
+	// Weight zero means never. Zero-weight entries are left out here rather than drawn and
 	// discarded, so a page of nothing but zeroes terminates instead of spinning.
-	pool := make([]Bucket, 0, len(buckets))
-	for _, b := range buckets {
-		if b.Priority <= 0 {
-			continue
-		}
-		feeds := make([]string, 0, len(b.FeedIDs))
-		for _, id := range b.FeedIDs {
-			if src := sources[id]; src != nil && src.Priority > 0 && len(src.Items) > 0 {
-				feeds = append(feeds, id)
+	build := func(from map[string]*Source) []Bucket {
+		pool := make([]Bucket, 0, len(buckets))
+		for _, b := range buckets {
+			if b.Priority <= 0 {
+				continue
+			}
+			feeds := make([]string, 0, len(b.FeedIDs))
+			for _, id := range b.FeedIDs {
+				if src := from[id]; src != nil && src.Priority > 0 && len(src.Items) > 0 {
+					feeds = append(feeds, id)
+				}
+			}
+			if len(feeds) > 0 {
+				pool = append(pool, Bucket{TagID: b.TagID, Priority: b.Priority, FeedIDs: feeds})
 			}
 		}
-		if len(feeds) > 0 {
-			pool = append(pool, Bucket{TagID: b.TagID, Priority: b.Priority, FeedIDs: feeds})
-		}
+		return pool
 	}
+
+	drawing := sources
+	pool := build(drawing)
+	repeating := false
 
 	// Two streams from one seed, so a generation replays exactly.
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>32|1))
@@ -88,15 +105,30 @@ func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) 
 	picked := make(map[string]bool, size)
 
 	var picks []store.Pick
-	for len(picks) < size && len(pool) > 0 {
+	for len(picks) < size {
+		if len(pool) == 0 {
+			// Nothing fresh left. Fall back to what has been seen before rather than
+			// handing somebody two thirds of a page and no explanation.
+			if repeating || len(seen) == 0 {
+				break
+			}
+			repeating = true
+			drawing = seen
+			clear(cursor)
+			if pool = build(drawing); len(pool) == 0 {
+				break
+			}
+			continue
+		}
+
 		bi := weightedIndex(rng, len(pool), func(i int) int { return pool[i].Priority })
 		bucket := &pool[bi]
 
 		fi := weightedIndex(rng, len(bucket.FeedIDs), func(i int) int {
-			return sources[bucket.FeedIDs[i]].Priority
+			return drawing[bucket.FeedIDs[i]].Priority
 		})
 		feedID := bucket.FeedIDs[fi]
-		src := sources[feedID]
+		src := drawing[feedID]
 
 		// Advance past anything already taken. A feed reachable from two tags is one
 		// queue, so an article drawn through "Art" is not offered again through "News".
