@@ -209,13 +209,17 @@ export function useRemoveFeed() {
 /** Builds a subscription list from the feeds that were ticked. */
 export function useExportFeeds() {
   const callApi = useApiCall();
-  return useMutation({ mutationFn: (ids: string[]) => callApi(postFeedsExport(ids)) });
+  return useMutation({
+    mutationFn: (ids: string[]) => callApi(postFeedsExport(ids)),
+  });
 }
 
 /** Reads a pasted list and says what it would do. Changes nothing. */
 export function usePreviewImport() {
   const callApi = useApiCall();
-  return useMutation({ mutationFn: (opml: string) => callApi(postFeedsImportPreview(opml)) });
+  return useMutation({
+    mutationFn: (opml: string) => callApi(postFeedsImportPreview(opml)),
+  });
 }
 
 export function useImportFeeds() {
