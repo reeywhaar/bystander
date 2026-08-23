@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./fonts/fonts.css";
 
 /*
  * The palette is two colours and their gradations: paper and ink. Everything else — rules,
@@ -19,6 +20,21 @@
   --rule: #ddd7c8;
   --accent: #8c2f16;
   --accent-quiet: #b8674f;
+
+  /*
+   * The two reading stacks. System faces, so nothing is fetched for the text somebody
+   * actually reads and the page paints without waiting on a font. The headline faces are a
+   * separate argument, made in fonts/fonts.css and in the voices below.
+   *
+   * Declared here and mapped below, exactly like the colours, rather than living only in
+   * `@theme inline`: `inline` means Tailwind writes the value into each utility and emits no
+   * custom property at all, so a `var(--font-serif)` in ordinary CSS — which is how every
+   * voice below names the face it falls back to — would resolve to nothing.
+   */
+  --serif:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+    "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,12 +62,8 @@
   --color-accent: var(--accent);
   --color-accent-quiet: var(--accent-quiet);
 
-  /* System stacks rather than web fonts: nothing is fetched, so the bundle stays
-     self-contained and the page paints without waiting on a font. */
-  --font-serif:
-    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-    "Times New Roman", serif;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--serif);
+  --font-sans: var(--sans);
 }
 
 html {
@@ -61,7 +73,7 @@ html {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-sans);
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -125,11 +137,182 @@ body {
   }
 
   /*
+   * The house set of headline faces.
+   *
+   * A front page's headlines have never all been in one face. A paper keeps a handful of
+   * display faces and picks between them story by story, and that is most of what makes a
+   * sheet of forty unrelated headlines read as one publication that decided things rather
+   * than as a list of links. This reader is composing exactly that page out of strangers'
+   * feeds, so it needs the same set.
+   *
+   * Six voices, one per *genre* of display face rather than six variations on one: nothing
+   * is gained by faces that are nearly the same, and the whole effect depends on a reader
+   * being able to tell at a glance that this headline is not set like that one. Which
+   * article gets which is decided in lib/voice.ts, from the article's id.
+   *
+   * Every voice carries its own scale and leading beside its family, because the faces do
+   * not agree about how big twenty pixels is — Oswald is condensed and tall, Bitter is wide
+   * and short, Old Standard sits small on its body. Set at one size they look like a
+   * mistake rather than a choice, and the multipliers are what make six faces look like one
+   * size. They were measured against a real page, not derived from the metrics.
+   *
+   * The size comes from the slot and the voice only adjusts it, so prominence stays the
+   * server's decision: a lead is a lead whichever face it landed in.
+   */
+  .headline {
+    --headline-size: 1.1875rem;
+    --voice-scale: 1;
+    --voice-leading: 1.12;
+
+    font-size: calc(var(--headline-size) * var(--voice-scale));
+    line-height: var(--voice-leading);
+    /* A headline is short and its silhouette is half of what it is doing. Balancing beats
+       a last line carrying one word, which is the single thing that most makes a headline
+       look untended. */
+    text-wrap: balance;
+  }
+
+  .slot-lead .headline {
+    --headline-size: 2.25rem;
+  }
+  .slot-feature .headline {
+    --headline-size: 1.5rem;
+  }
+  .slot-brief .headline {
+    --headline-size: 1.0625rem;
+  }
+
+  @media (min-width: 640px) {
+    .slot-lead .headline {
+      --headline-size: 3rem;
+    }
+  }
+
+  /* Playfair Display: high-contrast, hairline serifs, the grand register. */
+  .voice-didone {
+    font-family: "Playfair Display", var(--serif);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    --voice-leading: 1.05;
+  }
+
+  /*
+   * Old Standard TT: the antique one, cut after nineteenth-century newsprint.
+   *
+   * The widest face here by a long way and the only one that needs pulling in rather than
+   * pushing out — set at the same size as the others it took three lines where they took
+   * two, which on a lead is not a different voice, it is a different layout.
+   */
+  .voice-antique {
+    font-family: "Old Standard TT", var(--serif);
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    --voice-scale: 0.94;
+    --voice-leading: 1.14;
+  }
+
+  /* PT Serif: the workhorse. Low contrast, sturdy, says nothing about itself. */
+  .voice-workhorse {
+    font-family: "PT Serif", var(--serif);
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    --voice-scale: 0.98;
+    --voice-leading: 1.14;
+  }
+
+  /* Bitter: a slab, and the only face here with a right angle in it. */
+  .voice-slab {
+    font-family: "Bitter", var(--serif);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    --voice-scale: 0.94;
+    --voice-leading: 1.18;
+  }
+
+  /* Oswald: the condensed gothic — a paper's shouting face. */
+  .voice-gothic {
+    font-family: "Oswald", var(--sans);
+    font-weight: 600;
+    --voice-scale: 1.06;
+    --voice-leading: 1.06;
+  }
+
+  /* Alegreya: humanist, with a calligrapher's hand still visible in it. The smallest
+     x-height of the six, so it is the one that has to be set up rather than down. */
+  .voice-humanist {
+    font-family: "Alegreya", var(--serif);
+    font-weight: 800;
+    letter-spacing: -0.005em;
+    --voice-scale: 1.09;
+    --voice-leading: 1.06;
+  }
+
+  /*
+   * The gothic goes up into capitals in the narrow slots, the way a single-column headline
+   * in a newspaper does — condensed capitals are what fill one column without hyphenating.
+   *
+   * Only there. The same treatment across a lead is forty characters of capitals at three
+   * rem, which is a tabloid rather than a front page, and it is unreadable at exactly the
+   * size that was meant to make something easy to read.
+   */
+  .slot-standard .voice-gothic,
+  .slot-brief .voice-gothic {
+    text-transform: uppercase;
+    letter-spacing: 0.015em;
+    --voice-scale: 0.92;
+  }
+
+  /*
+   * A measure for the lead, which is the only card wide enough to need one.
+   *
+   * A line of type stops being readable somewhere short of ninety characters, and a lead's
+   * standfirst set across four columns is nearly twice that — the eye loses the line on the
+   * way back. The headline gets a wider one, because a headline is scanned rather than read
+   * and it has `text-wrap: balance` to keep its shape.
+   *
+   * Only the lead. Every other slot is one or two columns, which is a measure already.
+   */
+  .slot-lead .headline {
+    max-width: 46rem;
+  }
+  .slot-lead .prose-summary {
+    max-width: 34rem;
+  }
+
+  /*
+   * The nameplate, and the one piece of type here that never joins the rotation. A paper's
+   * name is set in one face for as long as the paper exists — that is the whole job it does,
+   * and a masthead that changed face per visit would be doing the opposite of it.
+   *
+   * Set in a face the headlines already use, so the wordmark costs no download of its own.
+   * Lower case and tracked in tight, which is the whole of what keeps it quiet: capitals at
+   * this size read as a shout, and a reader whose argument is that it asks nothing of you
+   * has no business putting the loudest thing on the page in the corner of every screen.
+   *
+   * All of the type is decided here rather than left to utilities at the two places it is
+   * used, so the two cannot drift apart.
+   *
+   * Placeholder-grade on purpose: this is the wordmark until there is a real one.
+   */
+  .nameplate {
+    font-family: "Playfair Display", var(--serif);
+    font-weight: 700;
+    font-size: 1.875rem;
+    line-height: 1;
+    letter-spacing: -0.025em;
+  }
+
+  /*
    * A summary is sanitized HTML from the server — an allowlist of a dozen tags, applied at
    * ingest. It is styled here rather than being stripped, because a standfirst with its
    * emphasis and its links intact reads like prose and a flattened one reads like a log
    * line.
    */
+  /* The reading serif, not the interface sans. A standfirst is prose and belongs to the
+     article above it; the sans is for the chrome — buttons, navigation, the read control. */
+  .prose-summary {
+    font-family: var(--serif);
+  }
   .prose-summary :where(p) {
     margin-block: 0.5em;
   }

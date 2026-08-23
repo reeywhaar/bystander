@@ -5,6 +5,7 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute, until } from "@app/lib/time";
+import { assignVoices } from "@app/lib/voice";
 import {
   useEdition,
   useFeeds,
@@ -61,10 +62,13 @@ export function ReaderPage({ me }: { me: Me }) {
 
         {hasPage ? (
           <div className="page-grid">
-            {page.items.map((article) => (
+            {/* Voices are assigned over the whole page, not per card: the rule that no two
+                headlines in a row share a face needs the sequence. */}
+            {assignVoices(page.items).map(({ article, voice }) => (
               <ArticleCard
                 key={article.id}
                 article={article}
+                voice={voice}
                 onRead={(id, read) => setRead.mutate({ id, read })}
               />
             ))}

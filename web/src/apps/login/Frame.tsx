@@ -12,9 +12,7 @@ export function Frame({
 }) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-16">
-      <p className="font-serif text-3xl leading-none tracking-tight text-ink">
-        bystander
-      </p>
+      <p className="nameplate text-ink">bystander</p>
       <h1 className="mt-8 font-serif text-2xl text-ink">{title}</h1>
       {intro ? (
         <div className="mt-2 text-sm text-ink-muted">{intro}</div>

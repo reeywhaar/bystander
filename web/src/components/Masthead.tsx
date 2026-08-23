@@ -37,10 +37,7 @@ export function Masthead({
           wraps, and `ml-auto` would leave it clinging to the right edge with a hole beside
           it — so below `sm` it starts at the same left edge as everything else. */}
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-5">
-        <a
-          href="/"
-          className="font-serif text-3xl leading-none tracking-tight text-ink hover:text-accent"
-        >
+        <a href="/" className="nameplate text-ink hover:text-accent">
           bystander
         </a>
         {subtitle ? (

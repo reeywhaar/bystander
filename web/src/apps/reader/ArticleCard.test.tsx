@@ -39,10 +39,26 @@ function auxClick(element: Element, button: number) {
 }
 
 describe("ArticleCard", () => {
+  it("carries the voice the page gave it, and no size of its own", () => {
+    const { container } = render(
+      <ArticleCard article={article()} voice="gothic" onRead={() => {}} />,
+    );
+    const headline = container.querySelector("h2");
+    expect(headline).toHaveClass("headline");
+    expect(headline).toHaveClass("voice-gothic");
+    // The size belongs to the slot and the voice together, in styles.css. A Tailwind size
+    // utility here would win the cascade and take the voice's own scale with it.
+    expect(headline?.className).not.toMatch(/\btext-(xs|sm|base|lg|[0-9]xl)\b/);
+  });
+
   it("carries the slot the server chose", () => {
     for (const slot of ["lead", "feature", "standard", "brief"] as Slot[]) {
       const { container, unmount } = render(
-        <ArticleCard article={article({ slot })} onRead={() => {}} />,
+        <ArticleCard
+          article={article({ slot })}
+          voice="didone"
+          onRead={() => {}}
+        />,
       );
       expect(container.querySelector("article")).toHaveClass(`slot-${slot}`);
       unmount();
@@ -51,7 +67,7 @@ describe("ArticleCard", () => {
 
   it("marks read when the headline is opened", async () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} onRead={onRead} />);
+    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
 
     await userEvent.click(screen.getByRole("link", { name: "A headline" }));
     expect(onRead).toHaveBeenCalledWith("a_1", true);
@@ -62,7 +78,7 @@ describe("ArticleCard", () => {
   // maps only to `click`, so it silently did not count as opening anything.
   it("marks read when the headline is opened with the middle button", () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} onRead={onRead} />);
+    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
 
     auxClick(screen.getByRole("link", { name: "A headline" }), 1);
     expect(onRead).toHaveBeenCalledWith("a_1", true);
@@ -71,7 +87,7 @@ describe("ArticleCard", () => {
   it("marks read when the picture is opened with the middle button", () => {
     const onRead = vi.fn();
     const { container } = render(
-      <ArticleCard article={article()} onRead={onRead} />,
+      <ArticleCard article={article()} voice="didone" onRead={onRead} />,
     );
 
     // The picture is a second link to the same article, hidden from the accessibility
@@ -86,7 +102,7 @@ describe("ArticleCard", () => {
   // auxclick fires for the right button too, and raising a context menu is not reading.
   it("does not mark read when the context menu is raised", () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} onRead={onRead} />);
+    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
 
     auxClick(screen.getByRole("link", { name: "A headline" }), 2);
     expect(onRead).not.toHaveBeenCalled();
@@ -97,6 +113,7 @@ describe("ArticleCard", () => {
     render(
       <ArticleCard
         article={article({ read_at: 1_787_000_100 })}
+        voice="didone"
         onRead={onRead}
       />,
     );
@@ -111,6 +128,7 @@ describe("ArticleCard", () => {
     const { container } = render(
       <ArticleCard
         article={article({ read_at: 1_787_000_100 })}
+        voice="didone"
         onRead={() => {}}
       />,
     );
@@ -126,6 +144,7 @@ describe("ArticleCard", () => {
         article={article({
           summary: '<p>Read <a href="https://example.com/x">this</a></p>',
         })}
+        voice="didone"
         onRead={() => {}}
       />,
     );
@@ -140,7 +159,11 @@ describe("ArticleCard", () => {
   // A card sized for a picture that has no picture is what makes a page look broken.
   it("shows neither picture nor standfirst on a brief", () => {
     const { container } = render(
-      <ArticleCard article={article({ slot: "brief" })} onRead={() => {}} />,
+      <ArticleCard
+        article={article({ slot: "brief" })}
+        voice="didone"
+        onRead={() => {}}
+      />,
     );
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByText("A standfirst")).not.toBeInTheDocument();
@@ -154,6 +177,7 @@ describe("ArticleCard", () => {
         article={article({
           feed: { id: "f_1", title: "The Go Blog", site_url: "" },
         })}
+        voice="didone"
         onRead={() => {}}
       />,
     );
@@ -164,7 +188,9 @@ describe("ArticleCard", () => {
   });
 
   it("opens articles in a new tab, without handing the opener over", () => {
-    render(<ArticleCard article={article()} onRead={() => {}} />);
+    render(
+      <ArticleCard article={article()} voice="didone" onRead={() => {}} />,
+    );
     const link = screen.getByRole("link", { name: "A headline" });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");

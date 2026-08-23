@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
+import type { Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -26,16 +27,22 @@ function opening(onOpen: () => void) {
 }
 
 /**
- * One article, in the slot the server gave it.
+ * One article, in the slot the server gave it and the voice the page gave it.
  *
  * The slot decides the shape and nothing here recomputes it — no measurement, no layout
  * pass, so the page does not reflow after paint and two loads of one edition are identical.
+ *
+ * The voice arrives as a prop rather than being worked out from the article, because the
+ * rule that no two headlines in a row share a face is a fact about the sequence and a card
+ * cannot see it. See lib/voice.ts.
  */
 export function ArticleCard({
   article,
+  voice,
   onRead,
 }: {
   article: Article;
+  voice: Voice;
   onRead: (id: string, read: boolean) => void;
 }) {
   const read = article.read_at !== null;
@@ -74,15 +81,10 @@ export function ArticleCard({
 
       <SourceLine article={article} />
 
-      <h2
-        className={`font-serif leading-tight text-ink ${
-          article.slot === "lead"
-            ? "text-4xl sm:text-5xl"
-            : article.slot === "feature"
-              ? "text-2xl"
-              : "text-lg"
-        }`}
-      >
+      {/* No size utility here. Both the size and the leading come from the slot and the
+          voice together, in styles.css, because a face's own scale is part of what makes
+          six of them look like one size — see the .headline block there. */}
+      <h2 className={`headline voice-${voice} text-ink`}>
         <a
           href={article.link}
           target="_blank"
