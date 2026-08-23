@@ -8,8 +8,8 @@ import { QRCode } from "@app/components/ui/QRCode";
  *
  * Copy is the one that works everywhere and reaches nothing but this device. Send hands it
  * to the system, which is how a link actually gets to a phone — AirDrop, a message, whatever
- * that person uses. The code is for when the other device is in the room and neither of the
- * first two will do: two accounts on two phones with no shared anything.
+ * that person uses. QR is for when the other device is in the room and neither of the first
+ * two will do: two accounts on two phones with no shared anything.
  *
  * The value stays selectable text through all of it. Every one of these can fail — an
  * insecure origin, a browser that refuses without a gesture it recognises — and a button
@@ -65,7 +65,7 @@ export function CopyBox({
           onClick={() => setShowing(true)}
           className={button}
         >
-          Code
+          QR
         </button>
         {canShare ? (
           <button type="button" onClick={() => void send()} className={button}>

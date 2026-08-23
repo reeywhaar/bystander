@@ -75,7 +75,7 @@ export function QRCode({
       // small code fail to read.
       shapeRendering="crispEdges"
       role="img"
-      aria-label="A code holding this link"
+      aria-label="A QR code holding this link"
       className={className}
     >
       <rect width={size} height={size} fill="#ffffff" />
