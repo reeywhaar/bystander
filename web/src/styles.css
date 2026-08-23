@@ -308,11 +308,77 @@ body {
    * emphasis and its links intact reads like prose and a flattened one reads like a log
    * line.
    */
-  /* The reading serif, not the interface sans. A standfirst is prose and belongs to the
-     article above it; the sans is for the chrome — buttons, navigation, the read control. */
+  /*
+   * The reading serif, not the interface sans. A standfirst is prose and belongs to the
+   * article above it; the sans is for the chrome — buttons, navigation, the read control.
+   *
+   * One face for every standfirst on the page, while the headlines above them take six.
+   * That is what a newspaper does and it is not an oversight: display faces vary story by
+   * story, body type is the paper's single voice. Six body faces on one page is a ransom
+   * note, and it would mean downloading six more families at a text weight to print the one
+   * thing here that is read rather than scanned.
+   *
+   * The size comes from here rather than from a utility on the element, for the same reason
+   * the headline's does: a `text-base` at the call site would win the cascade and flatten
+   * away everything below.
+   */
   .prose-summary {
+    /* The smallest this card is allowed to be set, from its slot. */
+    --prose-floor: 0.9375rem;
+    /* What this particular story drew, from the ladder below. */
+    --prose-size: 1rem;
+
     font-family: var(--serif);
+    /*
+     * The larger of the two, which is what "unlocked, but only one way" means.
+     *
+     * A narrow card can be set as large as anything on the page — that is the whole point,
+     * and it is where the texture comes from. A wide one cannot be set small: a lead
+     * running the width of the page in fifteen-pixel type does not read as a choice, it
+     * reads as a stylesheet that failed to load. So width raises the floor and never lowers
+     * the ceiling.
+     */
+    font-size: max(var(--prose-floor), var(--prose-size));
+    /* Unitless, so it follows the size rather than being set against one of them. */
+    line-height: 1.55;
   }
+
+  /* Wider cards, higher floors. A feature will not go below sixteen, a lead below
+     seventeen — and either can still draw the top of the ladder. */
+  .slot-feature .prose-summary {
+    --prose-floor: 1rem;
+  }
+  .slot-lead .prose-summary {
+    --prose-floor: 1.0625rem;
+  }
+
+  /*
+   * The ladder a standfirst is set on, chosen per article in lib/voice.ts.
+   *
+   * **Not tied to how wide the card is** — only floored by it, above. Size used to follow
+   * the slot outright: wide cards large, narrow cards small, so a page had two sizes of
+   * prose on it arranged biggest first. That is a template. A compositor sets a single
+   * column large for emphasis, and it is precisely that mismatch between column width and
+   * type size that stops a page reading as a grid somebody filled in.
+   *
+   * Four steps across three points. The bottom is still comfortably readable prose and the
+   * top still fits a one-column measure without falling to five words a line — the range is
+   * bounded by what the *narrowest* card can carry, because any step has to work in any
+   * slot now that the two are only half tied together.
+   */
+  .prose-step-0 {
+    --prose-size: 0.9375rem;
+  }
+  .prose-step-1 {
+    --prose-size: 1rem;
+  }
+  .prose-step-2 {
+    --prose-size: 1.0625rem;
+  }
+  .prose-step-3 {
+    --prose-size: 1.125rem;
+  }
+
   .prose-summary :where(p) {
     margin-block: 0.5em;
   }

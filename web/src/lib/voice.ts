@@ -54,6 +54,40 @@ function voiceAt(index: number): Voice {
 }
 
 /**
+ * How many sizes a standfirst can be set in.
+ *
+ * The sizes themselves are in styles.css, as `.prose-step-0` upwards — a ladder from a shade
+ * under a pixel-16 to a shade over eighteen.
+ */
+export const PROSE_STEPS = 4;
+
+/**
+ * Which step an article's standfirst is set at.
+ *
+ * **Not tied to how wide the card is**, which is the whole point. Size used to follow the
+ * slot: wide cards got the large setting, narrow cards the small one, so every page had
+ * exactly two sizes of prose on it arranged largest-first — which is a template, not a page.
+ * A compositor does the opposite constantly, setting a single column large for emphasis and
+ * a wide feature small and dense, and that mismatch between column width and type size is
+ * most of what stops a page reading as a grid somebody filled in.
+ *
+ * A pure function of the id, exactly as the voice is, and for the same reason: the layout is
+ * fixed server-side so that where an article sits is how somebody remembers where they were,
+ * and type that resized on reload would undo that.
+ *
+ * Worked out by the card rather than handed down like the voice, because there is no rule
+ * here about neighbours. Two faces in a row would read as the page failing to notice; two
+ * standfirsts a step apart read as a page that was set.
+ *
+ * A different slice of the hash than the voice takes, so a face and a size are not quietly
+ * locked together either — every Oswald headline over the same size of prose would be a
+ * pattern, and the whole idea is that there is not one.
+ */
+export function proseStep(id: string): number {
+  return (hash(id) >>> 16) % PROSE_STEPS;
+}
+
+/**
  * Assign a voice to each article, in the order the server put them in.
  *
  * Returns the articles paired with their voices rather than a bare list, so a caller cannot

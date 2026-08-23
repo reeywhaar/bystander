@@ -39,6 +39,17 @@ function auxClick(element: Element, button: number) {
 }
 
 describe("ArticleCard", () => {
+  // The size is the story's, from a ladder in styles.css, and the slot only sets a floor
+  // under it. A utility here would win the cascade and flatten both.
+  it("sets its standfirst from the ladder, not from a size utility", () => {
+    const { container } = render(
+      <ArticleCard article={article()} voice="gothic" onRead={() => {}} />,
+    );
+    const summary = container.querySelector(".prose-summary");
+    expect(summary?.className).toMatch(/\bprose-step-[0-3]\b/);
+    expect(summary?.className).not.toMatch(/\btext-(xs|sm|base|lg|[0-9]xl)\b/);
+  });
+
   it("carries the voice the page gave it, and no size of its own", () => {
     const { container } = render(
       <ArticleCard article={article()} voice="gothic" onRead={() => {}} />,

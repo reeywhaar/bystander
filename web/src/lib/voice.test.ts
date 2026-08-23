@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { assignVoices, VOICES, type Voice } from "@app/lib/voice";
+import {
+  assignVoices,
+  PROSE_STEPS,
+  proseStep,
+  VOICES,
+  type Voice,
+} from "@app/lib/voice";
 
 /** Ids in the shape ids.go mints them: a prefix, a shared millisecond, a random tail. */
 function ids(count: number): { id: string }[] {
@@ -59,5 +65,32 @@ describe("assignVoices", () => {
 
   it("has nothing to say about an empty page", () => {
     expect(assignVoices([])).toEqual([]);
+  });
+});
+
+describe("proseStep", () => {
+  it("is the same every time, so type does not resize under a reader", () => {
+    const id = "a_06G30HM6D10P236HGJDFTSHXFW";
+    expect(proseStep(id)).toBe(proseStep(id));
+  });
+
+  it("uses the whole ladder", () => {
+    // Every step reachable, or the range is narrower than the stylesheet claims.
+    const seen = new Set(
+      Array.from({ length: 400 }, (_, i) => proseStep("a_" + i)),
+    );
+    expect(seen.size).toBe(PROSE_STEPS);
+  });
+
+  it("does not move in step with the face", () => {
+    // Both come from one hash. If they took the same slice, every Oswald headline would sit
+    // over the same size of prose — a pattern, which is the thing this is trying not to be.
+    const ids = Array.from({ length: 600 }, (_, i) => "a_" + i);
+    const pairs = new Set(
+      assignVoices(ids.map((id) => ({ id }))).map(
+        ({ article, voice }) => voice + ":" + proseStep(article.id),
+      ),
+    );
+    expect(pairs.size).toBe(VOICES.length * PROSE_STEPS);
   });
 });

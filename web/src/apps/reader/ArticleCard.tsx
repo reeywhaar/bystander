@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
-import type { Voice } from "@app/lib/voice";
+import { proseStep, type Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -46,7 +46,6 @@ export function ArticleCard({
   onRead: (id: string, read: boolean) => void;
 }) {
   const read = article.read_at !== null;
-  const big = article.slot === "lead" || article.slot === "feature";
   const showImage = article.image_url !== "" && article.slot !== "brief";
   const showSummary = article.summary !== "" && article.slot !== "brief";
 
@@ -98,7 +97,11 @@ export function ArticleCard({
 
       {showSummary ? (
         <div
-          className={`prose-summary mt-2 text-ink-muted ${big ? "text-base" : "text-sm"}`}
+          // No size utility, for the same reason the headline has none: the size is this
+          // story's own, from a ladder in styles.css, and a `text-base` here would win the
+          // cascade and flatten it. Larger than it began, too — the standfirst is the only
+          // prose on the page; everything else here is scanned, this is read.
+          className={`prose-summary prose-step-${proseStep(article.id)} mt-2 text-ink-muted`}
           // Sanitized on the server, at ingest, once — an allowlist of a dozen tags with
           // every script and every attribute but a resolved href removed. It is not
           // sanitized again here on purpose: a second sanitizer is a second thing to be
