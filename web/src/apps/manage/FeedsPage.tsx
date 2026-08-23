@@ -13,20 +13,17 @@ import {
   toImport,
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
+import { FeedDialog } from "@app/apps/manage/FeedDialog";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
-import { RenameDialog } from "@app/apps/manage/RenameDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
-import { PencilIcon } from "@app/components/ui/icons/PencilIcon";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { tagLabel } from "@app/lib/tags";
-import { ARTICLE_WINDOWS } from "@app/lib/constants";
 import { since } from "@app/lib/time";
 import {
   useDiscoverFeeds,
   useFeeds,
   useImportFeeds,
-  useRemoveFeed,
   useTags,
   useUpdateFeed,
 } from "@app/queries/hooks";
@@ -36,7 +33,6 @@ export function FeedsPage() {
   const tags = useTags();
   const discover = useDiscoverFeeds();
   const add = useImportFeeds();
-  const rename = useUpdateFeed();
 
   const [url, setUrl] = useState("");
   // What the site turned out to offer, once there is more than one thing to choose from.
@@ -50,7 +46,7 @@ export function FeedsPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [renaming, setRenaming] = useState<Subscription | null>(null);
+  const [editing, setEditing] = useState<Subscription | null>(null);
 
   function subscribe(feed: PlannedFeed) {
     // One feed and no choice to make: straight in, untagged, as it always was. The picker
@@ -144,16 +140,10 @@ export function FeedsPage() {
         tags={tags.data}
       />
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
-      <RenameDialog
-        feed={renaming}
-        saving={rename.isPending}
-        onClose={() => setRenaming(null)}
-        onSave={(title) =>
-          rename.mutate(
-            { id: renaming?.id ?? "", changes: { title_override: title } },
-            { onSuccess: () => setRenaming(null) },
-          )
-        }
+      <FeedDialog
+        feed={editing}
+        tags={tags.data ?? []}
+        onClose={() => setEditing(null)}
       />
 
       <Modal
@@ -225,7 +215,7 @@ export function FeedsPage() {
               key={feed.id}
               feed={feed}
               tags={tags.data}
-              onRename={setRenaming}
+              onOpen={setEditing}
             />
           ))
         )}
@@ -237,15 +227,13 @@ export function FeedsPage() {
 function FeedRow({
   feed,
   tags,
-  onRename,
+  onOpen,
 }: {
   feed: Subscription;
   tags: Tag[];
-  onRename: (feed: Subscription) => void;
+  onOpen: (feed: Subscription) => void;
 }) {
   const update = useUpdateFeed();
-  const remove = useRemoveFeed();
-  const [open, setOpen] = useState(false);
 
   const failing = feed.failure_count > 0;
   // Full paths, so a nested tag reads as "News / World" rather than losing where it sits.
@@ -253,11 +241,8 @@ function FeedRow({
 
   return (
     <div className="border-b border-rule py-3">
-      {/* Two columns, one line each. The name gives way first — trimmed with an ellipsis
-          and carrying the whole of itself in a title — so a long one makes the row no
-          taller and never shoves the slider onto a line of its own, which is what turned
-          this list into a staircase. */}
       {/* Side by side on a wide screen, stacked on a narrow one.
+
           The priority control is a fixed ~16rem — a label that must not resize plus a
           track — which on a phone leaves nothing for the name, and `truncate` duly
           truncated it to nothing.
@@ -267,39 +252,25 @@ function FeedRow({
           belongs beside the name on a wide screen and under everything on a narrow one. */}
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <div className="order-1 flex min-w-0 basis-full items-baseline gap-x-2 sm:flex-1 sm:basis-auto">
+          {/* The name is the way into everything else about this feed. One affordance
+              rather than a pencil for the title and a disclosure for the rest. */}
           <button
             type="button"
-            onClick={() => setOpen((was) => !was)}
-            aria-expanded={open}
+            onClick={() => onOpen(feed)}
             title={feed.title}
             className="min-w-0 truncate text-left font-serif text-lg text-ink hover:text-accent"
           >
             {feed.title}
           </button>
-
-          {/* Beside the name, because that is what it renames. Its own button rather than
-              part of the toggle, so opening a row and renaming it stay separate gestures.
-              Nothing else shares this line: the name is the thing being looked for, and a
-              timestamp beside it is just something to read past. */}
-          <button
-            type="button"
-            onClick={() => onRename(feed)}
-            aria-label={`Rename ${feed.title}`}
-            title="Rename"
-            className="shrink-0 text-ink-faint hover:text-ink"
-          >
-            <PencilIcon />
-          </button>
         </div>
 
         {/* A quieter line for what the name has no room for: where this feed is filed,
-            and how long it has been here. The tags drop away when the row is open,
-            because the chips below are the same information and can be acted on. */}
+            how long it has been here, and whether it is answering. */}
         <p className="order-2 basis-full text-xs break-words text-ink-faint sm:order-3">
-          {!open && labels.length > 0 ? (
+          {labels.length > 0 ? (
             <span className="text-ink-muted">{labels.join(" · ")}</span>
           ) : null}
-          {!open && labels.length > 0 ? " · " : ""}
+          {labels.length > 0 ? " · " : ""}
           added {since(feed.created_at)}
           {failing ? (
             <>
@@ -315,6 +286,8 @@ function FeedRow({
           )}
         </p>
 
+        {/* The one setting that stays in the list: it is a dial somebody nudges while
+            looking at the whole of it, not something they go and open a feed to change. */}
         <div className="order-3 shrink-0 sm:order-2 sm:ml-auto">
           <Priority
             label={`How often ${feed.title} appears`}
@@ -325,96 +298,6 @@ function FeedRow({
           />
         </div>
       </div>
-
-      {open ? (
-        <div className="mt-3 flex flex-col gap-3 pl-1">
-          <p className="text-xs break-all text-ink-faint">{feed.url}</p>
-
-          {failing ? <Alert>{feed.last_error}</Alert> : null}
-
-          <div className="flex flex-wrap items-center gap-2">
-            {tags.length === 0 ? (
-              <p className="text-xs text-ink-muted">
-                No tags yet. Tags are how you say which kinds of thing appear
-                more often.
-              </p>
-            ) : (
-              tags.map((tag) => {
-                const on = feed.tag_ids.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() =>
-                      update.mutate({
-                        id: feed.id,
-                        changes: {
-                          tag_ids: on
-                            ? feed.tag_ids.filter((id) => id !== tag.id)
-                            : [...feed.tag_ids, tag.id],
-                        },
-                      })
-                    }
-                    className={`rounded-full border px-2.5 py-1 text-xs ${
-                      on
-                        ? "border-accent bg-accent/10 text-accent"
-                        : "border-rule text-ink-muted hover:text-ink"
-                    }`}
-                  >
-                    {tag.name}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          {/* How far back this feed reaches, not how far back the reader does. A news feed
-              worth a day and a blog worth a year are exactly the pair one number could not
-              serve, which is why it sits here rather than in the settings. */}
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-ink-muted">
-              Reaches back — articles older than this are not picked from this
-              feed.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {ARTICLE_WINDOWS.map((window) => {
-                const on = window.seconds === feed.article_window;
-                return (
-                  <button
-                    key={window.seconds}
-                    type="button"
-                    onClick={() =>
-                      update.mutate({
-                        id: feed.id,
-                        changes: { article_window: window.seconds },
-                      })
-                    }
-                    className={`rounded-md border px-2.5 py-1 text-xs ${
-                      on
-                        ? "border-accent bg-accent/10 text-accent"
-                        : "border-rule text-ink-muted hover:text-ink"
-                    }`}
-                  >
-                    {window.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <Button
-              variant="danger"
-              onClick={() => remove.mutate(feed.id)}
-              disabled={remove.isPending}
-            >
-              Stop following
-            </Button>
-          </div>
-          {update.error ? <Alert>{update.error.message}</Alert> : null}
-          {remove.error ? <Alert>{remove.error.message}</Alert> : null}
-        </div>
-      ) : null}
     </div>
   );
 }

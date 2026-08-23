@@ -81,9 +81,9 @@ describe("FeedsPage", () => {
     expect(await line()).toBe("added 3 days ago · fetched 10 minutes ago");
   });
 
-  // Opening the row shows the tags as chips that can be acted on, so the summary would be
-  // the same information twice.
-  it("drops the tag summary once the row is open", async () => {
+  // Everything about a feed now lives behind its name, so the summary line is not
+  // something that appears and disappears — it is simply always there.
+  it("opens everything about a feed from its name", async () => {
     render([subscription({ tag_ids: ["t_art"] })], [art]);
 
     expect(await line()).toBe(
@@ -92,8 +92,22 @@ describe("FeedsPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "The Example" }));
 
-    expect(await line()).toBe("added 3 days ago · fetched 10 minutes ago");
-    expect(screen.getByRole("button", { name: "Art" })).toBeInTheDocument();
+    // The name, the filing and the reach, all in one place.
+    expect(screen.getByLabelText("What to call it")).toHaveValue("The Example");
+    expect(
+      screen.getByRole("button", { name: "Art", pressed: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "A week", pressed: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Stop following" }),
+    ).toBeInTheDocument();
+
+    // …and the summary is still under the row behind it.
+    expect(await line()).toBe(
+      "Art · added 3 days ago · fetched 10 minutes ago",
+    );
   });
 
   // Some publishers title their feed "technology archives | designboom | architecture &
@@ -105,7 +119,7 @@ describe("FeedsPage", () => {
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /Rename unbearable/ }),
+      await screen.findByRole("button", { name: "unbearable | name | here" }),
     );
 
     const field = screen.getByLabelText("What to call it");
@@ -114,14 +128,15 @@ describe("FeedsPage", () => {
 
     await userEvent.clear(field);
     await userEvent.type(field, "Design Boom");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
 
     const sent = transport.calls.find((call) => call.method === "PATCH");
     expect(sent?.body).toEqual({ title_override: "Design Boom" });
   });
 
-  // Typing the publisher's name back is the same as having no override at all.
-  it("stores no override when the name matches the publisher's", async () => {
+  // Clearing the field is how you go back to the publisher's name, and storing an override
+  // that says the same thing as theirs would be storing nothing.
+  it("stores no override when the name is cleared", async () => {
     const { transport } = render(
       [
         subscription({
@@ -133,13 +148,25 @@ describe("FeedsPage", () => {
       [],
     );
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: /Rename Mine/ }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Use theirs" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Mine" }));
+
+    await userEvent.clear(screen.getByLabelText("What to call it"));
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
 
     const sent = transport.calls.find((call) => call.method === "PATCH");
     expect(sent?.body).toEqual({ title_override: "" });
+  });
+
+  // The reach is the feed's, not the reader's.
+  it("sets how far back a page reaches into one feed", async () => {
+    const { transport } = render([subscription()], []);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "The Example" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "A month" }));
+
+    const sent = transport.calls.find((call) => call.method === "PATCH");
+    expect(sent?.body).toEqual({ article_window: 2592000 });
   });
 });
