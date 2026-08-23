@@ -45,8 +45,14 @@ export function Modal({
         event.preventDefault();
         onClose();
       }}
-      className="w-[min(28rem,calc(100vw-2rem))] rounded-md border border-rule bg-paper-raised
-        p-0 text-ink backdrop:bg-black/50"
+      // `m-auto` is load-bearing. A modal <dialog> is centred by the user agent with
+      // `inset: 0; margin: auto`, and Tailwind's preflight resets `margin: 0` on every
+      // element — which leaves only the inset, and drops the dialog in the top-left corner.
+      //
+      // `max-h` and the scroll are for the picker: a site can name a dozen feeds, and a
+      // list that runs off the bottom of the screen has no way back.
+      className="m-auto max-h-[85dvh] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto
+        rounded-md border border-rule bg-paper-raised p-0 text-ink backdrop:bg-black/50"
     >
       {open ? (
         <div className="flex flex-col gap-4 p-5">
