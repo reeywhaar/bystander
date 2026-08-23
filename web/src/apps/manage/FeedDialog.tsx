@@ -60,10 +60,13 @@ export function FeedDialog({
   function save() {
     if (!feed) return;
 
-    // Empty means the publisher's name — which is what the placeholder is showing — and so
-    // does typing theirs out. There is no reason to store an override that says the same
-    // thing as the title it overrides.
+    // Empty is refused rather than treated as a reset — a feed with no name at all is not
+    // something anybody means to ask for, and "Use publisher title" is the way back.
     const trimmed = name.trim();
+    if (trimmed === "") return;
+
+    // Typing the publisher's title out is the same as having no override: there is no
+    // reason to store one that says the same thing as the title it overrides.
     const override = trimmed === publisher ? "" : trimmed;
 
     const sameTags =
@@ -94,14 +97,30 @@ export function FeedDialog({
 
   return (
     <Modal open onClose={onClose} title={feed.title}>
-      <Field
-        label="What to call it"
-        value={name}
-        maxLength={200}
-        placeholder={publisher}
-        onChange={(event) => setName(event.target.value)}
-        hint="Leave it empty to use the publisher's own name."
-      />
+      <div className="flex flex-col gap-1.5">
+        <Field
+          label="What to call it"
+          value={name}
+          maxLength={200}
+          placeholder={publisher}
+          onChange={(event) => setName(event.target.value)}
+        />
+
+        {/* A way back to the publisher's title that does not require knowing it, or
+            retyping it. It fills the field rather than saving, so it is a suggestion to
+            look at rather than a decision already taken — and it goes once the field
+            already says that. */}
+        {name.trim() !== publisher ? (
+          <button
+            type="button"
+            onClick={() => setName(publisher)}
+            className="self-start border-b border-dashed border-ink-faint text-xs
+              text-ink-muted hover:border-ink hover:text-ink"
+          >
+            Use publisher title
+          </button>
+        ) : null}
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <p className="text-xs text-ink-muted">Filed under</p>
@@ -184,7 +203,11 @@ export function FeedDialog({
           {/* Closing any other way — Cancel, Escape, the backdrop — leaves the feed as it
               was. Save is the only thing that writes. */}
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save}>
+          <Button
+            variant="primary"
+            onClick={save}
+            disabled={name.trim() === "" || update.isPending}
+          >
             {update.isPending ? "Saving…" : "Save"}
           </Button>
         </span>

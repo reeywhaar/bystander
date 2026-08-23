@@ -115,7 +115,7 @@ describe("FeedsPage", () => {
 
   // Some publishers title their feed "technology archives | designboom | architecture &
   // design magazine". The name in a list is the subscriber's to choose.
-  it("renames a feed, showing whose name an empty field falls back to", async () => {
+  it("renames a feed", async () => {
     const { transport } = render(
       [subscription({ title: "unbearable | name | here" })],
       [],
@@ -129,9 +129,6 @@ describe("FeedsPage", () => {
     expect(field).toHaveValue("unbearable | name | here");
 
     await userEvent.clear(field);
-    // Emptied, the field shows what it would fall back to rather than nothing at all.
-    expect(field).toHaveAttribute("placeholder", "The Example");
-
     await userEvent.type(field, "Design Boom");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -141,32 +138,20 @@ describe("FeedsPage", () => {
     });
   });
 
-  // Clearing it is how you go back to the publisher's name, and an override that says the
-  // same thing as theirs is no override at all.
-  it("stores no override when the name is cleared", async () => {
-    const { transport } = render(
-      [
-        subscription({
-          title: "Mine",
-          feed_title: "Theirs",
-          title_override: "Mine",
-        }),
-      ],
-      [],
+  // A feed with no name at all is not something anybody means to ask for.
+  it("refuses to save a feed with no name", async () => {
+    render([subscription()], []);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "The Example" }),
     );
-
-    await userEvent.click(await screen.findByRole("button", { name: "Mine" }));
     await userEvent.clear(screen.getByLabelText("What to call it"));
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      const sent = transport.calls.find((call) => call.method === "PATCH");
-      expect(sent?.body).toMatchObject({ title_override: "" });
-    });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  // Typing the publisher's own name out is the same as leaving it empty.
-  it("stores no override when the name matches the publisher's", async () => {
+  // The way back to the publisher's title, without having to know it or retype it.
+  it("puts the publisher's title back on request", async () => {
     const { transport } = render(
       [
         subscription({
@@ -179,14 +164,27 @@ describe("FeedsPage", () => {
     );
 
     await userEvent.click(await screen.findByRole("button", { name: "Mine" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Use publisher title" }),
+    );
 
     const field = screen.getByLabelText("What to call it");
-    await userEvent.clear(field);
-    await userEvent.type(field, "Theirs");
+    expect(field).toHaveValue("Theirs");
+    // It fills the field rather than saving, so it is a suggestion until Save is pressed.
+    expect(
+      transport.calls.filter((call) => call.method === "PATCH"),
+    ).toHaveLength(0);
+    // And it goes, because the field already says that.
+    expect(
+      screen.queryByRole("button", { name: "Use publisher title" }),
+    ).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       const sent = transport.calls.find((call) => call.method === "PATCH");
+      // Their title stored as no override, rather than as an override saying the same
+      // thing as the title it overrides.
       expect(sent?.body).toMatchObject({ title_override: "" });
     });
   });
