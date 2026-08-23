@@ -1,6 +1,7 @@
 import { ApiError } from "@app/api/error";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
+import { Slider } from "@app/components/ui/Slider";
 import { Spinner } from "@app/components/ui/Spinner";
 import { EDITION_INTERVALS, EDITION_SIZE } from "@app/lib/constants";
 import { until } from "@app/lib/time";
@@ -64,24 +65,15 @@ export function SettingsPage() {
           seen.
         </p>
 
-        <label className="flex items-center gap-4">
-          <input
-            type="range"
-            min={EDITION_SIZE.min}
-            max={EDITION_SIZE.max}
-            step={EDITION_SIZE.step}
-            value={current.edition_size}
-            disabled={update.isPending}
-            onChange={(event) =>
-              update.mutate({ edition_size: Number(event.target.value) })
-            }
-            className="w-64 accent-[var(--accent)]"
-            aria-label="Articles on a page"
-          />
-          <span className="tabular-nums text-ink">
-            {current.edition_size} articles
-          </span>
-        </label>
+        <Slider
+          value={current.edition_size}
+          min={EDITION_SIZE.min}
+          max={EDITION_SIZE.max}
+          step={EDITION_SIZE.step}
+          onCommit={(size) => update.mutate({ edition_size: size })}
+          label="Articles on a page"
+          format={(size) => <span className="text-ink">{size} articles</span>}
+        />
       </section>
 
       <section>

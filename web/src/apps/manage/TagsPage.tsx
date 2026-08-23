@@ -140,7 +140,6 @@ function TagRow({
       <Priority
         label={`How often ${tag.name} appears`}
         value={tag.priority}
-        disabled={update.isPending}
         onChange={(priority) =>
           update.mutate({ id: tag.id, changes: { priority } })
         }

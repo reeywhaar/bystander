@@ -227,7 +227,6 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}
-            disabled={update.isPending}
             onChange={(priority) =>
               update.mutate({ id: feed.id, changes: { priority } })
             }

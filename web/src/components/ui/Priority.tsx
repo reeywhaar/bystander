@@ -1,4 +1,5 @@
 import { describePriority } from "@app/lib/constants";
+import { Slider } from "@app/components/ui/Slider";
 
 /**
  * A priority, 0..100.
@@ -10,31 +11,26 @@ import { describePriority } from "@app/lib/constants";
 export function Priority({
   value,
   onChange,
-  disabled,
   label,
 }: {
   value: number;
   onChange: (value: number) => void;
-  disabled?: boolean;
   label: string;
 }) {
   return (
-    <label className="flex items-center gap-3 text-xs text-ink-muted">
-      <span className="sr-only">{label}</span>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={5}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-32 accent-[var(--accent)]"
-        aria-label={label}
-      />
-      <span className={`w-24 tabular-nums ${value === 0 ? "text-accent" : ""}`}>
-        {value} · {describePriority(value)}
-      </span>
-    </label>
+    <Slider
+      value={value}
+      min={0}
+      max={100}
+      step={5}
+      onCommit={onChange}
+      label={label}
+      className="w-32"
+      format={(priority) => (
+        <span className={`w-24 ${priority === 0 ? "text-accent" : ""}`}>
+          {priority} · {describePriority(priority)}
+        </span>
+      )}
+    />
   );
 }
