@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/feeds", s.requireSession(s.listFeeds))
 	mux.Handle("POST /api/feeds", s.requireSession(s.addFeed))
+	mux.Handle("POST /api/feeds/discover", s.requireSession(s.discoverFeeds))
 	mux.Handle("GET /api/feeds/{id}", s.requireSession(s.getFeed))
 	mux.Handle("PATCH /api/feeds/{id}", s.requireSession(s.patchFeed))
 	mux.Handle("DELETE /api/feeds/{id}", s.requireSession(s.deleteFeed))

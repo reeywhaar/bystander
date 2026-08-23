@@ -1,13 +1,15 @@
 import { useState, type FormEvent } from "react";
 
-import type { Subscription, Tag } from "@app/api/types";
+import type { Candidate, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
+import { Modal } from "@app/components/ui/Modal";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { since } from "@app/lib/time";
 import {
   useAddFeed,
+  useDiscoverFeeds,
   useFeeds,
   useRemoveFeed,
   useTags,
@@ -17,19 +19,51 @@ import {
 export function FeedsPage() {
   const feeds = useFeeds();
   const tags = useTags();
+  const discover = useDiscoverFeeds();
   const add = useAddFeed();
 
   const [url, setUrl] = useState("");
+  // What the site turned out to offer, once there is more than one thing to choose from.
+  const [choices, setChoices] = useState<Candidate[] | null>(null);
+  // Anything that stopped the address becoming a subscription. A dialog rather than a line
+  // of text under the field, because this is the end of the attempt and not a hint about
+  // it — the address needs changing, or the site has no feed at all.
+  const [problem, setProblem] = useState<string | null>(null);
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function subscribe(feedURL: string) {
     add.mutate(
-      { url },
+      { url: feedURL },
       {
-        onSuccess: () => setUrl(""),
+        onSuccess: () => {
+          setUrl("");
+          setChoices(null);
+        },
+        onError: (error) => {
+          setChoices(null);
+          setProblem(error.message);
+        },
       },
     );
   }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setProblem(null);
+
+    // Ask what the address is before subscribing to it. A site names its feeds in the
+    // markup and usually names several — posts, comments, a podcast — and picking the
+    // first is how somebody ends up following comments they never wanted.
+    discover.mutate(url, {
+      onSuccess: ({ candidates }) => {
+        if (candidates.length === 1 && candidates[0])
+          subscribe(candidates[0].url);
+        else setChoices(candidates);
+      },
+      onError: (error) => setProblem(error.message),
+    });
+  }
+
+  const working = discover.isPending || add.isPending;
 
   if (feeds.isPending || tags.isPending) return <Spinner />;
   if (feeds.error) throw feeds.error;
@@ -49,17 +83,74 @@ export function FeedsPage() {
               className="flex-1 rounded-md border border-rule bg-paper-raised px-3 py-2 text-sm
                 placeholder:text-ink-faint focus-visible:outline-2 focus-visible:outline-accent"
             />
-            <Button type="submit" variant="primary" disabled={add.isPending}>
-              {add.isPending ? "Looking…" : "Add"}
+            <Button type="submit" variant="primary" disabled={working}>
+              {discover.isPending
+                ? "Looking…"
+                : add.isPending
+                  ? "Adding…"
+                  : "Add"}
             </Button>
           </div>
           <p className="text-xs text-ink-muted">
-            A site's address is enough — bystander follows it to the feed it
-            names.
+            A site's address is enough — bystander looks for the feeds it offers
+            and asks which you want.
           </p>
-          {add.error ? <Alert>{add.error.message}</Alert> : null}
         </form>
       </section>
+
+      <Modal
+        open={choices !== null}
+        onClose={() => setChoices(null)}
+        title={choices?.length === 0 ? "No feeds there" : "Which one?"}
+      >
+        {choices?.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            That page does not offer a feed.
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-ink-muted">
+              That site offers {choices?.length} feeds. Pick the one you want.
+            </p>
+            <ul className="flex flex-col gap-1">
+              {choices?.map((candidate) => (
+                <li key={candidate.url}>
+                  <button
+                    type="button"
+                    onClick={() => subscribe(candidate.url)}
+                    disabled={add.isPending}
+                    className="w-full rounded-md border border-rule px-3 py-2 text-left
+                      hover:border-accent disabled:opacity-50"
+                  >
+                    <span className="block text-sm text-ink">
+                      {candidate.title || candidate.url}
+                    </span>
+                    <span className="block truncate text-xs text-ink-faint">
+                      {candidate.url}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="flex justify-end">
+          <Button onClick={() => setChoices(null)}>Cancel</Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={problem !== null}
+        onClose={() => setProblem(null)}
+        title="That did not work"
+      >
+        <p className="text-sm text-ink-muted">{problem}</p>
+        <div className="flex justify-end">
+          <Button variant="primary" onClick={() => setProblem(null)}>
+            Close
+          </Button>
+        </div>
+      </Modal>
 
       <section className="flex flex-col gap-1">
         {feeds.data.length === 0 ? (

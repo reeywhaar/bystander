@@ -122,21 +122,45 @@ func (f *Fetcher) Fetch(ctx context.Context, feed *store.Feed, now time.Time) (*
 	return result, nil
 }
 
-// Discover resolves what somebody typed into a feed.
+// Candidate is a feed that a URL offers.
+type Candidate struct {
+	// URL is absolute and ready to subscribe to.
+	URL string
+	// Title is the publisher's own label. From the feed itself when the URL was a feed,
+	// and from the <link title="…"> attribute when a page named it — which is how a site
+	// distinguishes "Posts" from "Comments" from "Podcast".
+	Title string
+	// Type is the content type the page declared, empty when the URL was itself a feed.
+	Type string
+}
+
+// Discovery is what a URL turned out to be.
+type Discovery struct {
+	// Feed is the parsed feed when the URL was one itself, so nothing has to fetch it a
+	// second time to find that out.
+	Feed    *Parsed
+	FeedURL string
+
+	// Candidates is every feed on offer, in the order the page named them. Exactly one
+	// entry when the URL was itself a feed.
+	Candidates []Candidate
+}
+
+// Discover works out what somebody typed.
 //
-// Tries the URL as a feed, and if that is a web page instead, follows the first
-// <link rel="alternate"> it names. Somebody pasting example.com and being told "that is
-// not a feed" when the feed is one hop away is a bad first minute, and it is the first
-// minute everybody has.
-func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (string, *Parsed, error) {
+// A feed URL is a feed. A web page is a page that may name feeds, and it usually names more
+// than one — posts, comments, a podcast, a per-category feed. Returning all of them lets
+// somebody choose rather than being handed whichever came first in the markup, which is
+// how you end up subscribed to a comments feed you did not want.
+func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (*Discovery, error) {
 	canonical, err := store.CanonicalURL(rawURL)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	body, finalURL, err := f.get(ctx, canonical)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// gofeed refuses an HTML page outright, but it is lenient enough that a page with one
@@ -144,23 +168,45 @@ func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (s
 	// what tells "a feed with nothing in it yet" from "not a feed".
 	if parsed, err := Parse(strings.NewReader(body), finalURL, "", now); err == nil &&
 		(len(parsed.Items) > 0 || parsed.Title != "") {
-		return finalURL, parsed, nil
+		return &Discovery{
+			Feed:       parsed,
+			FeedURL:    finalURL,
+			Candidates: []Candidate{{URL: finalURL, Title: parsed.Title}},
+		}, nil
 	}
 
-	href := feedLink(body, finalURL)
-	if href == "" {
-		return "", nil, fmt.Errorf("%w: %s", ErrNotAFeed, canonical)
+	candidates := feedLinks(body, finalURL)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNotAFeed, canonical)
 	}
+	return &Discovery{Candidates: candidates}, nil
+}
 
-	linked, linkedURL, err := f.get(ctx, href)
+// Resolve turns what somebody typed into one feed, ready to subscribe to.
+//
+// Takes the first candidate when a page names several. The interface asks rather than
+// guessing — see Discover — but this is what a direct POST to /api/feeds does, and
+// guessing beats refusing for a caller that did not ask to be consulted.
+func (f *Fetcher) Resolve(ctx context.Context, rawURL string, now time.Time) (string, *Parsed, error) {
+	found, err := f.Discover(ctx, rawURL, now)
 	if err != nil {
 		return "", nil, err
 	}
-	parsed, err := Parse(strings.NewReader(linked), linkedURL, "", now)
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: %s names a feed at %s, but it did not parse", ErrNotAFeed, canonical, href)
+	if found.Feed != nil {
+		return found.FeedURL, found.Feed, nil
 	}
-	return linkedURL, parsed, nil
+
+	first := found.Candidates[0]
+	body, finalURL, err := f.get(ctx, first.URL)
+	if err != nil {
+		return "", nil, err
+	}
+	parsed, err := Parse(strings.NewReader(body), finalURL, "", now)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %s names a feed at %s, but it did not parse",
+			ErrNotAFeed, rawURL, first.URL)
+	}
+	return finalURL, parsed, nil
 }
 
 func (f *Fetcher) get(ctx context.Context, target string) (body, finalURL string, err error) {
@@ -188,30 +234,41 @@ func (f *Fetcher) get(ctx context.Context, target string) (body, finalURL string
 }
 
 // feedTypes are the content types a <link rel="alternate"> may name for this to be a feed.
+//
+// Not "application/json". JSON Feed's own type is "application/feed+json"; plain
+// application/json is what WordPress declares for its REST representation of a page, which
+// means every WordPress site on the internet — a large fraction of them — would offer a
+// wp-json endpoint as a feed to subscribe to. Somebody pasting a JSON feed's URL directly
+// still gets it, because that path parses the body rather than trusting a declared type.
 var feedTypes = map[string]bool{
 	"application/rss+xml":   true,
 	"application/atom+xml":  true,
 	"application/feed+json": true,
-	"application/json":      true,
 	"text/xml":              true,
 	"application/xml":       true,
 }
 
-// feedLink finds the feed a web page names.
-func feedLink(document, base string) string {
+// feedLinks finds every feed a web page names, in the order it named them.
+//
+// Deduplicated by URL, because a page that declares the same feed in two places — once for
+// the browser and once for a reader extension — is naming one feed, not two.
+func feedLinks(document, base string) []Candidate {
 	baseURL, _ := url.Parse(base)
+
+	var out []Candidate
+	seen := make(map[string]bool)
 
 	tokenizer := html.NewTokenizer(strings.NewReader(document))
 	for {
 		switch tokenizer.Next() {
 		case html.ErrorToken:
-			return ""
+			return out
 		case html.StartTagToken, html.SelfClosingTagToken:
 			name, hasAttr := tokenizer.TagName()
 			if string(name) != "link" || !hasAttr {
 				continue
 			}
-			var rel, ctype, href string
+			var rel, ctype, href, title string
 			for {
 				key, value, more := tokenizer.TagAttr()
 				switch string(key) {
@@ -221,16 +278,22 @@ func feedLink(document, base string) string {
 					ctype = strings.ToLower(strings.TrimSpace(string(value)))
 				case "href":
 					href = string(value)
+				case "title":
+					title = strings.TrimSpace(string(value))
 				}
 				if !more {
 					break
 				}
 			}
-			if strings.Contains(rel, "alternate") && feedTypes[ctype] && href != "" {
-				if resolved := safeURL(href, baseURL); resolved != "" {
-					return resolved
-				}
+			if !strings.Contains(rel, "alternate") || !feedTypes[ctype] || href == "" {
+				continue
 			}
+			resolved := safeURL(href, baseURL)
+			if resolved == "" || seen[resolved] {
+				continue
+			}
+			seen[resolved] = true
+			out = append(out, Candidate{URL: resolved, Title: title, Type: ctype})
 		}
 	}
 }

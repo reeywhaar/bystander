@@ -97,7 +97,7 @@ func (s *Server) addFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feedURL, parsed, err := s.fetcher.Discover(r.Context(), body.URL, s.store.Now())
+	feedURL, parsed, err := s.fetcher.Resolve(r.Context(), body.URL, s.store.Now())
 	if err != nil {
 		if errors.Is(err, feeds.ErrNotAFeed) || errors.Is(err, store.ErrInvalid) {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -136,6 +136,58 @@ func (s *Server) addFeed(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Info("a feed was added", "principal", p.ID, "feed", feed.ID, "url", feed.CanonicalURL)
 	writeJSON(w, http.StatusCreated, subscriptionOf(sub))
+}
+
+type candidateBody struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+	Type  string `json:"type"`
+}
+
+type discoverRequest struct {
+	URL string `json:"url"`
+}
+
+// discoverFeeds says what a URL turns out to be, without subscribing to anything.
+//
+// A site usually names more than one feed — posts, comments, a podcast, one per category —
+// and handing somebody whichever came first in the markup is how they end up subscribed to
+// a comments feed they did not want. So the interface asks. `POST /api/feeds` still guesses
+// for a caller that did not ask to be consulted.
+func (s *Server) discoverFeeds(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	var body discoverRequest
+	if !decode(w, r, &body) {
+		return
+	}
+	// Shares the ceiling on adding a feed: this is the endpoint that actually makes the
+	// outbound request, so it is the one that needs limiting.
+	if !s.discovery.allow(p.ID) {
+		writeError(w, http.StatusTooManyRequests, "too many feeds at once; wait a minute")
+		return
+	}
+
+	found, err := s.fetcher.Discover(r.Context(), body.URL, s.store.Now())
+	if err != nil {
+		if errors.Is(err, feeds.ErrNotAFeed) {
+			writeError(w, http.StatusBadRequest, "that page does not offer a feed")
+			return
+		}
+		if errors.Is(err, store.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// A publisher being unreachable is not our failure, and a 500 would say it was.
+		writeError(w, http.StatusBadRequest, "could not read that address: "+err.Error())
+		return
+	}
+
+	out := make([]candidateBody, 0, len(found.Candidates))
+	for _, candidate := range found.Candidates {
+		out = append(out, candidateBody{URL: candidate.URL, Title: candidate.Title, Type: candidate.Type})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"candidates": out})
 }
 
 type patchFeedRequest struct {

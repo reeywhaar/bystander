@@ -375,3 +375,101 @@ func TestReadArticlesAreScopedToTheirReader(t *testing.T) {
 		t.Errorf("bob can see %d of alice's read articles", len(bobs))
 	}
 }
+
+// A site usually names more than one feed. Handing somebody whichever came first in the
+// markup is how they end up subscribed to a comments feed they did not want.
+func TestDiscoverListsEveryFeedASiteNames(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	posts := newFeedServer(t, 3)
+	comments := newFeedServer(t, 2)
+	site := newSiteWithFeeds(t, map[string]string{
+		"Posts":    posts.URL,
+		"Comments": comments.URL,
+	})
+
+	var found struct {
+		Candidates []candidateBody `json:"candidates"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": site.URL}), http.StatusOK, &found)
+
+	if len(found.Candidates) != 2 {
+		t.Fatalf("%d candidates, want 2: %+v", len(found.Candidates), found.Candidates)
+	}
+	titles := map[string]bool{}
+	for _, candidate := range found.Candidates {
+		titles[candidate.Title] = true
+		if candidate.URL == "" {
+			t.Error("a candidate has no URL to subscribe to")
+		}
+	}
+	// The <link title> is what distinguishes them, and it is the only thing that can
+	// without fetching each one.
+	if !titles["Posts"] || !titles["Comments"] {
+		t.Errorf("candidate titles = %v, want the ones the page gave", titles)
+	}
+
+	// Nothing was subscribed to: discovery only looks.
+	var subs []subscriptionBody
+	h.expect(h.do(http.MethodGet, "/api/feeds", nil), http.StatusOK, &subs)
+	if len(subs) != 0 {
+		t.Errorf("discovery subscribed to %d feeds", len(subs))
+	}
+}
+
+// A feed URL is a feed, and discovering it must not cost a second round trip to find out.
+func TestDiscoverOnAFeedUrl(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+	feed := newFeedServer(t, 3)
+
+	var found struct {
+		Candidates []candidateBody `json:"candidates"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": feed.URL}), http.StatusOK, &found)
+
+	if len(found.Candidates) != 1 {
+		t.Fatalf("%d candidates for a feed URL, want 1", len(found.Candidates))
+	}
+	if found.Candidates[0].Title != "The Example" {
+		t.Errorf("title = %q, want the feed's own", found.Candidates[0].Title)
+	}
+}
+
+func TestDiscoverOnAPageWithNoFeeds(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+	page := newPlainPage(t, `<!doctype html><html><head><title>Nothing here</title></head><body>hi</body></html>`)
+
+	var refusal errorBody
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": page.URL}), http.StatusBadRequest, &refusal)
+	if !contains(refusal.Error, "does not offer a feed") {
+		t.Errorf("refusal = %q", refusal.Error)
+	}
+}
+
+// The same page declaring one feed twice — once for the browser, once for a reader
+// extension — is naming one feed.
+func TestDiscoverDeduplicates(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	posts := newFeedServer(t, 3)
+	site := newPlainPage(t, `<!doctype html><html><head>`+
+		`<link rel="alternate" type="application/rss+xml" title="Posts" href="`+posts.URL+`">`+
+		`<link rel="alternate" type="application/atom+xml" title="Posts (Atom)" href="`+posts.URL+`">`+
+		`</head><body>x</body></html>`)
+
+	var found struct {
+		Candidates []candidateBody `json:"candidates"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/discover",
+		map[string]string{"url": site.URL}), http.StatusOK, &found)
+	if len(found.Candidates) != 1 {
+		t.Fatalf("%d candidates, want 1 after deduplication", len(found.Candidates))
+	}
+}

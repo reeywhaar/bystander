@@ -21,6 +21,7 @@ import {
   patchFeedsById,
   postFeeds,
 } from "@app/api/actions/feeds";
+import { postFeedsDiscover } from "@app/api/actions/discover";
 import { getRead } from "@app/api/actions/read";
 import { getSettings, patchSettings } from "@app/api/actions/settings";
 import {
@@ -142,6 +143,17 @@ export function useFeeds() {
   return useQuery({
     queryKey: qk.feeds,
     queryFn: ({ signal }) => callApi(getFeeds(), signal),
+  });
+}
+
+/**
+ * Asks what a URL is. A mutation rather than a query because it makes the server fetch
+ * somebody else's site — that is an action with a cost, not a cached read.
+ */
+export function useDiscoverFeeds() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (url: string) => callApi(postFeedsDiscover(url)),
   });
 }
 

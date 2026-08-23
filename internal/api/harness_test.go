@@ -189,6 +189,19 @@ func itoa(n int) string {
 	return string(digits)
 }
 
+// newSiteWithFeeds serves a home page declaring several feeds, the way a real site does.
+func newSiteWithFeeds(t *testing.T, feeds map[string]string) *httptest.Server {
+	t.Helper()
+
+	var links strings.Builder
+	for title, href := range feeds {
+		links.WriteString(`<link rel="alternate" type="application/rss+xml" title="` +
+			title + `" href="` + href + `">`)
+	}
+	return newPlainPage(t, `<!doctype html><html><head><title>A Site</title>`+
+		links.String()+`</head><body>a site</body></html>`)
+}
+
 // newPlainPage serves one HTML document, for the discovery cases.
 func newPlainPage(t *testing.T, document string) *httptest.Server {
 	t.Helper()
