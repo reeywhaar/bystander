@@ -105,7 +105,11 @@ export function ArticleCard({
         />
       ) : null}
 
-      <div className="mt-auto pt-3">
+      {/* Directly under the article, not `mt-auto`. A grid cell stretches to the height of
+          the tallest card in its row, so pinning this to the bottom left it stranded an
+          inch below a short summary with nothing in between — tidy in a mockup where every
+          card is the same length, and a hunt for the control on a real page. */}
+      <div className="pt-3">
         <button
           type="button"
           onClick={() => onRead(article.id, !read)}
