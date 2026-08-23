@@ -45,7 +45,7 @@ export function ArticleCard({
 
   return (
     <article
-      className={`slot-${article.slot} group flex flex-col ${read ? "is-read" : ""} transition-[opacity,filter] duration-200`}
+      className={`slot-${article.slot} flex flex-col ${read ? "is-read" : ""}`}
     >
       {showImage ? (
         <a
@@ -88,7 +88,7 @@ export function ArticleCard({
           target="_blank"
           rel="noopener noreferrer"
           {...opening(() => onRead(article.id, true))}
-          className="hover:text-accent hover:underline underline-offset-4"
+          className="hover:underline underline-offset-4"
         >
           {article.title}
         </a>
@@ -113,8 +113,11 @@ export function ArticleCard({
         <button
           type="button"
           onClick={() => onRead(article.id, !read)}
-          className="text-xs text-ink-faint opacity-0 transition-opacity group-hover:opacity-100
-            focus-visible:opacity-100 hover:text-ink"
+          // Always there, and dim. A control that exists only while the pointer is over it
+          // cannot be found by somebody who does not already know it is there, and cannot
+          // be reached by touch at all. Half weight keeps it out of the way of the reading
+          // without hiding it, and it does not brighten — nothing on this page moves.
+          className="text-xs text-ink-faint opacity-50"
         >
           {read ? "Mark unread" : "Mark read"}
         </button>
@@ -132,7 +135,7 @@ function SourceLine({ article }: { article: Article }) {
           href={article.feed.site_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:text-accent"
+          className="hover:underline"
         >
           {name}
         </a>
