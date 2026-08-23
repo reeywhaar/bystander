@@ -1,12 +1,19 @@
+import { ApiError } from "@app/api/error";
 import { Alert } from "@app/components/ui/Alert";
+import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { EDITION_INTERVALS, EDITION_SIZE } from "@app/lib/constants";
 import { until } from "@app/lib/time";
-import { useSettings, useUpdateSettings } from "@app/queries/hooks";
+import {
+  useRegenerate,
+  useSettings,
+  useUpdateSettings,
+} from "@app/queries/hooks";
 
 export function SettingsPage() {
   const settings = useSettings();
   const update = useUpdateSettings();
+  const regenerate = useRegenerate();
 
   if (settings.isPending) return <Spinner />;
   if (settings.error) throw settings.error;
@@ -75,6 +82,52 @@ export function SettingsPage() {
             {current.edition_size} articles
           </span>
         </label>
+      </section>
+
+      <section>
+        <h2 className="font-serif text-xl text-ink">Make a page now</h2>
+        <p className="mt-1 mb-4 text-sm text-ink-muted">
+          Rather than waiting for the next one. Priorities are probabilities, so
+          composing again gives a different arrangement of what your feeds have
+          published — press it as often as you like while you settle on them.
+          Nothing you have not read is lost; only the scheduled page turn spends
+          what it shows.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="primary"
+            onClick={() => regenerate.mutate()}
+            disabled={regenerate.isPending}
+          >
+            {regenerate.isPending ? "Composing…" : "Compose a page"}
+          </Button>
+          {regenerate.isSuccess && !regenerate.isPending ? (
+            <a
+              href="/"
+              className="text-sm text-accent underline underline-offset-2"
+            >
+              Ready — go and read it
+            </a>
+          ) : null}
+        </div>
+
+        {regenerate.error ? (
+          <div className="mt-3">
+            {/* A conflict is a statement about the world — everything read, nothing new —
+                rather than something that went wrong, and it should not look alarming. */}
+            <Alert
+              tone={
+                regenerate.error instanceof ApiError &&
+                regenerate.error.conflict
+                  ? "note"
+                  : "error"
+              }
+            >
+              {regenerate.error.message}
+            </Alert>
+          </div>
+        ) : null}
       </section>
 
       {update.error ? <Alert>{update.error.message}</Alert> : null}

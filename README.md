@@ -79,6 +79,17 @@ be the unread-count problem wearing a different hat.
 
 Read marks belong to the page they were made on. When the page goes, they go with it.
 
+### Making a page yourself
+
+**Make a different page** in the reader's footer — and **Your page** under Feeds — composes
+one now rather than waiting for the schedule. It is a *re-roll*, not a page turn: articles
+you have not read go back in the pool first, so you can press it as often as you like while
+settling on your priorities and watch what actually changes. Only the scheduled turn spends
+what it shows.
+
+This is most of what you want on a fresh instance, where the first page would otherwise be
+a day away.
+
 ## Configuration
 
 | variable | default | meaning |

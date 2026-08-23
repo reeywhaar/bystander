@@ -195,6 +195,82 @@ func readAt(now time.Time, read bool) time.Time {
 	return time.Time{}
 }
 
+// ReleaseUnread returns the live page's unread articles to the pool, and reports how many.
+//
+// A scheduled page turn is time passing: you had your day with that page and it is gone,
+// articles and all. A manual regeneration is not that — nothing has elapsed, somebody has
+// just asked for a different page — so burning articles they never looked at would be
+// charging them for a day that did not happen.
+//
+// In practice this is what makes the button usable at all while setting an instance up.
+// Without it the first press consumes every article the feeds have published, and the
+// second answers "nothing new has been published" — which is true, and useless, at exactly
+// the moment somebody is tuning priorities and wants to see what changed.
+//
+// Read articles are deliberately not released. Those are dealt with either way.
+//
+// The hashes cannot be matched in SQL: `shown` stores a digest of the guid and SQLite has
+// no sha256, so there is nothing to join on. The live page is at most `edition_size` rows,
+// so reading them and deleting by computed hash is a couple of hundred statements at the
+// very worst.
+func (s *Store) ReleaseUnread(ctx context.Context, principalID string) (int64, error) {
+	rows, err := s.derived.QueryContext(ctx,
+		`SELECT i.feed_id, i.guid
+		   FROM edition_items e
+		   JOIN items i ON i.id = e.item_id
+		  WHERE e.read_at IS NULL
+		    AND e.edition_id = (SELECT id FROM editions WHERE principal_id = ?)`,
+		principalID)
+	if err != nil {
+		return 0, err
+	}
+
+	type article struct{ feedID, guid string }
+	var unread []article
+	for rows.Next() {
+		var a article
+		if err := rows.Scan(&a.feedID, &a.guid); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		unread = append(unread, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(unread) == 0 {
+		return 0, nil
+	}
+
+	tx, err := s.derived.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		`DELETE FROM shown WHERE principal_id = ? AND feed_id = ? AND guid_hash = ?`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	var released int64
+	for _, a := range unread {
+		res, err := stmt.ExecContext(ctx, principalID, a.feedID, GUIDHash(a.guid))
+		if err != nil {
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		released += n
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return released, nil
+}
+
 // DeleteEditionsExcept collects the pages of accounts that no longer exist.
 //
 // Principals live in the other database, so this cannot be a foreign key: the list of who

@@ -1,0 +1,258 @@
+package edition
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"bystander/internal/ids"
+	"bystander/internal/store"
+)
+
+// instance is a store with one account, one feed, and some articles in it.
+type instance struct {
+	store     *store.Store
+	gen       *Generator
+	principal *store.Principal
+	feed      *store.Feed
+}
+
+func newInstance(t *testing.T, articles int) *instance {
+	t.Helper()
+	ctx := context.Background()
+
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.Open(): %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	p, err := st.CreatePrincipal(ctx, "alice", "correct-horse", store.RoleUser)
+	if err != nil {
+		t.Fatalf("CreatePrincipal(): %v", err)
+	}
+	feed, err := st.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "https://example.com")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	if _, err := st.Subscribe(ctx, p.ID, feed.ID, store.DefaultPriority, nil); err != nil {
+		t.Fatalf("Subscribe(): %v", err)
+	}
+
+	items := make([]*store.Item, articles)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	for i := range articles {
+		items[i] = &store.Item{
+			ID:          ids.New(ids.Article),
+			FeedID:      feed.ID,
+			GUID:        fmt.Sprintf("guid-%d", i),
+			Title:       fmt.Sprintf("Story %d", i),
+			Link:        fmt.Sprintf("https://example.com/%d", i),
+			Summary:     "<p>A standfirst</p>",
+			ImageURL:    "https://example.com/pic.png",
+			PublishedAt: base.Add(time.Duration(i) * time.Hour),
+			FetchedAt:   base,
+		}
+	}
+	if _, err := st.SaveItems(ctx, items); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+
+	return &instance{
+		store:     st,
+		gen:       NewGenerator(st, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		principal: p,
+		feed:      feed,
+	}
+}
+
+func (in *instance) size(t *testing.T, articles int) {
+	t.Helper()
+	if err := in.store.UpdateSettings(context.Background(), in.principal.ID, nil, &articles); err != nil {
+		t.Fatalf("UpdateSettings(): %v", err)
+	}
+}
+
+// titles is what is on the live page, by title, so a failure names the articles.
+func (in *instance) titles(t *testing.T) []string {
+	t.Helper()
+	_, items, err := in.store.CurrentEdition(context.Background(), in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	out := make([]string, 0, len(items))
+	for _, entry := range items {
+		out = append(out, entry.Item.Title)
+	}
+	return out
+}
+
+func (in *instance) scheduledTurn(t *testing.T, at time.Time) {
+	t.Helper()
+	settings, err := in.store.Settings(context.Background(), in.principal.ID)
+	if err != nil {
+		t.Fatalf("Settings(): %v", err)
+	}
+	if err := in.gen.GenerateAndSchedule(context.Background(), settings, at); err != nil {
+		t.Fatalf("GenerateAndSchedule(): %v", err)
+	}
+}
+
+// A scheduled turn is time passing: the page it replaces is gone, articles and all.
+func TestScheduledTurnsNeverRepeat(t *testing.T) {
+	in := newInstance(t, 20)
+	in.size(t, 10)
+
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+	in.scheduledTurn(t, now)
+	first := in.titles(t)
+	if len(first) != 10 {
+		t.Fatalf("the first page holds %d articles, want 10", len(first))
+	}
+
+	in.scheduledTurn(t, now.Add(24*time.Hour))
+	second := in.titles(t)
+	if len(second) != 10 {
+		t.Fatalf("the second page holds %d articles, want 10", len(second))
+	}
+
+	seen := map[string]bool{}
+	for _, title := range first {
+		seen[title] = true
+	}
+	for _, title := range second {
+		if seen[title] {
+			t.Errorf("%q appeared on two consecutive scheduled pages", title)
+		}
+	}
+}
+
+// A manual regeneration is not time passing. Nothing has elapsed — somebody has asked for a
+// different page — so articles they never looked at must come back rather than being spent.
+func TestRegenerateReturnsUnreadArticles(t *testing.T) {
+	in := newInstance(t, 12)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+	first := in.titles(t)
+
+	if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+		t.Fatalf("Regenerate(): %v", err)
+	}
+	second := in.titles(t)
+	if len(second) != 10 {
+		t.Fatalf("the re-rolled page holds %d articles, want 10", len(second))
+	}
+
+	// With twelve articles and a page of ten, a spend-the-pool regeneration could only
+	// have found two. Overlap is the point here, not a failure.
+	overlap := 0
+	seen := map[string]bool{}
+	for _, title := range first {
+		seen[title] = true
+	}
+	for _, title := range second {
+		if seen[title] {
+			overlap++
+		}
+	}
+	if overlap < 8 {
+		t.Errorf("only %d of the first page's articles survived the re-roll; they were spent", overlap)
+	}
+}
+
+// Read articles are dealt with either way, so they stay spent.
+func TestRegenerateKeepsReadArticlesSpent(t *testing.T) {
+	in := newInstance(t, 12)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+
+	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	read := items[0].Item
+	if err := in.store.SetRead(ctx, in.principal.ID, read.ID, true); err != nil {
+		t.Fatalf("SetRead(): %v", err)
+	}
+
+	if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+		t.Fatalf("Regenerate(): %v", err)
+	}
+	for _, title := range in.titles(t) {
+		if title == read.Title {
+			t.Fatalf("%q was read, and came back anyway", title)
+		}
+	}
+}
+
+// The button has to survive being pressed repeatedly while somebody tunes priorities. That
+// is the whole reason a re-roll exists.
+func TestRegenerateSurvivesRepeatedPresses(t *testing.T) {
+	in := newInstance(t, 15)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+	for press := range 5 {
+		if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+			t.Fatalf("press %d: %v", press+1, err)
+		}
+		if got := len(in.titles(t)); got != 10 {
+			t.Fatalf("press %d gave %d articles, want 10", press+1, got)
+		}
+	}
+}
+
+// Everything read and nothing new is a real answer, and it has to be distinguishable from
+// a failure.
+func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
+	in := newInstance(t, 5)
+	in.size(t, 10)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	in.scheduledTurn(t, now)
+
+	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	for _, entry := range items {
+		if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
+			t.Fatalf("SetRead(): %v", err)
+		}
+	}
+
+	_, err = in.gen.Regenerate(ctx, in.principal.ID, now)
+	if err == nil {
+		t.Fatal("Regenerate() composed a page out of nothing")
+	}
+	if !isConflict(err) {
+		t.Errorf("Regenerate() = %v, want a conflict", err)
+	}
+}
+
+func isConflict(err error) bool {
+	type unwrapper interface{ Unwrap() error }
+	for err != nil {
+		if err == store.ErrConflict {
+			return true
+		}
+		u, ok := err.(unwrapper)
+		if !ok {
+			return false
+		}
+		err = u.Unwrap()
+	}
+	return false
+}

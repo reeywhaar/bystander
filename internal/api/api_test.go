@@ -110,54 +110,65 @@ func TestInviteToFrontPage(t *testing.T) {
 	}
 }
 
-// Nothing is shown twice: the record of what was shown outlives the page it was on.
-func TestASecondPageDoesNotRepeatTheFirst(t *testing.T) {
+// The button has to work more than once. Spending the pool on every press is what made it
+// useless at exactly the moment somebody wants it — just after adding feeds, while tuning
+// priorities and watching what changes.
+func TestRegeneratingWorksRepeatedly(t *testing.T) {
 	h := newHarness(t)
 	feed := newFeedServer(t, 10)
 
 	h.signIn(store.RoleUser, "alice")
 	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	h.expect(h.do(http.MethodPatch, "/api/settings", map[string]int{"edition_size": 10}), http.StatusOK, nil)
 
-	// Two articles a page, so the second page has somewhere to draw from.
+	var first editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &first)
+	if len(first.Items) != 10 {
+		t.Fatalf("the first page holds %d articles, want 10", len(first.Items))
+	}
+
+	// Four more presses, each of which has to produce a page rather than an apology.
+	for press := range 4 {
+		var again editionBody
+		h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &again)
+		if len(again.Items) != 10 {
+			t.Fatalf("press %d gave %d articles, want 10", press+2, len(again.Items))
+		}
+		if again.ID == first.ID {
+			t.Errorf("press %d returned the same page rather than a new one", press+2)
+		}
+	}
+}
+
+// A scheduled turn still spends what it shows, which is the product's promise. What a
+// manual regeneration must not do is charge somebody for a day that did not pass.
+func TestRegeneratingKeepsWhatWasNotRead(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 12)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
 	h.expect(h.do(http.MethodPatch, "/api/settings", map[string]int{"edition_size": 10}), http.StatusOK, nil)
 
 	var first editionBody
 	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &first)
 
-	seen := map[string]bool{}
-	for _, article := range first.Items {
-		seen[article.Link] = true
-	}
-	if len(seen) == 0 {
-		t.Fatal("the first page was empty")
-	}
+	// One article read; the rest merely seen on a page nobody engaged with.
+	read := first.Items[0]
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+read.ID+"/read", nil), http.StatusNoContent, nil)
 
-	// The feed has published nothing new, and every article is spoken for. That is a
-	// conflict, not a 404: the page on screen is real, and saying "there is nothing to put
-	// on a page" to somebody looking at one would read as a fault.
-	var refusal errorBody
-	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusConflict, &refusal)
-	if !contains(refusal.Error, "nothing new") {
-		t.Errorf("refusal = %q, want it to say nothing new has been published", refusal.Error)
+	var second editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &second)
+
+	for _, article := range second.Items {
+		if article.ID == read.ID {
+			t.Errorf("%q was read, and came back anyway", article.Title)
+		}
 	}
-
-	// And the page it refused to replace is still there, unchanged.
-	var still editionBody
-	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &still)
-	if still.ID != first.ID {
-		t.Errorf("the page changed from %q to %q despite the refusal", first.ID, still.ID)
-	}
-}
-
-// Nothing at all and nothing new are different answers, and the words have to differ too.
-func TestRegenerateWithNoFeeds(t *testing.T) {
-	h := newHarness(t)
-	h.signIn(store.RoleUser, "alice")
-
-	var refusal errorBody
-	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusNotFound, &refusal)
-	if !contains(refusal.Error, "add a feed") {
-		t.Errorf("refusal = %q, want it to say what to do about it", refusal.Error)
+	// Twelve articles, one spent, a page of ten: the unread ones must have returned, or
+	// this page could not have been filled.
+	if len(second.Items) != 10 {
+		t.Errorf("the re-rolled page holds %d articles, want 10", len(second.Items))
 	}
 }
 

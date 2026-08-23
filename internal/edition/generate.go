@@ -160,24 +160,42 @@ func (g *Generator) GenerateAndSchedule(ctx context.Context, settings *store.Set
 	return g.store.ScheduleNextEdition(ctx, settings.PrincipalID, now.Add(settings.EditionInterval))
 }
 
-// Regenerate composes a page now and rebases the clock from this moment, so a manual
-// regeneration does not leave a stale timer about to fire.
+// Regenerate composes a page now, on request, and rebases the clock from this moment so a
+// manual regeneration does not leave a stale timer about to fire.
+//
+// Unlike a scheduled turn, this first returns the current page's unread articles to the
+// pool — see store.ReleaseUnread for why. The practical effect is that pressing the button
+// twice gives two different arrangements of what your feeds have published, rather than one
+// page and then an apology.
 func (g *Generator) Regenerate(ctx context.Context, principalID string, now time.Time) (*store.Edition, error) {
 	settings, err := g.store.Settings(ctx, principalID)
 	if err != nil {
 		return nil, err
 	}
+
+	released, err := g.store.ReleaseUnread(ctx, principalID)
+	if err != nil {
+		return nil, err
+	}
+
 	ed, err := g.Generate(ctx, principalID)
 	if err != nil {
 		return nil, err
+	}
+	if ed != nil && released > 0 {
+		g.log.Debug("returned unread articles to the pool before recomposing",
+			"principal", principalID, "released", released)
 	}
 	if ed == nil {
 		// Two different answers, and they deserve different words. Somebody with a page on
 		// screen being told there is nothing to put on one would reasonably conclude
 		// something is broken; what has actually happened is that their feeds have
 		// published nothing since the page they are looking at.
+		// Everything on the page has been read and the feeds have published nothing
+		// since. Unread articles were already returned to the pool above, so there is
+		// genuinely nothing left to arrange.
 		if _, _, err := g.store.CurrentEdition(ctx, principalID); err == nil {
-			return nil, store.Conflict("nothing new has been published since this page was made")
+			return nil, store.Conflict("everything here has been read, and nothing new has been published yet")
 		}
 		return nil, store.NotFound("there is nothing to put on a page yet — add a feed, and give it a moment to fetch")
 	}

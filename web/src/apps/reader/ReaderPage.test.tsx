@@ -60,9 +60,10 @@ describe("ReaderPage", () => {
   });
 
   // A new account should be told what to do, not shown a broken page.
-  it("says what to do when there is nothing yet", async () => {
+  it("sends somebody with no feeds to add one", async () => {
     renderWith(<ReaderPage me={me} />, {
       "GET /api/edition": { body: edition([]) },
+      "GET /api/feeds": { body: [] },
     });
 
     expect(
@@ -71,6 +72,30 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("link", { name: "Add your first feed" }),
     ).toHaveAttribute("href", "/manage");
+  });
+
+  // Feeds added but no page yet is the ordinary state for the first minute or two of a
+  // fresh instance, and the thing somebody wants there is to stop waiting.
+  it("offers to compose the first page once there are feeds", async () => {
+    const { transport } = renderWith(<ReaderPage me={me} />, {
+      "GET /api/edition": { body: edition([]) },
+      "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
+      "POST /api/edition/regenerate": { body: edition([article("a_1")]) },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Make my first page" }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "Story a_1" }),
+    ).toBeInTheDocument();
+    expect(transport.calls).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/edition/regenerate",
+      }),
+    );
   });
 
   it("marks an article read without waiting for the server", async () => {
@@ -111,7 +136,7 @@ describe("ReaderPage", () => {
 
     await screen.findByRole("link", { name: "Story a_1" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Make a new page now" }),
+      screen.getByRole("button", { name: "Make a different page" }),
     );
 
     expect(
