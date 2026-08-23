@@ -67,6 +67,7 @@ var Main = []Migration{
 	mainArticleWindow,
 	mainArticleWindowPerFeed,
 	mainRecoveryEmail,
+	mainSMTPRelay,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db

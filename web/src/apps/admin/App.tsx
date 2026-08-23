@@ -6,6 +6,7 @@ import { RequireSession } from "@app/components/RequireSession";
 import { Alert } from "@app/components/ui/Alert";
 
 import { InvitesPage } from "@app/apps/admin/InvitesPage";
+import { MailPage } from "@app/apps/admin/MailPage";
 import { UsersPage } from "@app/apps/admin/UsersPage";
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
                         label: "Invitations",
                         end: false,
                       },
+                      { to: "/admin/mail", label: "Mail", end: false },
                     ].map((tab) => (
                       <NavLink
                         key={tab.to}
@@ -50,6 +52,7 @@ export function App() {
                   <Routes>
                     <Route path="/admin" element={<UsersPage me={me} />} />
                     <Route path="/admin/invites" element={<InvitesPage />} />
+                    <Route path="/admin/mail" element={<MailPage />} />
                     <Route
                       path="*"
                       element={<Navigate to="/admin" replace />}

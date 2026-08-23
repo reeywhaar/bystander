@@ -26,6 +26,7 @@ export const qk = {
   /** Under one root, so refreshing the user list never discards the invitation list. */
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
+  adminSmtp: ["admin", "smtp"] as const,
 
   /** Keyed by the token, because two links are two different answers. */
   invite: (token: string) => ["invite", token] as const,

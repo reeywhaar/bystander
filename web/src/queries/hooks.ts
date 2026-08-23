@@ -3,10 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteAdminInvitesById,
   deleteAdminUsersById,
+  deleteAdminSmtp,
   getAdminInvites,
+  getAdminSmtp,
   getAdminUsers,
   patchAdminUsersById,
   postAdminInvites,
+  postAdminSmtpTest,
+  putAdminSmtp,
 } from "@app/api/actions/admin";
 import { getMe } from "@app/api/actions/auth";
 import {
@@ -36,7 +40,13 @@ import {
   postTags,
 } from "@app/api/actions/tags";
 import { useApiCall } from "@app/api/provider";
-import type { Article, Edition, ImportSelection, Role } from "@app/api/types";
+import type {
+  Article,
+  Edition,
+  ImportSelection,
+  Role,
+  SmtpForm,
+} from "@app/api/types";
 import { qk } from "@app/queries/keys";
 
 /**
@@ -372,5 +382,50 @@ export function useRemoveInvite() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.adminInvites });
     },
+  });
+}
+
+export function useSmtp() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.adminSmtp,
+    queryFn: ({ signal }) => callApi(getAdminSmtp(), signal),
+  });
+}
+
+export function useSaveSmtp() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (config: SmtpForm) => callApi(putAdminSmtp(config)),
+    onSuccess: (saved) => {
+      // The response is the configuration as stored, so it replaces the cache outright
+      // rather than prompting a second request for what we were just handed.
+      client.setQueryData(qk.adminSmtp, saved);
+    },
+  });
+}
+
+export function useForgetSmtp() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => callApi(deleteAdminSmtp()),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.adminSmtp });
+    },
+  });
+}
+
+/**
+ * Sends one real message.
+ *
+ * Deliberately not a query: it has an effect out in the world, and a query that retries or
+ * refetches on focus would put mail in somebody's inbox for looking at a browser tab.
+ */
+export function useTestSmtp() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (to: string) => callApi(postAdminSmtpTest(to)),
   });
 }

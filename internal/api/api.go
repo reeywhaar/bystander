@@ -42,6 +42,7 @@ type Server struct {
 
 	logins    *limiter
 	discovery *limiter
+	mail      *limiter
 }
 
 // New builds a server.
@@ -62,6 +63,10 @@ func New(cfg *config.Config, st *store.Store, sessions *session.Table, gen *edit
 		// Adding a feed makes an outbound request on the caller's behalf. An endpoint
 		// that fetches an arbitrary URL for whoever asks needs a ceiling.
 		discovery: newLimiter(20, time.Minute),
+		// A test send is an outbound connection to somebody else's relay, made on
+		// demand. Administrators are trusted, and relays still have rate limits of
+		// their own worth staying under.
+		mail: newLimiter(5, time.Minute),
 	}
 }
 
@@ -109,6 +114,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/invites", s.requireAdmin(s.listInvites))
 	mux.Handle("POST /api/admin/invites", s.requireAdmin(s.createInvite))
 	mux.Handle("DELETE /api/admin/invites/{id}", s.requireAdmin(s.deleteInvite))
+	mux.Handle("GET /api/admin/smtp", s.requireAdmin(s.getSMTP))
+	mux.Handle("PUT /api/admin/smtp", s.requireAdmin(s.putSMTP))
+	mux.Handle("DELETE /api/admin/smtp", s.requireAdmin(s.deleteSMTP))
+	mux.Handle("POST /api/admin/smtp/test", s.requireAdmin(s.testSMTP))
 
 	// A mistyped API path must never fall through to the SPA: an HTML document returned
 	// to a fetch presents as a JSON parse error with no hint of what actually happened.

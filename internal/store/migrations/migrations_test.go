@@ -30,6 +30,7 @@ var released = []struct{ name, sha string }{
 	{"20260823061500_main_article_window", "c17ad1b36a3230a6767e9bc0e196d1c17f377e81c7ec2fe8c89ac88cf30a0f5f"},
 	{"20260823103614_main_article_window_per_feed", "77725541a887d569f18b1142fa82b32e6af3550c118b407bfdd5e78305dcb88b"},
 	{"20260823190043_main_recovery_email", "7e319816e63e89fe11991529e6b8b881365bfdc7542215f394e7b50c557c4e29"},
+	{"20260823190456_main_smtp_relay", "db61f782a58927b09822f80133c3f8494539ae2086ce9a8900b91f85dd54e79f"},
 }
 
 func all() []Migration {

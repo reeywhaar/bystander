@@ -1,5 +1,11 @@
 import { createApiAction, type ApiAction } from "@app/api/request";
-import type { AdminInvite, Role, User } from "@app/api/types";
+import type {
+  AdminInvite,
+  Role,
+  SmtpConfig,
+  SmtpForm,
+  User,
+} from "@app/api/types";
 
 const seg = (value: string) => encodeURIComponent(value);
 
@@ -49,5 +55,38 @@ export function postAdminInvites(role: Role): ApiAction<AdminInvite> {
 export function deleteAdminInvitesById(id: string): ApiAction<void> {
   return createApiAction((d) =>
     d.call({ method: "DELETE", path: `/api/admin/invites/${seg(id)}` }),
+  );
+}
+
+/** `GET /api/admin/smtp` — the relay without its password, which is write-only. */
+export function getAdminSmtp(): ApiAction<SmtpConfig> {
+  return createApiAction((d) =>
+    d.call({ method: "GET", path: "/api/admin/smtp" }),
+  );
+}
+
+/**
+ * `PUT /api/admin/smtp` — the whole configuration at once.
+ *
+ * An empty `password` leaves the stored one alone, so correcting a port does not mean
+ * retyping a secret the page never showed.
+ */
+export function putAdminSmtp(config: SmtpForm): ApiAction<SmtpConfig> {
+  return createApiAction((d) =>
+    d.call({ method: "PUT", path: "/api/admin/smtp", body: config }),
+  );
+}
+
+/** `DELETE /api/admin/smtp` — after this, sending is refused rather than attempted. */
+export function deleteAdminSmtp(): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: "/api/admin/smtp" }),
+  );
+}
+
+/** `POST /api/admin/smtp/test` — sends one real message and reports what the relay said. */
+export function postAdminSmtpTest(to: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "POST", path: "/api/admin/smtp/test", body: { to } }),
   );
 }

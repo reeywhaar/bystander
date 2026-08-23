@@ -179,3 +179,33 @@ export interface AdminInvite {
   /** Present only in the response that minted it. It is never readable again. */
   url?: string;
 }
+
+/** How a relay's connection is protected. There is no third option on purpose. */
+export type SmtpTls = "starttls" | "implicit";
+
+/** The relay as the interface may show it: everything except the password. */
+export interface SmtpConfig {
+  /** False when nothing has been set up. The rest are then the form's defaults. */
+  configured: boolean;
+  host: string;
+  port: number;
+  tls: SmtpTls;
+  username: string;
+  /** What recipients see in From, which is routinely not the username. */
+  from_address: string;
+  /** Blank means the server's own default rather than an empty name. */
+  sender_name: string;
+  updated_at: number;
+}
+
+/** The relay as it is written back. The password is the only field that is write-only. */
+export interface SmtpForm {
+  host: string;
+  port: number;
+  tls: SmtpTls;
+  username: string;
+  /** Empty leaves the stored password alone; required only the first time. */
+  password: string;
+  from_address: string;
+  sender_name: string;
+}
