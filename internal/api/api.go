@@ -111,6 +111,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/feeds/export", s.requireSession(s.exportFeeds))
 	mux.Handle("POST /api/feeds/import/preview", s.requireSession(s.previewImport))
 	mux.Handle("POST /api/feeds/import", s.requireSession(s.importFeeds))
+
+	mux.Handle("POST /api/shares", s.requireSession(s.createShare))
+	// A session, not a public page. A share is a list of what somebody reads, handed to
+	// another person on this instance — not published to whoever finds the URL.
+	mux.Handle("GET /api/shares/{token}", s.requireSession(s.share))
 	mux.Handle("GET /api/feeds/{id}", s.requireSession(s.getFeed))
 	mux.Handle("PATCH /api/feeds/{id}", s.requireSession(s.patchFeed))
 	mux.Handle("DELETE /api/feeds/{id}", s.requireSession(s.deleteFeed))

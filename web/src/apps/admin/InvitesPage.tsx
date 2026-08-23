@@ -56,7 +56,7 @@ export function InvitesPage() {
 
         {minted ? (
           <div className="flex flex-col gap-2">
-            <CopyBox value={minted} />
+            <CopyBox value={minted} shareTitle="An invitation to bystander" />
             <p className="text-xs text-ink-muted">
               Take this now — it is the only time it can be read. What is stored
               is a hash, so a lost link is replaced rather than recovered.

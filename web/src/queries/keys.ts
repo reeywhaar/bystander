@@ -32,4 +32,5 @@ export const qk = {
 
   /** Keyed by the token, because two links are two different answers. */
   invite: (token: string) => ["invite", token] as const,
+  share: (token: string) => ["share", token] as const,
 };

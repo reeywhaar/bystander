@@ -69,6 +69,7 @@ var Main = []Migration{
 	mainRecoveryEmail,
 	mainSMTPRelay,
 	mainProvedRecoveryEmail,
+	mainShares,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db

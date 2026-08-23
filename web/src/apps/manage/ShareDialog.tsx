@@ -1,20 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { Subscription, Tag } from "@app/api/types";
+import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
+import { CopyBox } from "@app/components/ui/CopyBox";
 import { Modal } from "@app/components/ui/Modal";
 import { tagLabel } from "@app/lib/tags";
-import { useExportFeeds } from "@app/queries/hooks";
+import { absolute } from "@app/lib/time";
+import { useCreateShare, useExportFeeds } from "@app/queries/hooks";
 
-type Shape = "list" | "opml";
+type Shape = "link" | "list" | "opml";
 
 /**
  * Hands somebody else a subscription list.
  *
- * Two shapes, because there are two people on the other end of this. A **list** is for
- * somebody reading a message: names, addresses and the tags they were filed under, which
- * is what makes a stranger's feed legible before they subscribe to it. **OPML** is for
- * their reader, which does not want prose.
+ * Three shapes, because there are three people on the other end of this. A **link** is for
+ * somebody else with an account here: they open it and get the same picker a file would
+ * give them, without a file existing at any point. A **list** is for somebody reading a
+ * message: names, addresses and the tags they were filed under, which is what makes a
+ * stranger's feed legible before they subscribe to it. **OPML** is for their reader, which
+ * does not want prose.
+ *
+ * The link is first because it is the one that works between two phones. Sending a file
+ * between them means saving it, finding it, and pasting it back — three steps that each
+ * fail differently, and the reason this was worth building.
  */
 export function ShareDialog({
   open,
@@ -28,9 +37,10 @@ export function ShareDialog({
   tags: Tag[];
 }) {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [shape, setShape] = useState<Shape>("list");
+  const [shape, setShape] = useState<Shape>("link");
   const [copied, setCopied] = useState(false);
   const exportFeeds = useExportFeeds();
+  const createShare = useCreateShare();
 
   // Opening starts from everything, which is what somebody sharing usually means, and
   // leaves unticking as the deliberate act.
@@ -74,6 +84,17 @@ export function ShareDialog({
 
   const text = shape === "list" ? asList : (exportFeeds.data?.opml ?? "");
 
+  // Reset whenever the selection changes, because a link is a snapshot: leaving the old one
+  // on screen after unticking something would show a link that no longer says what the
+  // ticks say.
+  useEffect(() => {
+    createShare.reset();
+    // createShare is a mutation object and is not stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosen, open]);
+
+  const link = createShare.data;
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
@@ -113,13 +134,29 @@ export function ShareDialog({
             </Button>
           ) : null}
           <Button onClick={onClose}>Done</Button>
-          <Button
-            variant="primary"
-            onClick={() => void copy()}
-            disabled={text === ""}
-          >
-            {copied ? "Copied" : "Copy"}
-          </Button>
+          {shape === "link" ? (
+            <Button
+              variant="primary"
+              disabled={selected.length === 0 || createShare.isPending}
+              onClick={() =>
+                createShare.mutate(selected.map((feed) => feed.id))
+              }
+            >
+              {createShare.isPending
+                ? "Making…"
+                : link
+                  ? "Make another"
+                  : "Make a link"}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => void copy()}
+              disabled={text === ""}
+            >
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          )}
         </>
       }
     >
@@ -169,7 +206,7 @@ export function ShareDialog({
       </ul>
 
       <div className="flex gap-1">
-        {(["list", "opml"] as Shape[]).map((option) => (
+        {(["link", "list", "opml"] as Shape[]).map((option) => (
           <button
             key={option}
             type="button"
@@ -180,23 +217,55 @@ export function ShareDialog({
                 : "border-rule text-ink-muted hover:text-ink"
             }`}
           >
-            {option === "list" ? "As a list" : "As OPML"}
+            {option === "link"
+              ? "As a link"
+              : option === "list"
+                ? "As a list"
+                : "As OPML"}
           </button>
         ))}
         <span className="ml-auto self-center text-xs text-ink-faint">
-          {shape === "list" ? "for a message" : "for their reader"}
+          {shape === "link"
+            ? "for someone here"
+            : shape === "list"
+              ? "for a message"
+              : "for their reader"}
         </span>
       </div>
 
-      <textarea
-        readOnly
-        value={exportFeeds.isPending && shape === "opml" ? "…" : text}
-        onFocus={(event) => event.currentTarget.select()}
-        rows={8}
-        aria-label="Your feeds, ready to share"
-        className="w-full resize-y rounded-md border border-rule bg-paper-sunken p-2 font-mono
-          text-xs text-ink"
-      />
+      {shape === "link" ? (
+        <div className="flex flex-col gap-2">
+          {createShare.error ? (
+            <Alert>{createShare.error.message}</Alert>
+          ) : null}
+          {link ? (
+            <>
+              <CopyBox value={link.url} shareTitle="Feeds worth reading" />
+              <p className="text-xs text-ink-faint">
+                {link.count} feed{link.count === 1 ? "" : "s"}, for anyone with
+                an account here. Good until {absolute(link.expires_at)}.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-ink-muted">
+              A link the other person opens on their own account, landing on
+              this same list of feeds to pick from. Nothing is sent anywhere,
+              and nothing is subscribed to by opening it — the link expires in a
+              week.
+            </p>
+          )}
+        </div>
+      ) : (
+        <textarea
+          readOnly
+          value={exportFeeds.isPending && shape === "opml" ? "…" : text}
+          onFocus={(event) => event.currentTarget.select()}
+          rows={8}
+          aria-label="Your feeds, ready to share"
+          className="w-full resize-y rounded-md border border-rule bg-paper-sunken p-2 font-mono
+            text-xs text-ink"
+        />
+      )}
     </Modal>
   );
 }

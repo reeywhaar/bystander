@@ -35,14 +35,47 @@ func (s *Server) exportFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subs, err := s.store.ListSubscriptions(r.Context(), p.ID)
+	doc, err := s.exportDocument(r, body.IDs)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 
-	wanted := make(map[string]bool, len(body.IDs))
-	for _, id := range body.IDs {
+	var buf bytes.Buffer
+	if err := opml.Encode(&buf, doc); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	// JSON carrying the document, rather than the document itself with a
+	// Content-Disposition. This API is JSON in and JSON out, and one endpoint that is not
+	// would mean the dispatcher had to know which — see private/docs/api_design.md. The
+	// interface shows the text to be copied and builds a download from the same string,
+	// so nothing is lost by handing it over this way.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"opml":     buf.String(),
+		"filename": app.Name + "-" + p.Username + ".opml",
+		"count":    len(doc.Feeds),
+	})
+}
+
+// exportDocument is somebody's subscriptions as an OPML document, all of them or the ones
+// named.
+//
+// Shared by the file somebody downloads and the link they hand over, because the two are
+// the same list. A share that built its own snapshot would be a second opinion about what
+// "my feeds" means — about which title wins, about how a tag path is written — and the two
+// would drift the first time either changed.
+func (s *Server) exportDocument(r *http.Request, ids []string) (opml.Document, error) {
+	p := principalOf(r)
+
+	subs, err := s.store.ListSubscriptions(r.Context(), p.ID)
+	if err != nil {
+		return opml.Document{}, err
+	}
+
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
 		wanted[id] = true
 	}
 
@@ -51,14 +84,12 @@ func (s *Server) exportFeeds(w http.ResponseWriter, r *http.Request) {
 	paths := make(map[string][]string)
 	tags, err := s.store.ListTags(r.Context(), p.ID)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return opml.Document{}, err
 	}
 	for _, tag := range tags {
 		path, err := s.store.TagPath(r.Context(), p.ID, tag.ID)
 		if err != nil {
-			s.fail(w, r, err)
-			return
+			return opml.Document{}, err
 		}
 		paths[tag.ID] = path
 	}
@@ -85,23 +116,7 @@ func (s *Server) exportFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 		doc.Feeds = append(doc.Feeds, feed)
 	}
-
-	var buf bytes.Buffer
-	if err := opml.Encode(&buf, doc); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-
-	// JSON carrying the document, rather than the document itself with a
-	// Content-Disposition. This API is JSON in and JSON out, and one endpoint that is not
-	// would mean the dispatcher had to know which — see private/docs/api_design.md. The
-	// interface shows the text to be copied and builds a download from the same string,
-	// so nothing is lost by handing it over this way.
-	writeJSON(w, http.StatusOK, map[string]any{
-		"opml":     buf.String(),
-		"filename": app.Name + "-" + p.Username + ".opml",
-		"count":    len(doc.Feeds),
-	})
+	return doc, nil
 }
 
 type importRequest struct {

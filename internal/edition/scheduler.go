@@ -130,4 +130,13 @@ func (s *Scheduler) sweep(ctx context.Context) {
 	} else if n > 0 {
 		s.log.Debug("pruned read articles past retention", "count", n)
 	}
+
+	// Shared links are checked for expiry when they are opened, so this is housekeeping
+	// rather than enforcement: it stops a list of what somebody reads sitting in the
+	// database for months after the week it was good for.
+	if n, err := s.store.PruneShares(ctx); err != nil {
+		s.log.Error("could not prune expired share links", "error", err)
+	} else if n > 0 {
+		s.log.Debug("pruned expired share links", "count", n)
+	}
 }

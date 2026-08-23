@@ -20,7 +20,10 @@ const (
 	LoginPath  = "/login"
 	InvitePath = "/invite/"
 	ManagePath = "/manage"
-	AdminPath  = "/admin"
+	// A shared link lands in the manage island: what it opens is the feed picker, which
+	// already lives there, and what somebody does next is subscribe to things.
+	SharePath = "/share"
+	AdminPath = "/admin"
 )
 
 // SPA serves the built React bundle.
@@ -221,6 +224,8 @@ func (s *SPA) shellFor(clean string) asset {
 	case clean == strings.TrimSuffix(InvitePath, "/"), strings.HasPrefix(clean, InvitePath):
 		return s.login
 	case clean == ManagePath, strings.HasPrefix(clean, ManagePath+"/"):
+		return s.manage
+	case clean == SharePath, strings.HasPrefix(clean, SharePath+"/"):
 		return s.manage
 	case clean == AdminPath, strings.HasPrefix(clean, AdminPath+"/"):
 		return s.admin

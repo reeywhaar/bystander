@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { getSharesByToken, postShares } from "@app/api/actions/shares";
 import {
   deleteAccountRecovery,
   getAccount,
@@ -225,6 +226,32 @@ export function useRemoveFeed() {
 }
 
 /** Builds a subscription list from the feeds that were ticked. */
+/**
+ * Turns a selection into a link.
+ *
+ * A mutation, not a query: it writes a row and hands back a token that exists exactly once
+ * in the answer. A query that refetched on focus would mint links nobody asked for.
+ */
+export function useCreateShare() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (ids: string[]) => callApi(postShares(ids)),
+  });
+}
+
+/** What a link holds. Opening one changes nothing. */
+export function useSharedList(token: string) {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.share(token),
+    queryFn: ({ signal }) => callApi(getSharesByToken(token), signal),
+    // A link is a snapshot and expiry is checked on the server, so there is nothing here
+    // that goes stale while somebody is looking at it.
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 export function useExportFeeds() {
   const callApi = useApiCall();
   return useMutation({

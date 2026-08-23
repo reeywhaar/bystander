@@ -47,6 +47,24 @@ export interface Account {
   mail_configured: boolean;
 }
 
+/** A link that hands somebody a list of feeds. */
+export interface ShareLink {
+  /** The whole URL. It is about to leave this browser, so a path would be no use. */
+  url: string;
+  count: number;
+  expires_at: number;
+}
+
+/** What a shared link holds, once opened. */
+export interface SharedList {
+  /** Who made it. A list of feeds is a recommendation, and one with no name on it is a
+   *  list of URLs. */
+  from: string;
+  expires_at: number;
+  /** The same shape a pasted file produces, so the same picker reads it. */
+  feeds: PlannedFeed[];
+}
+
 /** What an invitation link is, before anybody types a password into it. */
 export interface Invite {
   role: Role;
