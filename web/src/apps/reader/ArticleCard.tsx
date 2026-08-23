@@ -1,5 +1,29 @@
+import type { MouseEvent } from "react";
+
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
+
+/**
+ * Handlers that mark an article read however it was opened.
+ *
+ * `onClick` covers a plain click and a modified one — cmd- or ctrl-click to open a
+ * background tab both dispatch `click`. Middle click does not: browsers dispatch
+ * `auxclick` for it and React's `onClick` maps only to `click`, so without this the one
+ * gesture people use to open a stack of articles at once is the single way of opening one
+ * that leaves it unread.
+ *
+ * `button === 1` because `auxclick` fires for the right button too, and opening a context
+ * menu is not reading. A long-press on touch raises the menu without an auxclick at all,
+ * so nothing there needs excluding.
+ */
+function opening(onOpen: () => void) {
+  return {
+    onClick: onOpen,
+    onAuxClick: (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button === 1) onOpen();
+    },
+  };
+}
 
 /**
  * One article, in the slot the server gave it.
@@ -28,7 +52,7 @@ export function ArticleCard({
           href={article.link}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => onRead(article.id, true)}
+          {...opening(() => onRead(article.id, true))}
           tabIndex={-1}
           aria-hidden="true"
         >
@@ -63,7 +87,7 @@ export function ArticleCard({
           href={article.link}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => onRead(article.id, true)}
+          {...opening(() => onRead(article.id, true))}
           className="hover:text-accent hover:underline underline-offset-4"
         >
           {article.title}

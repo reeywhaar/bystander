@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,21 @@ function article(overrides: Partial<Article> = {}): Article {
   };
 }
 
+/**
+ * A non-primary mouse click, as a browser dispatches it.
+ *
+ * Not `fireEvent.auxClick`: Testing Library's typed event map does not carry auxclick, and
+ * this is closer to the thing being tested anyway — the event React's `onAuxClick` is
+ * bound to. `bubbles` is load-bearing, because React attaches its listener at the root
+ * rather than to the element.
+ */
+function auxClick(element: Element, button: number) {
+  fireEvent(
+    element,
+    new MouseEvent("auxclick", { button, bubbles: true, cancelable: true }),
+  );
+}
+
 describe("ArticleCard", () => {
   it("carries the slot the server chose", () => {
     for (const slot of ["lead", "feature", "standard", "brief"] as Slot[]) {
@@ -40,6 +55,41 @@ describe("ArticleCard", () => {
 
     await userEvent.click(screen.getByRole("link", { name: "A headline" }));
     expect(onRead).toHaveBeenCalledWith("a_1", true);
+  });
+
+  // Middle click is how somebody opens a stack of articles in background tabs — the exact
+  // gesture a front page invites. Browsers dispatch `auxclick` for it and React's onClick
+  // maps only to `click`, so it silently did not count as opening anything.
+  it("marks read when the headline is opened with the middle button", () => {
+    const onRead = vi.fn();
+    render(<ArticleCard article={article()} onRead={onRead} />);
+
+    auxClick(screen.getByRole("link", { name: "A headline" }), 1);
+    expect(onRead).toHaveBeenCalledWith("a_1", true);
+  });
+
+  it("marks read when the picture is opened with the middle button", () => {
+    const onRead = vi.fn();
+    const { container } = render(
+      <ArticleCard article={article()} onRead={onRead} />,
+    );
+
+    // The picture is a second link to the same article, hidden from the accessibility
+    // tree because it says nothing the headline does not.
+    const picture = container.querySelector('a[aria-hidden="true"]');
+    expect(picture).not.toBeNull();
+
+    auxClick(picture!, 1);
+    expect(onRead).toHaveBeenCalledWith("a_1", true);
+  });
+
+  // auxclick fires for the right button too, and raising a context menu is not reading.
+  it("does not mark read when the context menu is raised", () => {
+    const onRead = vi.fn();
+    render(<ArticleCard article={article()} onRead={onRead} />);
+
+    auxClick(screen.getByRole("link", { name: "A headline" }), 2);
+    expect(onRead).not.toHaveBeenCalled();
   });
 
   it("toggles back", async () => {
