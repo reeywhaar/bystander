@@ -347,6 +347,33 @@ body {
 }
 
 /*
+ * Sixteen pixels on a phone, whatever the utility says.
+ *
+ * iOS Safari zooms the page in when a control whose text is smaller than 16px takes focus,
+ * and does not zoom back out afterwards — so tapping a field leaves somebody scrolled
+ * sideways on a page they now have to pinch their way out of. Every input here is `text-sm`,
+ * which is 14px, so this happened on every field in the product.
+ *
+ * The other way to stop it is `maximum-scale=1` in the viewport meta, which works by taking
+ * pinch-zoom away from everybody permanently. That is not a trade worth making to save two
+ * pixels of type on a phone.
+ *
+ * Unlayered on purpose. Tailwind emits its utilities inside `@layer utilities`, and an
+ * unlayered rule beats a layered one regardless of specificity — which is what lets this
+ * override `text-sm` without `!important` or a more specific selector at every call site.
+ *
+ * Only below the `sm` breakpoint, and only for controls that actually take text: a range
+ * has no text to zoom towards, and checkboxes and radios have none either.
+ */
+@media (max-width: 639.98px) {
+  input:not([type="range"], [type="checkbox"], [type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/*
  * A read card recedes without moving. Where an article sits on the page is how somebody
  * remembers where they were, so nothing is allowed to reorder under them.
  *
