@@ -183,6 +183,99 @@ func (s *Store) checkTagParent(ctx context.Context, principalID, id, parentID st
 	return nil
 }
 
+// TagPath is a tag's ancestry, root first: {"News", "World"} for "World" nested under
+// "News". It is how a tag travels between instances, since ids mean nothing outside the
+// one that minted them.
+func (s *Store) TagPath(ctx context.Context, principalID, id string) ([]string, error) {
+	var path []string
+	for at := id; at != ""; {
+		tag, err := s.TagByID(ctx, principalID, at)
+		if err != nil {
+			return nil, err
+		}
+		path = append([]string{tag.Name}, path...)
+		at = tag.ParentID
+		// A cycle cannot be written — see checkTagParent — but a walk that trusts that
+		// absolutely is a walk that hangs if it ever stops being true.
+		if len(path) > MaxTagDepth {
+			return nil, Invalid("tag %s is nested more than %d deep", id, MaxTagDepth)
+		}
+	}
+	return path, nil
+}
+
+// MaxTagDepth bounds how far a tag may be nested. Far past anything anybody would build,
+// and near enough to catch a walk that has gone wrong.
+const MaxTagDepth = 32
+
+// TagByPath finds a tag by its ancestry, matching names case-insensitively.
+//
+// Returns nil without an error when the path names no tag this person has — "you do not
+// have this one" is an answer, not a failure, and it is the answer an import preview is
+// asking for.
+func (s *Store) TagByPath(ctx context.Context, principalID string, path []string) (*Tag, error) {
+	if len(path) == 0 {
+		return nil, nil
+	}
+	tags, err := s.ListTags(ctx, principalID)
+	if err != nil {
+		return nil, err
+	}
+
+	parent := ""
+	var found *Tag
+	for _, segment := range path {
+		found = nil
+		for _, tag := range tags {
+			if tag.ParentID == parent && strings.EqualFold(tag.Name, segment) {
+				found = tag
+				break
+			}
+		}
+		if found == nil {
+			return nil, nil
+		}
+		parent = found.ID
+	}
+	return found, nil
+}
+
+// EnsureTagPath returns the tag at a path, creating whatever part of it does not exist yet.
+//
+// Creating the intermediate tags rather than only the leaf: a path is a statement about
+// where something belongs, and half of it is not a place.
+func (s *Store) EnsureTagPath(ctx context.Context, principalID string, path []string) (*Tag, error) {
+	if len(path) == 0 {
+		return nil, nil
+	}
+	if len(path) > MaxTagDepth {
+		return nil, Invalid("that tag is nested more than %d deep", MaxTagDepth)
+	}
+
+	parent := ""
+	var at *Tag
+	for _, segment := range path {
+		tags, err := s.ListTags(ctx, principalID)
+		if err != nil {
+			return nil, err
+		}
+		at = nil
+		for _, tag := range tags {
+			if tag.ParentID == parent && strings.EqualFold(tag.Name, segment) {
+				at = tag
+				break
+			}
+		}
+		if at == nil {
+			if at, err = s.CreateTag(ctx, principalID, segment, parent, DefaultPriority); err != nil {
+				return nil, err
+			}
+		}
+		parent = at.ID
+	}
+	return at, nil
+}
+
 // DeleteTag removes a tag. Its children are promoted to roots by the schema, because
 // deleting "News" should not silently delete everything filed under it, and the
 // subscriptions that carried it simply lose it.
