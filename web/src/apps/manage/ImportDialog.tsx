@@ -112,7 +112,12 @@ export function ImportDialog({
     };
   }
 
-  const keeping = (plan ?? []).filter((feed) => !skipped.has(feed.feed_url));
+  // A feed already followed cannot be imported: the server refuses a second subscription
+  // and reports it as skipped. So it is not offered at all — a row that cannot do anything
+  // is worse than no row, because it reads as a choice.
+  const showing = (plan ?? []).filter((feed) => !feed.already_subscribed);
+  const hidden = (plan ?? []).length - showing.length;
+  const keeping = showing.filter((feed) => !skipped.has(feed.feed_url));
 
   return (
     <Modal open={open} onClose={close} title="Import a list">
@@ -152,25 +157,34 @@ export function ImportDialog({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => setSkipped(new Set())}
-              disabled={keeping.length === plan.length}
+              disabled={keeping.length === showing.length}
             >
               All
             </Button>
             <Button
               onClick={() =>
-                setSkipped(new Set(plan.map((feed) => feed.feed_url)))
+                setSkipped(new Set(showing.map((feed) => feed.feed_url)))
               }
               disabled={keeping.length === 0}
             >
               None
             </Button>
             <span className="ml-auto text-xs text-ink-faint">
-              {keeping.length} of {plan.length}
+              {keeping.length} of {showing.length}
             </span>
           </div>
 
+          {/* Counted even though they are not shown, so a list that overlaps heavily does
+              not simply look shorter than the one that was sent. */}
+          {hidden > 0 ? (
+            <p className="text-xs text-ink-faint">
+              {hidden} {hidden === 1 ? "is" : "are"} already yours, and not
+              shown.
+            </p>
+          ) : null}
+
           <ul className="max-h-72 overflow-y-auto rounded-md border border-rule">
-            {plan.map((feed) => (
+            {showing.map((feed) => (
               <PlanRow
                 key={feed.feed_url}
                 feed={feed}
@@ -194,6 +208,12 @@ export function ImportDialog({
             Solid chips are your own tags — the ones the list named are already
             ticked. Dashed ones are new and would be created.
           </p>
+
+          {showing.length === 0 ? (
+            <p className="py-2 text-sm text-ink-muted">
+              You already follow everything in that list.
+            </p>
+          ) : null}
 
           {run.error ? <Alert>{run.error.message}</Alert> : null}
 
@@ -252,13 +272,7 @@ function PlanRow({
             {feed.feed_url}
           </span>
         </span>
-        {feed.already_subscribed ? (
-          <span className="ml-auto shrink-0 text-xs text-ink-faint">
-            already yours
-          </span>
-        ) : null}
       </label>
-
       {keep ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
           {tags.map((tag) => (
