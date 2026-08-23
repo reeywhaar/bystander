@@ -8,7 +8,9 @@
 
 export type Role = "admin" | "user";
 
-export type Slot = "lead" | "feature" | "standard" | "brief";
+/** How much of the page's sixteen tracks an article takes. See internal/store/editions.go. */
+export type Slot =
+  "lead" | "wide" | "feature" | "narrow" | "standard" | "brief";
 
 export interface Me {
   id: string;

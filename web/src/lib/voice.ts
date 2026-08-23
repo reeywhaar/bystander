@@ -1,4 +1,29 @@
 /**
+ * How one article is made to look unlike the ones around it.
+ *
+ * Four things vary per article and all of them are decided here or beside here: the face a
+ * headline is set in, the size its standfirst is set at, whether the card is boxed, and — on
+ * the server — how many columns it takes.
+ *
+ * **This is about memory, not decoration.** The page is fixed: it is composed once and does
+ * not move until the next one, and the whole point of that is that somebody can come back to
+ * an article they half-remember. Identical cards defeat it. A page of fifty things that look
+ * the same is a page with one landmark on it, and "it was somewhere in the middle" is all
+ * anybody can recall. Give a card an outstanding shape — a boxed story, a headline in the
+ * condensed face, a column set larger than its neighbours — and it becomes a thing that can
+ * be looked *for* rather than scanned past. Where an article sits is half of finding it
+ * again; what it looked like is the other half.
+ *
+ * That is also why every one of these is a pure function of the article's id rather than a
+ * random draw at render time. A landmark that moves is not a landmark.
+ *
+ * And it is why the rules below care about neighbours. Four independent draws will now and
+ * then hand two adjacent cards the same face, the same size and the same frame, which is the
+ * blend again in the one place it is most confusing — two things side by side that are
+ * telling the reader they are the same thing.
+ */
+
+/**
  * Which of the house display faces a headline is set in.
  *
  * A newspaper does not set every headline on a page in the same face, and this reader is
@@ -128,6 +153,23 @@ export function frameFor(id: string): Frame {
   // Of the boxed ones, which line. Taken from a different part of the same byte so the
   // three styles are evenly spread among them rather than one being far rarer.
   return FRAMES[1 + (((h / BOXED_IN) | 0) % (FRAMES.length - 1))] as Frame;
+}
+
+/**
+ * Whether a wide story's body is set in two columns.
+ *
+ * Only asked about the widths over half a page — see the caller. That is where the problem
+ * is: a standfirst running the whole sixteen tracks is a line of prose seven hundred pixels
+ * long, and the eye loses its place coming back to the start of the next one. Two columns is
+ * the answer newspapers have always used, and it spends the width rather than throwing it
+ * away with a measure cap.
+ *
+ * Not every wide story, so a page has some of each. Two wide stories set differently are two
+ * things a reader can tell apart, which is the argument for all of this.
+ */
+export function setsInColumns(id: string): boolean {
+  // Its own bit again, so this is not secretly the same fact as the frame or the face.
+  return ((hash(id) >>> 12) & 1) === 1;
 }
 
 /**

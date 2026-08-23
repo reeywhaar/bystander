@@ -97,8 +97,17 @@ body {
  */
 @layer components {
   .page-grid {
+    /*
+     * Sixteen tracks, not four.
+     *
+     * On a four-track grid the only widths available are 4, 2 and 1 of them — and all three
+     * divide four, so every row tiles perfectly and `dense` never has a hole to fill. That
+     * was measured: it had not moved a single card, and forty-six of fifty-one cards were the
+     * same width. Sixteen gives widths that are not all multiples of a column, which is what
+     * lets a row fail to tile.
+     */
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(16, minmax(0, 1fr));
     grid-auto-flow: dense;
     gap: 1.75rem;
     /*
@@ -113,46 +122,58 @@ body {
     align-items: start;
   }
 
+  /* Sixteen, ten, eight, six, four. The gaps left when they do not add up are about a
+     hundred and thirty pixels of white — a margin, not a hole. */
   .slot-lead {
-    grid-column: span 4;
+    grid-column: span 16;
+  }
+  .slot-wide {
+    grid-column: span 12;
   }
   .slot-feature {
-    grid-column: span 2;
+    grid-column: span 8;
   }
   .slot-standard,
   .slot-brief {
-    grid-column: span 1;
+    grid-column: span 4;
   }
 
+  /*
+   * Narrower screens keep the sixteen tracks and shorten the widths onto them, rather than
+   * changing the track count — one grid to reason about instead of four.
+   */
   @media (max-width: 1100px) {
-    .page-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    .slot-wide,
+    .slot-feature {
+      grid-column: span 10;
     }
-    .slot-lead {
-      grid-column: span 3;
+    .slot-standard,
+    .slot-brief {
+      grid-column: span 6;
     }
   }
 
   @media (max-width: 820px) {
     .page-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 1.25rem;
     }
-    .slot-lead,
+    .slot-wide,
     .slot-feature {
-      grid-column: span 2;
+      grid-column: span 16;
+    }
+    .slot-standard,
+    .slot-brief {
+      grid-column: span 8;
     }
   }
 
   @media (max-width: 560px) {
-    .page-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
     .slot-lead,
+    .slot-wide,
     .slot-feature,
     .slot-standard,
     .slot-brief {
-      grid-column: span 1;
+      grid-column: span 16;
     }
   }
 
@@ -228,6 +249,9 @@ body {
 
   .slot-lead .headline {
     --headline-size: 2.25rem;
+  }
+  .slot-wide .headline {
+    --headline-size: 1.875rem;
   }
   .slot-feature .headline {
     --headline-size: 1.5rem;
@@ -332,6 +356,17 @@ body {
   .slot-lead .prose-summary {
     max-width: 34rem;
   }
+  /*
+   * Except when it is set in columns, which is the other way to solve the same problem.
+   *
+   * Two class names, to outrank the cap above rather than to be more specific for its own
+   * sake: a single `.prose-columns` loses to `.slot-lead .prose-summary` and the lead ends up
+   * with two ribbons of type in the left half of a very wide card.
+   */
+  .slot-lead .prose-columns,
+  .slot-wide .prose-columns {
+    max-width: none;
+  }
 
   /*
    * The nameplate, and the one piece of type here that never joins the rotation. A paper's
@@ -397,8 +432,35 @@ body {
     line-height: 1.55;
   }
 
+  /*
+   * A wide story's body, set in two columns.
+   *
+   * Only on the widths over half a page, because that is where the problem is: a standfirst
+   * running the full sixteen tracks is a line of prose seven hundred pixels long, and the eye
+   * loses its place on the way back to the start of the next one. Newspapers have always
+   * answered that by splitting the story rather than by narrowing its column, which is the
+   * honest answer — it spends the width instead of throwing it away.
+   *
+   * Chosen per article, so a page has some of each. Two wide stories set differently are two
+   * things a reader can tell apart, which is the argument for all of this.
+   */
+  .prose-columns {
+    columns: 2;
+    column-gap: 2rem;
+    /* The measure cap below is for a single column of prose. Columns are the measure now,
+       and keeping both would huddle two narrow ribbons in the left half of a wide card. */
+    max-width: none;
+  }
+  .prose-columns :where(p) {
+    /* One line stranded at the top or bottom of a column is the thing that makes columns
+       look broken rather than set. */
+    orphans: 2;
+    widows: 2;
+  }
+
   /* Wider cards, higher floors. A feature will not go below sixteen, a lead below
      seventeen — and either can still draw the top of the ladder. */
+  .slot-wide .prose-summary,
   .slot-feature .prose-summary {
     --prose-floor: 1rem;
   }

@@ -78,6 +78,7 @@ var Derived = []Migration{
 	derivedInitialSchema,
 	derivedReadArticles,
 	derivedItemLinkIndex,
+	derivedWideSlot,
 }
 
 // exec is the shape almost every migration takes: some SQL, in its own transaction.

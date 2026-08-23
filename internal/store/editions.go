@@ -11,7 +11,14 @@ import (
 	"bystander/internal/ids"
 )
 
-// Slot is how prominently an article is laid out.
+// Slot is how prominently an article is laid out, and how much of the page's sixteen tracks
+// it takes: lead all of them, wide twelve, feature eight, standard and brief four.
+//
+// Every width is a multiple of the narrowest, so whatever a row has left over is a width
+// something else can fill — the page can be irregular without ever stranding a gap nothing
+// fits. Twelve is what makes it irregular at all: a row holding one has four tracks left,
+// which only a single column can take, so the grid has to reach past the next article to
+// find one. See web/src/lib/voice.ts for what this is in service of.
 //
 // Decided at generation time and stored, so the page is identical on every reload until
 // the next edition replaces it. The type lives here because the schema's CHECK constraint
@@ -20,6 +27,7 @@ type Slot string
 
 const (
 	SlotLead     Slot = "lead"
+	SlotWide     Slot = "wide"
 	SlotFeature  Slot = "feature"
 	SlotStandard Slot = "standard"
 	SlotBrief    Slot = "brief"

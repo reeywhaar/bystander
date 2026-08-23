@@ -70,8 +70,12 @@ func TestInviteToFrontPage(t *testing.T) {
 	if len(page.Items) != 8 {
 		t.Fatalf("the page holds %d articles, want the 8 the feed published", len(page.Items))
 	}
-	if page.Items[0].Slot != string(store.SlotLead) {
-		t.Errorf("the first article is laid out as %q, want lead", page.Items[0].Slot)
+	// The page opens with weight, but not always the same weight — the opener's width is
+	// drawn from the three that are wider than a column.
+	switch page.Items[0].Slot {
+	case string(store.SlotLead), string(store.SlotWide), string(store.SlotFeature):
+	default:
+		t.Errorf("the page opens with %q, want something wider than a column", page.Items[0].Slot)
 	}
 	if page.Items[0].Feed.Title != "The Example" {
 		t.Errorf("the card names its source as %q", page.Items[0].Feed.Title)

@@ -210,7 +210,13 @@ func TestExhaustedPoolGivesAShortPage(t *testing.T) {
 	}
 }
 
-func TestSlotsByRank(t *testing.T) {
+// The page opens with weight, and prominence is spread rather than spent at the top.
+//
+// This replaced a rule that gave rank 0 the lead and ranks 1..4 the features, which ran the
+// page big to small and then left forty cards identical. Rank is draw order out of a weighted
+// sample, not an editor's judgement, so there was never anything to preserve by stacking
+// prominence at the front — and a page of identical cards is a page with one landmark on it.
+func TestThePageOpensWideAndSpreadsTheRest(t *testing.T) {
 	var list []*Source
 	var ids []string
 	for i := range 6 {
@@ -220,28 +226,88 @@ func TestSlotsByRank(t *testing.T) {
 	}
 	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
 
-	picks := Select(buckets, sources(list...), nil, 50, 11)
-	if len(picks) < 10 {
-		t.Fatalf("only %d articles selected; the rest of this test needs a full page", len(picks))
-	}
-	if picks[0].Slot != store.SlotLead {
-		t.Errorf("rank 0 is %q, want lead", picks[0].Slot)
-	}
-	if picks[1].Slot != store.SlotFeature {
-		t.Errorf("rank 1 is %q, want feature", picks[1].Slot)
-	}
-	if last := picks[len(picks)-1]; last.Slot != store.SlotStandard {
-		t.Errorf("the last article is %q, want standard", last.Slot)
-	}
-	// Exactly one lead. A page with two is not a front page.
-	leads := 0
-	for _, p := range picks {
-		if p.Slot == store.SlotLead {
-			leads++
+	// Several seeds, because these are drawn: one page passing says little.
+	for seed := int64(1); seed <= 12; seed++ {
+		picks := Select(buckets, sources(list...), nil, 50, seed)
+		if len(picks) < 20 {
+			t.Fatalf("seed %d: only %d articles; this test needs a full page", seed, len(picks))
 		}
+
+		// Never a single column at the top. A front page that began with four narrow ones
+		// would have nothing to look at first.
+		switch picks[0].Slot {
+		case store.SlotLead, store.SlotWide, store.SlotFeature:
+		default:
+			t.Errorf("seed %d: the page opens with %q", seed, picks[0].Slot)
+		}
+
+		wide := []int{}
+		for i, p := range picks {
+			switch p.Slot {
+			case store.SlotLead, store.SlotWide, store.SlotFeature:
+				wide = append(wide, i)
+			}
+		}
+		if len(wide) < 2 {
+			t.Errorf("seed %d: %d wide cards on a page of %d", seed, len(wide), len(picks))
+		}
+
+		// Spread, not stacked. The old rule put them all in the first five ranks; the test
+		// that matters is that at least one is well down the page.
+		if last := wide[len(wide)-1]; last < len(picks)/2 {
+			t.Errorf("seed %d: the last wide card is at rank %d of %d — prominence is still "+
+				"bunched at the top", seed, last, len(picks))
+		}
+
+		// Two wide cards next to each other in reading order is fine and is not checked
+		// for. Adjacent here does not mean side by side: `dense` places them, and a ten
+		// beside a six is a row that tiles exactly. Asserting otherwise would be asserting
+		// a guess about the grid.
 	}
-	if leads != 1 {
-		t.Errorf("%d articles are laid out as the lead", leads)
+}
+
+// Nothing is ever narrower than a quarter of the grid.
+//
+// The grid is sixteen tracks so that widths need not be multiples of a column, which is what
+// lets a row fail to tile — but a card of one or two tracks would be a hundred pixels of
+// squeezed text, and there is no story worth reading in that. The gaps a row leaves when it
+// does not add up stay white; they never become a card.
+func TestNoArticleIsNarrowerThanAQuarterOfThePage(t *testing.T) {
+	tracks := map[store.Slot]int{
+		store.SlotLead:     16,
+		store.SlotWide:     12,
+		store.SlotFeature:  8,
+		store.SlotStandard: 4,
+		store.SlotBrief:    4,
+	}
+	narrowest := 4
+
+	var list []*Source
+	var ids []string
+	for i := range 6 {
+		id := fmt.Sprintf("f%d", i)
+		list = append(list, feed(id, 50, 200))
+		ids = append(ids, id)
+	}
+	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
+
+	for seed := int64(1); seed <= 12; seed++ {
+		for _, p := range Select(buckets, sources(list...), nil, 50, seed) {
+			span, known := tracks[p.Slot]
+			if !known {
+				t.Fatalf("seed %d: %q has no width; styles.css will not know either",
+					seed, p.Slot)
+			}
+			if span*5 < 16 {
+				t.Errorf("seed %d: %q is %d/16, under a fifth of the page", seed, p.Slot, span)
+			}
+			// And a multiple of the narrowest, which is what guarantees a row can never
+			// strand a gap nothing fits: the remainder is then a multiple of it too.
+			if span%narrowest != 0 {
+				t.Errorf("seed %d: %q is %d/16, not a multiple of the narrowest %d/16 — a row "+
+					"holding one could leave a gap no card fits", seed, p.Slot, span, narrowest)
+			}
+		}
 	}
 }
 

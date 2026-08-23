@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
-import { frameFor, proseStep, type Voice } from "@app/lib/voice";
+import { frameFor, proseStep, setsInColumns, type Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -103,7 +103,14 @@ export function ArticleCard({
           // story's own, from a ladder in styles.css, and a `text-base` here would win the
           // cascade and flatten it. Larger than it began, too — the standfirst is the only
           // prose on the page; everything else here is scanned, this is read.
-          className={`prose-summary prose-step-${proseStep(article.id)} mt-2 text-ink-muted`}
+          className={`prose-summary prose-step-${proseStep(article.id)} mt-2 text-ink-muted ${
+            // Only the widths over half a page: below that the measure is already short
+            // enough, and two columns of it would be two narrow ribbons.
+            (article.slot === "lead" || article.slot === "wide") &&
+            setsInColumns(article.id)
+              ? "prose-columns"
+              : ""
+          }`}
           // Sanitized on the server, at ingest, once — an allowlist of a dozen tags with
           // every script and every attribute but a resolved href removed. It is not
           // sanitized again here on purpose: a second sanitizer is a second thing to be

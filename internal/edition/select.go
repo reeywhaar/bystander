@@ -155,7 +155,7 @@ func Select(buckets []Bucket, sources, seen map[string]*Source, size int, seed i
 		}
 	}
 
-	assignSlots(picks, size)
+	assignSlots(picks, rng)
 	return picks
 }
 
@@ -200,16 +200,77 @@ func weightedIndex(rng *rand.Rand, n int, weight func(int) int) int {
 	return n - 1
 }
 
-// assignSlots decides how prominently each article is laid out, by rank.
+// wideSlots are the widths worth more than one column, widest first.
+//
+// The page is sixteen tracks: lead takes all of them, wide twelve, feature eight, and an
+// ordinary column four. Every one is a multiple of the narrowest, so a row always has room
+// for something — but they do not all tile against each other, and twelve is the one that
+// does not. A row holding a twelve has four tracks left, which only a column can fill, so
+// `grid-auto-flow: dense` has to reach past the next article to find one. That reaching is
+// the whole mechanism: a page that backfills is a page with a shape instead of rows.
+var wideSlots = []store.Slot{store.SlotLead, store.SlotWide, store.SlotFeature}
+
+// openerWeights and bodyWeights are how often each width is drawn, in the same order.
+//
+// The opener is drawn evenly: the page should not begin the same shape every time, and all
+// three of these are a reasonable way to begin.
+//
+// Below it, full width is deliberately rare. One story running the whole page halfway down is
+// a landmark somebody can navigate by; three of them is a page chopped into bands, and the
+// thing they were supposed to stand out from is gone.
+var (
+	// Evenly: the page should not begin the same shape every time, and all three of these
+	// are a reasonable way to begin.
+	openerWeights = []int{1, 1, 1}
+	bodyWeights   = []int{1, 2, 3}
+)
+
+// drawSlot picks a width by weight.
+func drawSlot(rng *rand.Rand, weights []int) store.Slot {
+	total := 0
+	for _, w := range weights {
+		total += w
+	}
+	roll := rng.IntN(total)
+	for i, w := range weights {
+		roll -= w
+		if roll < 0 {
+			return wideSlots[i]
+		}
+	}
+	return wideSlots[len(wideSlots)-1]
+}
+
+// assignSlots decides how wide each article is laid out, and how prominently.
 //
 // Done here, at generation time, and stored — so the client renders slots rather than
 // computing them, the page does not reflow after paint, and two loads of one edition are
-// identical.
-func assignSlots(picks []store.Pick, size int) {
-	features := size * 8 / 100
-	if features < 1 && len(picks) > 1 {
-		features = 1
+// identical. That last part is what the whole thing is for: a page somebody can come back to
+// and find something in again. See web/src/lib/voice.ts.
+//
+// Two rules shape it, and they pull in opposite directions on purpose.
+//
+// **The page opens with weight.** The first card is never a single column. A front page that
+// began with four narrow ones would have nothing to look at first, and every paper ever
+// printed leads with something big. Which of the three wide slots it gets is drawn, so the
+// top of the page is not the same shape every time.
+//
+// **After that, width is scattered rather than spent.** The old rule handed the widest slots
+// to ranks one through four and left everything below identical, so the page ran big to small
+// and then stayed small for forty cards. Rank here is draw order out of a weighted sample, not
+// an editor's judgement of importance, so there is nothing to preserve by stacking prominence
+// at the top — and a page with a full-width story halfway down reads as a page rather than as
+// a list that has been sorted.
+func assignSlots(picks []store.Pick, rng *rand.Rand) {
+	// A page can come out empty — everything read, nothing left in the pool — and the rules
+	// below all start from "the first card", which there then is not.
+	if len(picks) == 0 {
+		return
 	}
+
+	// Roughly one card in eight gets more than its column, the first one included. Fewer and
+	// the page is uniform again; more and wide stops meaning anything.
+	wides := max(len(picks)/8, 1)
 
 	for i := range picks {
 		item := picks[i].Item
@@ -220,13 +281,44 @@ func assignSlots(picks []store.Pick, size int) {
 			picks[i].Slot = store.SlotBrief
 			continue
 		}
-		switch {
-		case i == 0:
-			picks[i].Slot = store.SlotLead
-		case i <= features:
-			picks[i].Slot = store.SlotFeature
-		default:
-			picks[i].Slot = store.SlotStandard
+		picks[i].Slot = store.SlotStandard
+	}
+
+	// Where the wide ones go. The first card always, then one somewhere in each of the
+	// remaining bands — which spreads them down the page without letting two land together.
+	at := []int{}
+	if picks[0].Slot != store.SlotBrief {
+		at = append(at, 0)
+	}
+	if band := (len(picks) - 1) / max(wides, 1); band > 0 {
+		for k := len(at); k < wides; k++ {
+			// One position per band, drawn inside it. A fixed offset would put every wide
+			// card at the same place in its band, which is a pattern a reader picks up
+			// well before they could name it.
+			//
+			// Nothing stops two landing next to each other, and nothing should. Adjacent
+			// here means adjacent in reading order, not side by side on the page: `dense`
+			// decides that. A ten beside a six is a row that tiles exactly; a ten beside an
+			// eight pushes the eight down and pulls a later column up into the gap. Keeping
+			// them apart would be guessing at the grid's job and getting it wrong.
+			pos := 1 + (k * band) + rng.IntN(band)
+			if pos >= len(picks) {
+				break
+			}
+			if picks[pos].Slot != store.SlotStandard {
+				continue
+			}
+			at = append(at, pos)
 		}
+	}
+
+	// Which width each of them gets is drawn — so the top of the page is not the same shape
+	// every time, and a full-width story can turn up halfway down without being the rule.
+	for _, pos := range at {
+		weights := bodyWeights
+		if pos == 0 {
+			weights = openerWeights
+		}
+		picks[pos].Slot = drawSlot(rng, weights)
 	}
 }
