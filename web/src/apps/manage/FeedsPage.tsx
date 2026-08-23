@@ -256,8 +256,16 @@ function FeedRow({
           and carrying the whole of itself in a title — so a long one makes the row no
           taller and never shoves the slider onto a line of its own, which is what turned
           this list into a staircase. */}
-      <div className="flex items-baseline gap-4">
-        <div className="flex min-w-0 flex-1 items-baseline gap-x-2">
+      {/* Side by side on a wide screen, stacked on a narrow one.
+          The priority control is a fixed ~16rem — a label that must not resize plus a
+          track — which on a phone leaves nothing for the name, and `truncate` duly
+          truncated it to nothing.
+
+          So on a narrow screen it is three lines: the name, then where it is filed, then
+          the slider. `order` rather than a second copy of the markup, because the slider
+          belongs beside the name on a wide screen and under everything on a narrow one. */}
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <div className="order-1 flex min-w-0 basis-full items-baseline gap-x-2 sm:flex-1 sm:basis-auto">
           <button
             type="button"
             onClick={() => setOpen((was) => !was)}
@@ -297,7 +305,18 @@ function FeedRow({
           )}
         </div>
 
-        <div className="shrink-0">
+        {/* A quieter line for what the name has no room for: where this feed is filed,
+            and how long it has been here. The tags drop away when the row is open,
+            because the chips below are the same information and can be acted on. */}
+        <p className="order-2 basis-full text-xs break-words text-ink-faint sm:order-3">
+          {!open && labels.length > 0 ? (
+            <span className="text-ink-muted">{labels.join(" · ")}</span>
+          ) : null}
+          {!open && labels.length > 0 ? " · " : ""}
+          added {since(feed.created_at)}
+        </p>
+
+        <div className="order-3 shrink-0 sm:order-2 sm:ml-auto">
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}
@@ -307,17 +326,6 @@ function FeedRow({
           />
         </div>
       </div>
-
-      {/* A second, quieter line for what the first has no room for: where this feed is
-          filed, and how long it has been here. The tags drop away when the row is open,
-          because the chips below are the same information and can be acted on. */}
-      <p className="mt-0.5 truncate text-xs text-ink-faint">
-        {!open && labels.length > 0 ? (
-          <span className="text-ink-muted">{labels.join(" · ")}</span>
-        ) : null}
-        {!open && labels.length > 0 ? " · " : ""}
-        added {since(feed.created_at)}
-      </p>
 
       {open ? (
         <div className="mt-3 flex flex-col gap-3 pl-1">
