@@ -12,7 +12,6 @@ export function getSettings(): ApiAction<Settings> {
 export function patchSettings(changes: {
   edition_interval?: number;
   edition_size?: number;
-  article_window?: number;
 }): ApiAction<Settings> {
   return createApiAction((d) =>
     d.call({ method: "PATCH", path: "/api/settings", body: changes }),

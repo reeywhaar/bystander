@@ -20,6 +20,7 @@ import { PencilIcon } from "@app/components/ui/icons/PencilIcon";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { tagLabel } from "@app/lib/tags";
+import { ARTICLE_WINDOWS } from "@app/lib/constants";
 import { since } from "@app/lib/time";
 import {
   useDiscoverFeeds,
@@ -365,6 +366,40 @@ function FeedRow({
                 );
               })
             )}
+          </div>
+
+          {/* How far back this feed reaches, not how far back the reader does. A news feed
+              worth a day and a blog worth a year are exactly the pair one number could not
+              serve, which is why it sits here rather than in the settings. */}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-ink-muted">
+              Reaches back — articles older than this are not picked from this
+              feed.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {ARTICLE_WINDOWS.map((window) => {
+                const on = window.seconds === feed.article_window;
+                return (
+                  <button
+                    key={window.seconds}
+                    type="button"
+                    onClick={() =>
+                      update.mutate({
+                        id: feed.id,
+                        changes: { article_window: window.seconds },
+                      })
+                    }
+                    className={`rounded-md border px-2.5 py-1 text-xs ${
+                      on
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-rule text-ink-muted hover:text-ink"
+                    }`}
+                  >
+                    {window.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>

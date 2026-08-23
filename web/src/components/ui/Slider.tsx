@@ -25,6 +25,7 @@ export function Slider({
   label,
   format,
   className = "w-64",
+  stacked = false,
 }: {
   value: number;
   min: number;
@@ -35,6 +36,15 @@ export function Slider({
   /** Renders the number beside the track, from the position under the finger. */
   format: (value: number) => ReactNode;
   className?: string;
+  /**
+   * Track on its own full-width line with the value beneath it, right-aligned.
+   *
+   * For a control that owns its row rather than sitting at the end of one. Inline, the
+   * value has to hold a fixed width so a longer word cannot squeeze the track; stacked,
+   * nothing is competing for the space, so it can simply sit under the end of the track it
+   * describes.
+   */
+  stacked?: boolean;
 }) {
   const [local, setLocal] = useState(value);
 
@@ -46,31 +56,46 @@ export function Slider({
     if (local !== value) onCommit(local);
   }
 
+  const track = (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={local}
+      onChange={(event) => setLocal(Number(event.target.value))}
+      onPointerUp={commit}
+      onKeyUp={commit}
+      onBlur={commit}
+      aria-label={label}
+      // shrink-0 is load-bearing. The label beside the track changes length as the value
+      // moves — "as usual" becomes "less often" — and a flex item will not shrink below
+      // its own content, so the growing label was squeezing the track under the finger
+      // that was dragging it.
+      className={`${stacked ? "w-full" : className} shrink-0 accent-[var(--accent)]`}
+    />
+  );
+
+  if (stacked) {
+    return (
+      <span className="flex w-full flex-col gap-1.5">
+        {track}
+        <span className="text-right text-xs tabular-nums text-ink-muted">
+          {format(local)}
+        </span>
+      </span>
+    );
+  }
+
   return (
-    // The value reads before the track, not after: it is what the control is *for*, and a
-    // number chasing along behind the thumb is harder to read than one holding still in
-    // front of it.
+    // Inline, the value reads before the track rather than after: it is what the control
+    // is *for*, and a number chasing along behind the thumb is harder to read than one
+    // holding still in front of it.
     <span className="flex items-center gap-3 text-xs text-ink-muted">
       <span className="shrink-0 whitespace-nowrap tabular-nums">
         {format(local)}
       </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={local}
-        onChange={(event) => setLocal(Number(event.target.value))}
-        onPointerUp={commit}
-        onKeyUp={commit}
-        onBlur={commit}
-        aria-label={label}
-        // shrink-0 is load-bearing. The label beside the track changes length as the value
-        // moves — "as usual" becomes "less often" — and a flex item will not shrink below
-        // its own content, so the growing label was squeezing the track under the finger
-        // that was dragging it.
-        className={`${className} shrink-0 accent-[var(--accent)]`}
-      />
+      {track}
     </span>
   );
 }

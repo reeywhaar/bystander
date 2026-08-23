@@ -65,6 +65,7 @@ type Migration struct {
 var Main = []Migration{
 	mainInitialSchema,
 	mainArticleWindow,
+	mainArticleWindowPerFeed,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db

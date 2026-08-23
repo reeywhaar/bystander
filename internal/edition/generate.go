@@ -56,11 +56,15 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	for _, sub := range subs {
 		feedIDs = append(feedIDs, sub.FeedID)
 	}
-	// Nothing older than the window this person chose. A front page is about what is
-	// going on, and how far back that reaches is theirs to say.
-	var notOlderThan time.Time
-	if settings.ArticleWindow > 0 {
-		notOlderThan = g.store.Now().Add(-settings.ArticleWindow)
+	// Nothing older than each feed's own window. A news feed worth a day and a blog worth
+	// a year are exactly the pair one number could not serve, which is why this is per
+	// feed rather than per reader.
+	now := g.store.Now()
+	notOlderThan := make(map[string]time.Time, len(subs))
+	for _, sub := range subs {
+		if sub.ArticleWindow > 0 {
+			notOlderThan[sub.FeedID] = now.Add(-sub.ArticleWindow)
+		}
 	}
 	candidates, err := g.store.Candidates(ctx, principalID, feedIDs, candidateDepth, notOlderThan)
 	if err != nil {

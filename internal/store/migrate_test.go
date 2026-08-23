@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"bystander/internal/store/migrations"
 )
@@ -170,5 +171,76 @@ func TestAFailedMigrationLeavesTheVersionBehind(t *testing.T) {
 	}
 	if count != 0 {
 		t.Error("a table from the failed migration survived; the transaction did not roll back")
+	}
+}
+
+// The first migration that carries data rather than only shape: the article window moved
+// from being one setting per person to one per feed, and nobody's pages should have changed
+// the day it landed.
+func TestTheArticleWindowMovedOntoFeeds(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	// A main database as it stood when the window was still a single setting.
+	const before = 2
+	if len(migrations.Main) <= before {
+		t.Skip("the move has not shipped yet")
+	}
+	db := openAt(t, dir, MainFile, migrations.Main, before)
+
+	for _, stmt := range []string{
+		`INSERT INTO principals (id, username, password_hash, role, created_at)
+		 VALUES ('p_1', 'alice', 'x', 'user', 0)`,
+		// A month, rather than the default week — the point is that a choice survives.
+		`INSERT INTO settings (principal_id, edition_interval, edition_size, max_article_age, next_edition_at)
+		 VALUES ('p_1', 86400, 60, 2592000, 0)`,
+		`INSERT INTO feeds (id, url, canonical_url, created_at)
+		 VALUES ('f_1', 'https://a.example/rss', 'https://a.example/rss', 0),
+		        ('f_2', 'https://b.example/rss', 'https://b.example/rss', 0)`,
+		`INSERT INTO subscriptions (id, principal_id, feed_id, priority, created_at)
+		 VALUES ('s_1', 'p_1', 'f_1', 50, 0), ('s_2', 'p_1', 'f_2', 90, 0)`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed the old database: %v", err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer s.Close()
+
+	subs, err := s.ListSubscriptions(ctx, "p_1")
+	if err != nil {
+		t.Fatalf("ListSubscriptions(): %v", err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("%d subscriptions survived, want 2", len(subs))
+	}
+	for _, sub := range subs {
+		if sub.ArticleWindow != 30*24*time.Hour {
+			t.Errorf("%s reaches back %s, want the month its owner had chosen", sub.ID, sub.ArticleWindow)
+		}
+	}
+
+	// The setting it came from is gone, rather than left behind to disagree later.
+	var columns int
+	if err := s.main.QueryRowContext(ctx,
+		`SELECT count(*) FROM pragma_table_info('settings') WHERE name = 'max_article_age'`).Scan(&columns); err != nil {
+		t.Fatalf("inspect settings: %v", err)
+	}
+	if columns != 0 {
+		t.Error("settings still carries max_article_age")
+	}
+
+	// And everything else about the settings row came through the table rebuild.
+	set, err := s.Settings(ctx, "p_1")
+	if err != nil {
+		t.Fatalf("Settings(): %v", err)
+	}
+	if set.EditionSize != 60 || set.EditionInterval != 24*time.Hour {
+		t.Errorf("settings = %+v, want what was there before", set)
 	}
 }

@@ -136,6 +136,8 @@ export interface Subscription {
   title_override: string;
   priority: number;
   tag_ids: string[];
+  /** Seconds. How old an article from this feed may be and still appear; 0 is no limit. */
+  article_window: number;
   created_at: number;
   last_success_at: number | null;
   last_error: string;
@@ -154,8 +156,6 @@ export interface Settings {
   /** Seconds. One of the four in `EDITION_INTERVALS`. */
   edition_interval: number;
   edition_size: number;
-  /** Seconds. How old an article may be and still appear; 0 is no limit. */
-  article_window: number;
   next_edition_at: number;
 }
 

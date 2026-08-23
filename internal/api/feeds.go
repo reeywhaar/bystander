@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"bystander/internal/feeds"
 	"bystander/internal/opml"
@@ -29,6 +30,10 @@ type subscriptionBody struct {
 	TagIDs        []string `json:"tag_ids"`
 	CreatedAt     int64    `json:"created_at"`
 
+	// ArticleWindow is how old an article from this feed may be and still reach a page,
+	// in seconds. Zero is no limit.
+	ArticleWindow int64 `json:"article_window"`
+
 	LastSuccessAt *int64 `json:"last_success_at"`
 	LastError     string `json:"last_error"`
 	FailureCount  int    `json:"failure_count"`
@@ -44,6 +49,7 @@ func subscriptionOf(sub *store.Subscription) subscriptionBody {
 		TitleOverride: sub.TitleOverride,
 		Priority:      sub.Priority,
 		TagIDs:        sub.TagIDs,
+		ArticleWindow: int64(sub.ArticleWindow.Seconds()),
 		CreatedAt:     sub.CreatedAt.Unix(),
 		LastError:     sub.Feed.LastError,
 		FailureCount:  sub.Feed.FailureCount,
@@ -217,6 +223,7 @@ type patchFeedRequest struct {
 	Priority      *int      `json:"priority"`
 	TitleOverride *string   `json:"title_override"`
 	TagIDs        *[]string `json:"tag_ids"`
+	ArticleWindow *int64    `json:"article_window"`
 }
 
 func (s *Server) patchFeed(w http.ResponseWriter, r *http.Request) {
@@ -226,8 +233,16 @@ func (s *Server) patchFeed(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if err := s.store.UpdateSubscription(r.Context(), p.ID, r.PathValue("id"),
-		body.Priority, body.TitleOverride, body.TagIDs); err != nil {
+	patch := store.SubscriptionPatch{
+		Priority:      body.Priority,
+		TitleOverride: body.TitleOverride,
+		TagIDs:        body.TagIDs,
+	}
+	if body.ArticleWindow != nil {
+		window := time.Duration(*body.ArticleWindow) * time.Second
+		patch.ArticleWindow = &window
+	}
+	if err := s.store.UpdateSubscription(r.Context(), p.ID, r.PathValue("id"), patch); err != nil {
 		s.fail(w, r, err)
 		return
 	}

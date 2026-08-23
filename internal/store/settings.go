@@ -51,11 +51,6 @@ type Settings struct {
 	EditionInterval time.Duration
 	EditionSize     int
 
-	// ArticleWindow is how old an article may be and still reach a page. Zero is no
-	// limit — bounded in practice by how long articles are kept, which is what
-	// EffectiveItemRetention works out.
-	ArticleWindow time.Duration
-
 	NextEditionAt time.Time
 }
 
@@ -63,7 +58,6 @@ type Settings struct {
 type SettingsPatch struct {
 	EditionInterval *time.Duration
 	EditionSize     *int
-	ArticleWindow   *time.Duration
 }
 
 // Settings returns one principal's preferences. The row is created with the account, so
@@ -74,11 +68,10 @@ func (s *Store) Settings(ctx context.Context, principalID string) (*Settings, er
 		interval int64
 		next     int64
 	)
-	var window int64
 	err := s.main.QueryRowContext(ctx,
-		`SELECT edition_interval, edition_size, max_article_age, next_edition_at
+		`SELECT edition_interval, edition_size, next_edition_at
 		   FROM settings WHERE principal_id = ?`,
-		principalID).Scan(&interval, &set.EditionSize, &window, &next)
+		principalID).Scan(&interval, &set.EditionSize, &next)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFound("no settings for %s", principalID)
 	}
@@ -86,7 +79,6 @@ func (s *Store) Settings(ctx context.Context, principalID string) (*Settings, er
 		return nil, err
 	}
 	set.EditionInterval = time.Duration(interval) * time.Second
-	set.ArticleWindow = time.Duration(window) * time.Second
 	set.NextEditionAt = time.Unix(next, 0).UTC()
 	return &set, nil
 }
@@ -123,18 +115,10 @@ func (s *Store) UpdateSettings(ctx context.Context, principalID string, patch Se
 		current.EditionSize = *size
 	}
 
-	if patch.ArticleWindow != nil {
-		if !validWindow(*patch.ArticleWindow) {
-			return Invalid("%s is not one of the windows an article can be picked from", *patch.ArticleWindow)
-		}
-		current.ArticleWindow = *patch.ArticleWindow
-	}
-
 	res, err := s.main.ExecContext(ctx,
-		`UPDATE settings SET edition_interval = ?, edition_size = ?, max_article_age = ?,
-		   next_edition_at = ? WHERE principal_id = ?`,
-		int64(current.EditionInterval.Seconds()), current.EditionSize,
-		int64(current.ArticleWindow.Seconds()), unix(next), principalID)
+		`UPDATE settings SET edition_interval = ?, edition_size = ?, next_edition_at = ?
+		 WHERE principal_id = ?`,
+		int64(current.EditionInterval.Seconds()), current.EditionSize, unix(next), principalID)
 	if err != nil {
 		return err
 	}
@@ -144,7 +128,7 @@ func (s *Store) UpdateSettings(ctx context.Context, principalID string, patch Se
 // DueSettings returns everybody whose page is ready to be regenerated.
 func (s *Store) DueSettings(ctx context.Context) ([]*Settings, error) {
 	rows, err := s.main.QueryContext(ctx,
-		`SELECT s.principal_id, s.edition_interval, s.edition_size, s.max_article_age, s.next_edition_at
+		`SELECT s.principal_id, s.edition_interval, s.edition_size, s.next_edition_at
 		   FROM settings s
 		   JOIN principals p ON p.id = s.principal_id
 		  WHERE s.next_edition_at <= ? AND p.disabled_at IS NULL
@@ -160,14 +144,12 @@ func (s *Store) DueSettings(ctx context.Context) ([]*Settings, error) {
 		var (
 			set      Settings
 			interval int64
-			window   int64
 			next     int64
 		)
-		if err := rows.Scan(&set.PrincipalID, &interval, &set.EditionSize, &window, &next); err != nil {
+		if err := rows.Scan(&set.PrincipalID, &interval, &set.EditionSize, &next); err != nil {
 			return nil, err
 		}
 		set.EditionInterval = time.Duration(interval) * time.Second
-		set.ArticleWindow = time.Duration(window) * time.Second
 		set.NextEditionAt = time.Unix(next, 0).UTC()
 		out = append(out, &set)
 	}
@@ -213,10 +195,14 @@ func validWindow(d time.Duration) bool {
 func (s *Store) EffectiveItemRetention(ctx context.Context) (time.Duration, error) {
 	var longest int64
 	err := s.main.QueryRowContext(ctx,
-		// A zero anywhere means somebody asked for no limit, so it takes the ceiling.
-		`SELECT CASE WHEN min(max_article_age) = 0 THEN ? ELSE max(max_article_age) END
-		   FROM settings`,
-		int64(MaxItemRetention.Seconds())).Scan(&longest)
+		// A zero anywhere means some feed was asked to reach back without limit, so it
+		// takes the ceiling. Read from subscriptions, because that is where the window
+		// lives: a feed nobody follows any more constrains nothing.
+		`SELECT CASE WHEN count(*) = 0 THEN ?
+		             WHEN min(max_article_age) = 0 THEN ?
+		             ELSE max(max_article_age) END
+		   FROM subscriptions`,
+		int64(MinItemRetention.Seconds()), int64(MaxItemRetention.Seconds())).Scan(&longest)
 	if err != nil {
 		return MinItemRetention, err
 	}

@@ -41,6 +41,7 @@ function subscription(overrides: Partial<Subscription> = {}): Subscription {
     title_override: "",
     priority: 50,
     tag_ids: [],
+    article_window: 604800,
     created_at: now - 3 * 86400,
     last_success_at: now - 600,
     last_error: "",

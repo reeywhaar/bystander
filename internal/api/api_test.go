@@ -538,22 +538,20 @@ func TestDeclaredFeedsAreNotSupplementedByGuesses(t *testing.T) {
 	}
 }
 
-// A front page is about what is going on, so an article older than the window somebody
-// chose is not a candidate at all.
+// A front page is about what is going on, so an article older than the window is not a
+// candidate at all — and the window belongs to the feed, not to the reader.
 func TestArticlesOlderThanTheWindowAreNotPicked(t *testing.T) {
 	h := newHarness(t)
 	h.signIn(store.RoleUser, "alice")
 	feed := newFeedServer(t, 6)
 
-	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
-
-	// The harness publishes within the last few hours, so a day's window takes everything.
-	var settings settingsBody
-	h.expect(h.do(http.MethodGet, "/api/settings", nil), http.StatusOK, &settings)
-	if settings.ArticleWindow != int64(store.DefaultArticleWindow.Seconds()) {
-		t.Errorf("a new account's window is %ds, want a week", settings.ArticleWindow)
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, &sub)
+	if sub.ArticleWindow != int64(store.DefaultArticleWindow.Seconds()) {
+		t.Errorf("a new feed's window is %ds, want a week", sub.ArticleWindow)
 	}
 
+	// The harness publishes within the last few hours, so a week takes everything.
 	var page editionBody
 	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
 	if len(page.Items) != 6 {
@@ -565,8 +563,7 @@ func TestArticlesOlderThanTheWindowAreNotPicked(t *testing.T) {
 		`UPDATE items SET published_at = published_at - ?`, int64((14 * 24 * time.Hour).Seconds())); err != nil {
 		t.Fatalf("age the articles: %v", err)
 	}
-	// A fresh page, so nothing survives from the one already composed.
-	h.expect(h.do(http.MethodPatch, "/api/settings",
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
 		map[string]int64{"article_window": 86400}), http.StatusOK, nil)
 
 	res := h.do(http.MethodPost, "/api/edition/regenerate", nil)
@@ -579,9 +576,9 @@ func TestArticlesOlderThanTheWindowAreNotPicked(t *testing.T) {
 		}
 	}
 
-	// Widening the window brings them back — the articles were never thrown away, they
+	// Widening this feed's window brings them back — they were never thrown away, they
 	// were out of reach.
-	h.expect(h.do(http.MethodPatch, "/api/settings",
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
 		map[string]int64{"article_window": 2592000}), http.StatusOK, nil)
 
 	var wider editionBody
@@ -591,16 +588,52 @@ func TestArticlesOlderThanTheWindowAreNotPicked(t *testing.T) {
 	}
 }
 
+// One feed reaching back further must not drag another with it.
+func TestEachFeedKeepsItsOwnWindow(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	fresh, stale := newFeedServer(t, 4), newFeedServer(t, 4)
+	var freshSub, staleSub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": fresh.URL}), http.StatusCreated, &freshSub)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": stale.URL}), http.StatusCreated, &staleSub)
+
+	// Everything is a fortnight old.
+	if _, err := h.store.Derived().ExecContext(t.Context(),
+		`UPDATE items SET published_at = published_at - ?`, int64((14 * 24 * time.Hour).Seconds())); err != nil {
+		t.Fatalf("age the articles: %v", err)
+	}
+
+	// One feed reaches back a month, the other keeps its week.
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+staleSub.ID,
+		map[string]int64{"article_window": 2592000}), http.StatusOK, nil)
+
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	if len(page.Items) == 0 {
+		t.Fatal("the page is empty; the widened feed should have filled it")
+	}
+	for _, article := range page.Items {
+		if article.Feed.ID == freshSub.ID {
+			t.Errorf("%q came from the feed still on a week", article.Title)
+		}
+	}
+}
+
 func TestTheWindowIsAClosedSet(t *testing.T) {
 	h := newHarness(t)
 	h.signIn(store.RoleUser, "alice")
 
+	feed := newFeedServer(t, 2)
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, &sub)
+
 	for _, bad := range []int64{1, 3600, 999999} {
-		h.expect(h.do(http.MethodPatch, "/api/settings",
+		h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
 			map[string]int64{"article_window": bad}), http.StatusBadRequest, nil)
 	}
 	for _, good := range []int64{0, 86400, 604800, 1209600, 2592000, 31536000} {
-		h.expect(h.do(http.MethodPatch, "/api/settings",
+		h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
 			map[string]int64{"article_window": good}), http.StatusOK, nil)
 	}
 }

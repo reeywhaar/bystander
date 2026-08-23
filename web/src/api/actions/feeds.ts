@@ -27,7 +27,12 @@ export function postFeeds(input: {
 /** `PATCH /api/feeds/{id}` */
 export function patchFeedsById(
   id: string,
-  changes: { priority?: number; title_override?: string; tag_ids?: string[] },
+  changes: {
+    priority?: number;
+    title_override?: string;
+    tag_ids?: string[];
+    article_window?: number;
+  },
 ): ApiAction<Subscription> {
   return createApiAction((d) =>
     d.call({ method: "PATCH", path: `/api/feeds/${seg(id)}`, body: changes }),

@@ -187,6 +187,7 @@ export function useUpdateFeed() {
         priority?: number;
         title_override?: string;
         tag_ids?: string[];
+        article_window?: number;
       };
     }) => callApi(patchFeedsById(id, changes)),
     onSuccess: () => {
@@ -304,7 +305,6 @@ export function useUpdateSettings() {
     mutationFn: (changes: {
       edition_interval?: number;
       edition_size?: number;
-      article_window?: number;
     }) => callApi(patchSettings(changes)),
     onSuccess: (settings) => {
       client.setQueryData(qk.settings, settings);

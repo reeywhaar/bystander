@@ -123,8 +123,9 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 // of the guid and SQLite has no sha256: there is nothing to join on. Reading one feed's
 // hashes and filtering as the rows come back costs a set lookup per row, against a table
 // that holds at most a few thousand entries per person.
-// notOlderThan bounds how far back a candidate may be published. A zero time is no bound.
-func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan time.Time) (map[string][]*Item, error) {
+// notOlderThan bounds how far back a candidate may be published, per feed — the window is
+// the feed's, not the reader's. A missing or zero entry is no bound.
+func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 	for _, feedID := range feedIDs {
 		seen, err := s.shownHashes(ctx, principalID, feedID)
@@ -140,8 +141,8 @@ func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []st
 		// leaving it to the loop would let a feed's whole window be spent on articles
 		// that were never eligible.
 		since := int64(0)
-		if !notOlderThan.IsZero() {
-			since = unix(notOlderThan)
+		if cutoff, ok := notOlderThan[feedID]; ok && !cutoff.IsZero() {
+			since = unix(cutoff)
 		}
 		rows, err := s.derived.QueryContext(ctx,
 			`SELECT `+itemColumns+` FROM items
@@ -186,7 +187,7 @@ func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []st
 // going to be pruned unread either way.
 //
 // exclude is what the page already holds, so an article drawn fresh is not offered back.
-func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan time.Time, exclude map[string]bool) (map[string][]*Item, error) {
+func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time, exclude map[string]bool) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 
 	for _, feedID := range feedIDs {
@@ -199,8 +200,8 @@ func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []stri
 		}
 
 		since := int64(0)
-		if !notOlderThan.IsZero() {
-			since = unix(notOlderThan)
+		if cutoff, ok := notOlderThan[feedID]; ok && !cutoff.IsZero() {
+			since = unix(cutoff)
 		}
 		// Things seen but never read come first.
 		//

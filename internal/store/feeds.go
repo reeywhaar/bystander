@@ -42,7 +42,16 @@ type Subscription struct {
 	FeedID        string
 	TitleOverride string
 	Priority      int
-	CreatedAt     time.Time
+
+	// ArticleWindow is how old an article from this feed may be and still reach a page.
+	// Zero is no limit.
+	//
+	// Per feed rather than per person, because that is the shape of the question: a news
+	// feed worth a day and a blog worth a year are exactly the pair one number cannot
+	// serve.
+	ArticleWindow time.Duration
+
+	CreatedAt time.Time
 
 	Feed   *Feed
 	TagIDs []string
@@ -273,11 +282,12 @@ func (s *Store) Subscribe(ctx context.Context, principalID, feedID string, prior
 	}
 
 	sub := &Subscription{
-		ID:          ids.New(ids.Subscription),
-		PrincipalID: principalID,
-		FeedID:      feedID,
-		Priority:    priority,
-		CreatedAt:   s.Now(),
+		ID:            ids.New(ids.Subscription),
+		PrincipalID:   principalID,
+		FeedID:        feedID,
+		Priority:      priority,
+		ArticleWindow: DefaultArticleWindow,
+		CreatedAt:     s.Now(),
 	}
 
 	tx, err := s.main.BeginTx(ctx, nil)
@@ -287,8 +297,10 @@ func (s *Store) Subscribe(ctx context.Context, principalID, feedID string, prior
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO subscriptions (id, principal_id, feed_id, priority, created_at) VALUES (?, ?, ?, ?, ?)`,
-		sub.ID, principalID, feedID, priority, unix(sub.CreatedAt)); err != nil {
+		`INSERT INTO subscriptions (id, principal_id, feed_id, priority, max_article_age, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		sub.ID, principalID, feedID, priority,
+		int64(sub.ArticleWindow.Seconds()), unix(sub.CreatedAt)); err != nil {
 		if isUnique(err) {
 			return nil, Conflict("you already follow that feed")
 		}
@@ -326,11 +338,13 @@ func setSubscriptionTags(ctx context.Context, tx *sql.Tx, principalID, subscript
 	return nil
 }
 
-const subscriptionColumns = `s.id, s.principal_id, s.feed_id, s.title_override, s.priority, s.created_at`
+const subscriptionColumns = `s.id, s.principal_id, s.feed_id, s.title_override, s.priority,
+	s.max_article_age, s.created_at`
 
 func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error) {
 	var (
 		sub     Subscription
+		window  int64
 		created int64
 		feed    Feed
 
@@ -340,11 +354,13 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 		next      int64
 		feedMade  int64
 	)
-	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Priority, &created,
+	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Priority,
+		&window, &created,
 		&feed.ID, &feed.URL, &feed.CanonicalURL, &feed.Title, &feed.SiteURL, &feed.ETag, &feed.LastModified,
 		&lastFetch, &lastOK, &status, &feed.LastError, &feed.FailureCount, &next, &feedMade); err != nil {
 		return nil, err
 	}
+	sub.ArticleWindow = time.Duration(window) * time.Second
 	sub.CreatedAt = time.Unix(created, 0).UTC()
 	feed.LastFetchAt = timeFrom(lastFetch)
 	feed.LastSuccessAt = timeFrom(lastOK)
@@ -437,20 +453,34 @@ func (s *Store) SubscriptionByID(ctx context.Context, principalID, id string) (*
 	return sub, tagRows.Err()
 }
 
+// SubscriptionPatch is what a PATCH said. A nil field is one the request did not mention.
+type SubscriptionPatch struct {
+	Priority      *int
+	TitleOverride *string
+	TagIDs        *[]string
+	ArticleWindow *time.Duration
+}
+
 // UpdateSubscription changes what was passed and leaves the rest alone.
-func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, priority *int, titleOverride *string, tagIDs *[]string) error {
+func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, patch SubscriptionPatch) error {
 	sub, err := s.SubscriptionByID(ctx, principalID, id)
 	if err != nil {
 		return err
 	}
-	if priority != nil {
-		if err := validatePriority(*priority); err != nil {
+	if patch.Priority != nil {
+		if err := validatePriority(*patch.Priority); err != nil {
 			return err
 		}
-		sub.Priority = *priority
+		sub.Priority = *patch.Priority
 	}
-	if titleOverride != nil {
-		sub.TitleOverride = strings.TrimSpace(*titleOverride)
+	if patch.TitleOverride != nil {
+		sub.TitleOverride = strings.TrimSpace(*patch.TitleOverride)
+	}
+	if patch.ArticleWindow != nil {
+		if !validWindow(*patch.ArticleWindow) {
+			return Invalid("%s is not one of the windows an article can be picked from", *patch.ArticleWindow)
+		}
+		sub.ArticleWindow = *patch.ArticleWindow
 	}
 
 	tx, err := s.main.BeginTx(ctx, nil)
@@ -460,16 +490,17 @@ func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, 
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx,
-		`UPDATE subscriptions SET priority = ?, title_override = ? WHERE id = ? AND principal_id = ?`,
-		sub.Priority, sub.TitleOverride, id, principalID)
+		`UPDATE subscriptions SET priority = ?, title_override = ?, max_article_age = ?
+		 WHERE id = ? AND principal_id = ?`,
+		sub.Priority, sub.TitleOverride, int64(sub.ArticleWindow.Seconds()), id, principalID)
 	if err != nil {
 		return err
 	}
 	if err := expectOne(res, NotFound("no subscription %s", id)); err != nil {
 		return err
 	}
-	if tagIDs != nil {
-		if err := setSubscriptionTags(ctx, tx, principalID, id, *tagIDs); err != nil {
+	if patch.TagIDs != nil {
+		if err := setSubscriptionTags(ctx, tx, principalID, id, *patch.TagIDs); err != nil {
 			return err
 		}
 	}
