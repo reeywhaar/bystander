@@ -17,6 +17,7 @@ import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
+import { tagLabel } from "@app/lib/tags";
 import { since } from "@app/lib/time";
 import {
   useDiscoverFeeds,
@@ -218,6 +219,8 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
   const [open, setOpen] = useState(false);
 
   const failing = feed.failure_count > 0;
+  // Full paths, so a nested tag reads as "News / World" rather than losing where it sits.
+  const labels = feed.tag_ids.map((id) => tagLabel(tags, id)).filter(Boolean);
 
   return (
     <div className="border-b border-rule py-3">
@@ -264,6 +267,17 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
           />
         </div>
       </div>
+
+      {/* A second, quieter line for what the first has no room for: where this feed is
+          filed, and how long it has been here. The tags drop away when the row is open,
+          because the chips below are the same information and can be acted on. */}
+      <p className="mt-0.5 truncate text-xs text-ink-faint">
+        {!open && labels.length > 0 ? (
+          <span className="text-ink-muted">{labels.join(" · ")}</span>
+        ) : null}
+        {!open && labels.length > 0 ? " · " : ""}
+        added {since(feed.created_at)}
+      </p>
 
       {open ? (
         <div className="mt-3 flex flex-col gap-3 pl-1">
