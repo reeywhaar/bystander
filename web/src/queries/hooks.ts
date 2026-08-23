@@ -426,6 +426,7 @@ export function useForgetSmtp() {
 export function useTestSmtp() {
   const callApi = useApiCall();
   return useMutation({
-    mutationFn: (to: string) => callApi(postAdminSmtpTest(to)),
+    mutationFn: ({ to, relay }: { to: string; relay?: SmtpForm }) =>
+      callApi(postAdminSmtpTest(to, relay)),
   });
 }

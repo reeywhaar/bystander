@@ -84,9 +84,21 @@ export function deleteAdminSmtp(): ApiAction<void> {
   );
 }
 
-/** `POST /api/admin/smtp/test` — sends one real message and reports what the relay said. */
-export function postAdminSmtpTest(to: string): ApiAction<void> {
+/**
+ * `POST /api/admin/smtp/test` — sends one real message and reports what the relay said.
+ *
+ * A `relay` tries settings that have not been saved and writes nothing, which is the only
+ * way to find out whether a password works before it replaces one that already did.
+ */
+export function postAdminSmtpTest(
+  to: string,
+  relay?: SmtpForm,
+): ApiAction<void> {
   return createApiAction((d) =>
-    d.call({ method: "POST", path: "/api/admin/smtp/test", body: { to } }),
+    d.call({
+      method: "POST",
+      path: "/api/admin/smtp/test",
+      body: { to, relay },
+    }),
   );
 }

@@ -159,3 +159,68 @@ func TestSMTPIsAdminsOnly(t *testing.T) {
 		res.Body.Close()
 	}
 }
+
+func TestSMTPChecksSettingsItIsAskedToTryBeforeSaving(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "root")
+
+	// Nothing is stored, so there is no relay to fall back on and no password to keep.
+	h.expect(h.do(http.MethodPost, "/api/admin/smtp/test", map[string]any{
+		"to": "reader@example.org",
+		"relay": map[string]any{
+			"host": "smtp.example.com", "port": 587, "tls": "starttls",
+			"username": "operator", "password": "", "from_address": "paper@example.com",
+		},
+	}), http.StatusBadRequest, nil)
+
+	// Typed settings face the same checks a save would make, so a test cannot pass
+	// against a configuration the database would then refuse.
+	h.expect(h.do(http.MethodPost, "/api/admin/smtp/test", map[string]any{
+		"to": "reader@example.org",
+		"relay": map[string]any{
+			"host": "", "port": 587, "tls": "starttls",
+			"username": "operator", "password": "hunter2", "from_address": "paper@example.com",
+		},
+	}), http.StatusBadRequest, nil)
+
+	// And trying settings never writes them.
+	var body smtpBody
+	h.expect(h.do(http.MethodGet, "/api/admin/smtp", nil), http.StatusOK, &body)
+	if body.Configured {
+		t.Error("a test send stored the settings it was only asked to try")
+	}
+}
+
+func TestSMTPTriesTypedSettingsAgainstTheStoredPassword(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "root")
+
+	h.expect(h.do(http.MethodPut, "/api/admin/smtp", map[string]any{
+		"host": "smtp.example.com", "port": 587, "tls": "starttls",
+		"username": "operator", "password": "hunter2", "from_address": "paper@example.com",
+	}), http.StatusOK, nil)
+
+	// A host that is not a relay: this reaches the network, which is exactly the point —
+	// it proves the request got past validation with a password nobody retyped, rather
+	// than being refused for the missing one.
+	res := h.do(http.MethodPost, "/api/admin/smtp/test", map[string]any{
+		"to": "reader@example.org",
+		"relay": map[string]any{
+			"host": "127.0.0.1", "port": 9, "tls": "starttls",
+			"username": "operator", "password": "", "from_address": "paper@example.com",
+		},
+	})
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 from a host that is not a relay", res.StatusCode)
+	}
+
+	// The stored relay is untouched by a test against something else.
+	settings, err := h.store.SMTPSettings(t.Context())
+	if err != nil || settings == nil {
+		t.Fatalf("SMTPSettings() = %v, %v", settings, err)
+	}
+	if settings.Host != "smtp.example.com" || settings.Port != 587 {
+		t.Errorf("the stored relay changed: %+v", settings)
+	}
+}

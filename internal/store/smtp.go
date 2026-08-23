@@ -82,39 +82,59 @@ func (s *Store) SMTPSettings(ctx context.Context) (*mailer.Settings, error) {
 	return &out, nil
 }
 
-// SetSMTP replaces the relay configuration, or refuses it.
+// ValidateSMTP checks a relay and hands back the tidied version, without storing it.
+//
+// Separate from [Store.SetSMTP] because a relay is tried before it is saved: the settings
+// somebody has typed have to survive the same checks on their way to a test send as they
+// would on their way into the database, and having those checks in two places is having
+// them differ.
 //
 // Credentials are required rather than optional. Relays that want none do exist, but
-// accepting a blank password here would make "this relay needs no authentication"
+// accepting a blank password would make "this relay needs no authentication"
 // indistinguishable from "somebody left the field empty" — and the second is far likelier.
-func (s *Store) SetSMTP(ctx context.Context, in mailer.Settings) error {
+func ValidateSMTP(in mailer.Settings) (mailer.Settings, error) {
 	host, err := required("host", in.Host)
 	if err != nil {
-		return err
+		return in, err
 	}
 	username, err := required("username", in.Username)
 	if err != nil {
-		return err
+		return in, err
 	}
 	from, err := required("from address", in.FromAddress)
 	if err != nil {
-		return err
+		return in, err
 	}
 	if strings.TrimSpace(in.Password) == "" {
-		return Invalid("a relay needs a password; remove the whole configuration instead")
+		return in, Invalid("a relay needs a password; remove the whole configuration instead")
 	}
 	if in.Port < 1 || in.Port > 65535 {
-		return Invalid("port must be between 1 and 65535")
+		return in, Invalid("port must be between 1 and 65535")
 	}
 	if in.TLS != mailer.StartTLS && in.TLS != mailer.Implicit {
-		return Invalid("tls must be starttls or implicit, not %q", in.TLS)
+		return in, Invalid("tls must be starttls or implicit, not %q", in.TLS)
 	}
 	// Parsed, not pattern-matched, and no further than this. Whether the address can
 	// actually send is the relay's answer, and guessing at it here would refuse addresses
 	// that work perfectly well.
 	parsed, err := mail.ParseAddress(from)
 	if err != nil {
-		return Invalid("%q is not an address the relay could send as", from)
+		return in, Invalid("%q is not an address the relay could send as", from)
+	}
+
+	in.Host = host
+	in.Username = username
+	// ParseAddress accepts "Name <a@b>"; only the address itself belongs in this field.
+	in.FromAddress = parsed.Address
+	in.SenderName = strings.TrimSpace(in.SenderName)
+	return in, nil
+}
+
+// SetSMTP replaces the relay configuration, or refuses it.
+func (s *Store) SetSMTP(ctx context.Context, in mailer.Settings) error {
+	in, err := ValidateSMTP(in)
+	if err != nil {
+		return err
 	}
 
 	_, err = s.main.ExecContext(ctx, `
@@ -131,8 +151,8 @@ func (s *Store) SetSMTP(ctx context.Context, in mailer.Settings) error {
 			from_address = excluded.from_address,
 			sender_name = excluded.sender_name,
 			updated_at = excluded.updated_at`,
-		ids.New(ids.SMTP), host, in.Port, string(in.TLS), username, in.Password,
-		parsed.Address, strings.TrimSpace(in.SenderName), time.Now().Unix())
+		ids.New(ids.SMTP), in.Host, in.Port, string(in.TLS), in.Username, in.Password,
+		in.FromAddress, in.SenderName, time.Now().Unix())
 	return err
 }
 

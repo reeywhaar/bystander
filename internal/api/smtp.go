@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	mailer "bystander/internal/mail"
+	"bystander/internal/store"
 )
 
 // smtpBody is the relay as an administrator sees it. No password: it is write-only, so a
@@ -48,6 +49,43 @@ func (s *Server) getSMTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// settings is the request as the mail package wants it, before any of it is checked.
+func (b putSMTPRequest) settings() mailer.Settings {
+	return mailer.Settings{
+		Host:        b.Host,
+		Port:        b.Port,
+		TLS:         mailer.TLS(b.TLS),
+		Username:    b.Username,
+		Password:    b.Password,
+		FromAddress: b.FromAddress,
+		SenderName:  b.SenderName,
+	}
+}
+
+// keepPassword fills in a password left empty from the one already stored.
+//
+// The password is never sent to the browser, so requiring it on every write would mean
+// retyping a secret nobody can see in order to correct a port number. Empty therefore means
+// "the one already there" — except the first time, when there is nothing to mean.
+//
+// Reports false when it has already written a response.
+func (s *Server) keepPassword(w http.ResponseWriter, r *http.Request, in mailer.Settings) (mailer.Settings, bool) {
+	if strings.TrimSpace(in.Password) != "" {
+		return in, true
+	}
+	existing, err := s.store.SMTPSettings(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return in, false
+	}
+	if existing == nil {
+		writeError(w, http.StatusBadRequest, "a password is needed the first time")
+		return in, false
+	}
+	in.Password = existing.Password
+	return in, true
+}
+
 type putSMTPRequest struct {
 	Host        string `json:"host"`
 	Port        int    `json:"port"`
@@ -73,27 +111,11 @@ func (s *Server) putSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings := mailer.Settings{
-		Host:        body.Host,
-		Port:        body.Port,
-		TLS:         mailer.TLS(body.TLS),
-		Username:    body.Username,
-		Password:    body.Password,
-		FromAddress: body.FromAddress,
-		SenderName:  body.SenderName,
-	}
+	settings := body.settings()
 
-	if strings.TrimSpace(body.Password) == "" {
-		existing, err := s.store.SMTPSettings(r.Context())
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		if existing == nil {
-			writeError(w, http.StatusBadRequest, "a password is needed the first time")
-			return
-		}
-		settings.Password = existing.Password
+	settings, ok := s.keepPassword(w, r, settings)
+	if !ok {
+		return
 	}
 
 	if err := s.store.SetSMTP(r.Context(), settings); err != nil {
@@ -113,6 +135,12 @@ func (s *Server) deleteSMTP(w http.ResponseWriter, r *http.Request) {
 
 type testSMTPRequest struct {
 	To string `json:"to"`
+	// Relay, when given, is tried instead of the stored one and nothing is written.
+	//
+	// This is what makes it possible to find out whether a relay works before committing
+	// to it. Without it the only way to test a password is to save it, and by then the
+	// working configuration it replaced is gone.
+	Relay *putSMTPRequest `json:"relay"`
 }
 
 // testSMTP sends one real message, and says what the relay said.
@@ -135,13 +163,8 @@ func (s *Server) testSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := s.store.SMTPSettings(r.Context())
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if settings == nil {
-		writeError(w, http.StatusConflict, "no relay is configured yet")
+	settings, ok := s.relayToTry(w, r, body.Relay)
+	if !ok {
 		return
 	}
 
@@ -150,12 +173,15 @@ func (s *Server) testSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := mailer.Send(r.Context(), *settings, mailer.Message{
+	if err := mailer.Send(r.Context(), settings, mailer.Message{
 		To:      to,
 		Subject: "bystander can send mail",
+		// Deliberately says nothing about the relay being saved: this same message goes
+		// out for settings that have only been typed, and telling somebody their relay is
+		// configured when they have not pressed Save yet would be a small lie with a
+		// large consequence.
 		Body: "This is a test message from bystander.\n\n" +
-			"If it reached you, the relay is configured correctly and password recovery " +
-			"will be able to use it.\n",
+			"If it reached you, the relay accepted it and can be used to send mail.\n",
 	}); err != nil {
 		// 502 rather than 500. Everything on this side worked and something upstream did
 		// not, and a 500 would send an operator looking through the wrong logs. The
@@ -166,4 +192,36 @@ func (s *Server) testSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// relayToTry picks between the settings in the request and the ones already stored.
+//
+// Typed settings are checked exactly as a save would check them, so a test cannot pass
+// against a configuration the database would then refuse.
+//
+// Reports false when it has already written a response.
+func (s *Server) relayToTry(w http.ResponseWriter, r *http.Request, draft *putSMTPRequest) (mailer.Settings, bool) {
+	if draft == nil {
+		stored, err := s.store.SMTPSettings(r.Context())
+		if err != nil {
+			s.fail(w, r, err)
+			return mailer.Settings{}, false
+		}
+		if stored == nil {
+			writeError(w, http.StatusConflict, "no relay is configured yet")
+			return mailer.Settings{}, false
+		}
+		return *stored, true
+	}
+
+	settings, ok := s.keepPassword(w, r, draft.settings())
+	if !ok {
+		return mailer.Settings{}, false
+	}
+	settings, err := store.ValidateSMTP(settings)
+	if err != nil {
+		s.fail(w, r, err)
+		return mailer.Settings{}, false
+	}
+	return settings, true
 }
