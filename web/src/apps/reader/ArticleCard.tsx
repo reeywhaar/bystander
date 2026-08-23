@@ -21,7 +21,7 @@ export function ArticleCard({
 
   return (
     <article
-      className={`slot-${article.slot} group flex flex-col ${read ? "is-read" : ""} transition-opacity`}
+      className={`slot-${article.slot} group flex flex-col ${read ? "is-read" : ""} transition-[opacity,filter] duration-200`}
     >
       {showImage ? (
         <a

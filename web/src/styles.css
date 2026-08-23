@@ -163,11 +163,22 @@ body {
   }
 }
 
-/* A read card recedes without moving. Where an article sits on the page is how somebody
-   remembers where they were, so nothing is allowed to reorder under them. */
+/*
+ * A read card recedes without moving. Where an article sits on the page is how somebody
+ * remembers where they were, so nothing is allowed to reorder under them.
+ *
+ * Grayscale as well as opacity, because dimming alone leaves the accent-coloured links
+ * inside a summary still coloured — the one thing on the card that says "look here" —
+ * and leaves a photograph reading as a photograph. Desaturating takes both, which is what
+ * makes a read card read as spent rather than merely faint.
+ *
+ * Hovering brings most of it back, so a card can still be read without being unmarked.
+ */
 .is-read {
-  opacity: 0.42;
+  opacity: 0.5;
+  filter: grayscale(1);
 }
 .is-read:hover {
-  opacity: 0.72;
+  opacity: 0.85;
+  filter: grayscale(0.15);
 }
