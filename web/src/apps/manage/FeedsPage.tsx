@@ -18,6 +18,7 @@ import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
+import { describeWindow } from "@app/lib/constants";
 import { tagLabel } from "@app/lib/tags";
 import { since } from "@app/lib/time";
 import {
@@ -274,7 +275,9 @@ function FeedRow({
             <span className="text-ink-muted">{labels.join(" · ")}</span>
           ) : null}
           {labels.length > 0 ? " · " : ""}
-          added {since(feed.created_at)}
+          {/* Everything the dialog holds is said here too, so opening one tells you
+              nothing the list was keeping back. */}
+          {describeWindow(feed.article_window)} · added {since(feed.created_at)}
           {failing ? (
             <>
               {" · "}

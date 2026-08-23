@@ -74,14 +74,16 @@ describe("FeedsPage", () => {
 
     // Full paths: a nested tag reads as where it sits, not just its own name.
     expect(await line()).toBe(
-      "News / World · Art · added 3 days ago · fetched 10 minutes ago",
+      "News / World · Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
     );
   });
 
   it("says when it was added even with no tags", async () => {
     render([subscription()], [news]);
 
-    expect(await line()).toBe("added 3 days ago · fetched 10 minutes ago");
+    expect(await line()).toBe(
+      "reaches back a week · added 3 days ago · fetched 10 minutes ago",
+    );
   });
 
   // Everything about a feed now lives behind its name, so the summary line is not
@@ -90,7 +92,7 @@ describe("FeedsPage", () => {
     render([subscription({ tag_ids: ["t_art"] })], [art]);
 
     expect(await line()).toBe(
-      "Art · added 3 days ago · fetched 10 minutes ago",
+      "Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
     );
 
     await userEvent.click(screen.getByRole("button", { name: "The Example" }));
@@ -109,7 +111,7 @@ describe("FeedsPage", () => {
 
     // …and the summary is still under the row behind it.
     expect(await line()).toBe(
-      "Art · added 3 days ago · fetched 10 minutes ago",
+      "Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
     );
   });
 

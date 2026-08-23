@@ -27,6 +27,18 @@ export const ARTICLE_WINDOWS: { seconds: number; label: string }[] = [
   { seconds: 86400, label: "A day" },
 ];
 
+/**
+ * A feed's reach, in words, for the places a row of buttons will not fit.
+ *
+ * "No limit" does not survive being put in a sentence — "reaches back no limit" — so that
+ * one is phrased rather than looked up.
+ */
+export function describeWindow(seconds: number): string {
+  if (seconds === 0) return "reaches back without limit";
+  const window = ARTICLE_WINDOWS.find((option) => option.seconds === seconds);
+  return window ? `reaches back ${window.label.toLowerCase()}` : "";
+}
+
 /** Where a page's article count may sit. Matches the store's bounds. */
 export const EDITION_SIZE = { min: 10, max: 200, step: 10 };
 
