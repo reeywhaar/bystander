@@ -1,19 +1,27 @@
 import { useState, type FormEvent } from "react";
 
-import type { Candidate, Subscription, Tag } from "@app/api/types";
+import type { PlannedFeed, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
 
+import {
+  FeedPlan,
+  initialSelection,
+  kept,
+  offered,
+  toImport,
+  type PlanSelection,
+} from "@app/apps/manage/FeedPlan";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { since } from "@app/lib/time";
 import {
-  useAddFeed,
   useDiscoverFeeds,
   useFeeds,
+  useImportFeeds,
   useRemoveFeed,
   useTags,
   useUpdateFeed,
@@ -23,11 +31,14 @@ export function FeedsPage() {
   const feeds = useFeeds();
   const tags = useTags();
   const discover = useDiscoverFeeds();
-  const add = useAddFeed();
+  const add = useImportFeeds();
 
   const [url, setUrl] = useState("");
   // What the site turned out to offer, once there is more than one thing to choose from.
-  const [choices, setChoices] = useState<Candidate[] | null>(null);
+  const [choices, setChoices] = useState<PlannedFeed[] | null>(null);
+  const [selection, setSelection] = useState<PlanSelection>(
+    initialSelection([]),
+  );
   // Anything that stopped the address becoming a subscription. A dialog rather than a line
   // of text under the field, because this is the end of the attempt and not a hint about
   // it — the address needs changing, or the site has no feed at all.
@@ -35,20 +46,19 @@ export function FeedsPage() {
   const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  function subscribe(feedURL: string) {
-    add.mutate(
-      { url: feedURL },
-      {
-        onSuccess: () => {
-          setUrl("");
-          setChoices(null);
-        },
-        onError: (error) => {
-          setChoices(null);
-          setProblem(error.message);
-        },
+  function subscribe(feed: PlannedFeed) {
+    // One feed and no choice to make: straight in, untagged, as it always was. The picker
+    // is for when a site offers several — see below.
+    add.mutate(toImport([feed], initialSelection([feed]), tags.data ?? []), {
+      onSuccess: () => {
+        setUrl("");
+        setChoices(null);
       },
-    );
+      onError: (error) => {
+        setChoices(null);
+        setProblem(error.message);
+      },
+    });
   }
 
   function submit(event: FormEvent) {
@@ -60,9 +70,15 @@ export function FeedsPage() {
     // first is how somebody ends up following comments they never wanted.
     discover.mutate(url, {
       onSuccess: ({ candidates }) => {
-        if (candidates.length === 1 && candidates[0])
-          subscribe(candidates[0].url);
-        else setChoices(candidates);
+        // Counted after dropping what is already followed, so a site whose other feed you
+        // took last week still goes straight in rather than opening a picker with one row.
+        const fresh = offered(candidates);
+        if (fresh.length === 1 && fresh[0]) {
+          subscribe(fresh[0]);
+        } else {
+          setSelection(initialSelection(candidates));
+          setChoices(candidates);
+        }
       },
       onError: (error) => setProblem(error.message),
     });
@@ -126,42 +142,46 @@ export function FeedsPage() {
       <Modal
         open={choices !== null}
         onClose={() => setChoices(null)}
-        title={choices?.length === 0 ? "No feeds there" : "Which one?"}
+        title="Which of these?"
       >
-        {choices?.length === 0 ? (
-          <p className="text-sm text-ink-muted">
-            That page does not offer a feed.
-          </p>
-        ) : (
+        {choices ? (
           <>
             <p className="text-sm text-ink-muted">
-              That site offers {choices?.length} feeds. Pick the one you want.
+              That site offers {choices.length} feeds. Take as many as you like.
             </p>
-            <ul className="flex flex-col gap-1">
-              {choices?.map((candidate) => (
-                <li key={candidate.url}>
-                  <button
-                    type="button"
-                    onClick={() => subscribe(candidate.url)}
-                    disabled={add.isPending}
-                    className="w-full rounded-md border border-rule px-3 py-2 text-left
-                      hover:border-accent disabled:opacity-50"
-                  >
-                    <span className="block text-sm text-ink">
-                      {candidate.title || candidate.url}
-                    </span>
-                    <span className="block truncate text-xs text-ink-faint">
-                      {candidate.url}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+            <FeedPlan
+              feeds={choices}
+              tags={tags.data ?? []}
+              selection={selection}
+              onChange={setSelection}
+            />
+
+            {add.error ? <Alert>{add.error.message}</Alert> : null}
+
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setChoices(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                disabled={
+                  kept(choices, selection).length === 0 || add.isPending
+                }
+                onClick={() =>
+                  add.mutate(toImport(choices, selection, tags.data ?? []), {
+                    onSuccess: () => {
+                      setUrl("");
+                      setChoices(null);
+                    },
+                  })
+                }
+              >
+                {add.isPending
+                  ? "Adding…"
+                  : "Add " + kept(choices, selection).length}
+              </Button>
+            </div>
           </>
-        )}
-        <div className="flex justify-end">
-          <Button onClick={() => setChoices(null)}>Cancel</Button>
-        </div>
+        ) : null}
       </Modal>
 
       <Modal

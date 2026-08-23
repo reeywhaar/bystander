@@ -109,14 +109,6 @@ export interface ImportResult {
   tags_created: string[];
 }
 
-/** A feed a URL offers, before anybody has subscribed to it. */
-export interface Candidate {
-  url: string;
-  /** The publisher's own label — how a site distinguishes "Posts" from "Comments". */
-  title: string;
-  type: string;
-}
-
 /**
  * Something already read, as remembered after its page is gone.
  *

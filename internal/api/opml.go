@@ -122,6 +122,11 @@ type previewTag struct {
 	TagID string `json:"tag_id"`
 }
 
+// previewFeed is one feed somebody is being offered, from wherever it was found.
+//
+// Shared by the import preview and by discovery, because after "where did these come from"
+// the question is the same both times: which of them do I want, and filed under what. Two
+// shapes would have meant two selection screens that drift.
 type previewFeed struct {
 	Title             string       `json:"title"`
 	FeedURL           string       `json:"feed_url"`
@@ -163,20 +168,42 @@ func (s *Server) previewImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subs, err := s.store.ListSubscriptions(r.Context(), p.ID)
+	following, err := s.following(r, p.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	// Matched on the canonical URL rather than the one written in the file, so a list that
-	// says http:// for a feed somebody already follows over https does not offer it twice.
-	following := make(map[string]bool, len(subs))
-	for _, sub := range subs {
-		following[sub.Feed.CanonicalURL] = true
-	}
 
-	out := make([]previewFeed, 0, len(doc.Feeds))
-	for _, feed := range doc.Feeds {
+	out, err := s.plan(r, doc.Feeds, following)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"feeds": out})
+}
+
+// following is the canonical URL of everything this person already reads.
+//
+// Matched on the canonical form rather than what was written, so a list saying http:// for
+// something followed over https is not offered twice.
+func (s *Server) following(r *http.Request, principalID string) (map[string]bool, error) {
+	subs, err := s.store.ListSubscriptions(r.Context(), principalID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(subs))
+	for _, sub := range subs {
+		out[sub.Feed.CanonicalURL] = true
+	}
+	return out, nil
+}
+
+// plan turns feeds from anywhere into what the interface offers.
+func (s *Server) plan(r *http.Request, feeds []opml.Feed, following map[string]bool) ([]previewFeed, error) {
+	p := principalOf(r)
+
+	out := make([]previewFeed, 0, len(feeds))
+	for _, feed := range feeds {
 		canonical, err := store.CanonicalURL(feed.FeedURL)
 		if err != nil {
 			// A line that is not a URL is not worth refusing the whole file over.
@@ -201,8 +228,7 @@ func (s *Server) previewImport(w http.ResponseWriter, r *http.Request) {
 		for _, path := range feed.Categories {
 			existing, err := s.store.TagByPath(r.Context(), p.ID, path)
 			if err != nil {
-				s.fail(w, r, err)
-				return
+				return nil, err
 			}
 			tag := previewTag{Path: path, Name: strings.Join(path, " / ")}
 			if existing != nil {
@@ -212,8 +238,7 @@ func (s *Server) previewImport(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, entry)
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"feeds": out})
+	return out, nil
 }
 
 type importFeed struct {

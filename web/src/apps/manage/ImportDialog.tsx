@@ -1,15 +1,18 @@
 import { useState } from "react";
 
-import type { ImportSelection, PlannedFeed, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
-import { tagLabel, tagPath } from "@app/lib/tags";
 import { useImportFeeds, usePreviewImport, useTags } from "@app/queries/hooks";
 
-/** A tag chip is identified by the tag it names, whether or not that tag exists yet. */
-const ownKey = (id: string) => "id:" + id;
-const newKey = (path: string[]) => "new:" + path.join("/");
+import {
+  FeedPlan,
+  initialSelection,
+  kept,
+  toImport,
+  type PlanSelection,
+} from "@app/apps/manage/FeedPlan";
+import { ImportOutcome } from "@app/apps/manage/ImportOutcome";
 
 /**
  * Takes somebody else's subscription list.
@@ -31,18 +34,16 @@ export function ImportDialog({
   const tags = useTags();
 
   const [text, setText] = useState("");
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
-  // Which tags each feed should arrive with. Per feed rather than per file, because a
-  // shared list is one person's filing and it rarely maps onto another's whole.
-  const [chosen, setChosen] = useState<Map<string, Set<string>>>(new Map());
+  const [selection, setSelection] = useState<PlanSelection>(
+    initialSelection([]),
+  );
 
   const plan = preview.data?.feeds;
   const mine = tags.data ?? [];
 
   function reset() {
     setText("");
-    setSkipped(new Set());
-    setChosen(new Map());
+    setSelection(initialSelection([]));
     preview.reset();
     run.reset();
   }
@@ -55,74 +56,16 @@ export function ImportDialog({
   function read() {
     run.reset();
     preview.mutate(text, {
-      onSuccess: ({ feeds }) => {
-        // Anything already followed starts unticked: importing it again would do nothing.
-        setSkipped(
-          new Set(
-            feeds.filter((f) => f.already_subscribed).map((f) => f.feed_url),
-          ),
-        );
-
-        // Tags the list named that you already have are ticked — that is a match, not a
-        // decision. Tags you do not have start unticked: a taxonomy should arrive because
-        // somebody asked for it, not because it came in the post.
-        setChosen(
-          new Map(
-            feeds.map((feed) => [
-              feed.feed_url,
-              new Set(
-                feed.tags.filter((t) => t.tag_id).map((t) => ownKey(t.tag_id)),
-              ),
-            ]),
-          ),
-        );
-      },
+      onSuccess: ({ feeds }) => setSelection(initialSelection(feeds)),
     });
   }
 
-  function toggleTag(feedURL: string, key: string) {
-    setChosen((was) => {
-      const next = new Map(was);
-      const forFeed = new Set(next.get(feedURL) ?? []);
-      if (forFeed.has(key)) forFeed.delete(key);
-      else forFeed.add(key);
-      next.set(feedURL, forFeed);
-      return next;
-    });
-  }
-
-  function selection(feed: PlannedFeed): ImportSelection {
-    const keys = chosen.get(feed.feed_url) ?? new Set<string>();
-    const paths: string[][] = [];
-
-    for (const key of keys) {
-      if (key.startsWith("id:")) {
-        const path = tagPath(mine, key.slice(3));
-        if (path.length > 0) paths.push(path);
-      } else {
-        paths.push(key.slice(4).split("/"));
-      }
-    }
-    return {
-      feed_url: feed.feed_url,
-      title: feed.title,
-      site_url: feed.site_url,
-      priority: feed.priority,
-      tag_paths: paths,
-    };
-  }
-
-  // A feed already followed cannot be imported: the server refuses a second subscription
-  // and reports it as skipped. So it is not offered at all — a row that cannot do anything
-  // is worse than no row, because it reads as a choice.
-  const showing = (plan ?? []).filter((feed) => !feed.already_subscribed);
-  const hidden = (plan ?? []).length - showing.length;
-  const keeping = showing.filter((feed) => !skipped.has(feed.feed_url));
+  const keeping = plan ? kept(plan, selection) : [];
 
   return (
     <Modal open={open} onClose={close} title="Import a list">
       {run.data ? (
-        <Done result={run.data} onAgain={reset} onClose={close} />
+        <ImportOutcome result={run.data} onAgain={reset} onClose={close} />
       ) : !plan ? (
         <>
           <p className="text-sm text-ink-muted">
@@ -154,66 +97,12 @@ export function ImportDialog({
         </>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => setSkipped(new Set())}
-              disabled={keeping.length === showing.length}
-            >
-              All
-            </Button>
-            <Button
-              onClick={() =>
-                setSkipped(new Set(showing.map((feed) => feed.feed_url)))
-              }
-              disabled={keeping.length === 0}
-            >
-              None
-            </Button>
-            <span className="ml-auto text-xs text-ink-faint">
-              {keeping.length} of {showing.length}
-            </span>
-          </div>
-
-          {/* Counted even though they are not shown, so a list that overlaps heavily does
-              not simply look shorter than the one that was sent. */}
-          {hidden > 0 ? (
-            <p className="text-xs text-ink-faint">
-              {hidden} {hidden === 1 ? "is" : "are"} already yours, and not
-              shown.
-            </p>
-          ) : null}
-
-          <ul className="max-h-72 overflow-y-auto rounded-md border border-rule">
-            {showing.map((feed) => (
-              <PlanRow
-                key={feed.feed_url}
-                feed={feed}
-                tags={mine}
-                keep={!skipped.has(feed.feed_url)}
-                chosen={chosen.get(feed.feed_url) ?? new Set()}
-                onKeep={(keep) =>
-                  setSkipped((was) => {
-                    const next = new Set(was);
-                    if (keep) next.delete(feed.feed_url);
-                    else next.add(feed.feed_url);
-                    return next;
-                  })
-                }
-                onToggleTag={(key) => toggleTag(feed.feed_url, key)}
-              />
-            ))}
-          </ul>
-
-          <p className="text-xs text-ink-faint">
-            Solid chips are your own tags — the ones the list named are already
-            ticked. Dashed ones are new and would be created.
-          </p>
-
-          {showing.length === 0 ? (
-            <p className="py-2 text-sm text-ink-muted">
-              You already follow everything in that list.
-            </p>
-          ) : null}
+          <FeedPlan
+            feeds={plan}
+            tags={mine}
+            selection={selection}
+            onChange={setSelection}
+          />
 
           {run.error ? <Alert>{run.error.message}</Alert> : null}
 
@@ -222,7 +111,7 @@ export function ImportDialog({
             <Button
               variant="primary"
               disabled={keeping.length === 0 || run.isPending}
-              onClick={() => run.mutate(keeping.map(selection))}
+              onClick={() => run.mutate(toImport(plan, selection, mine))}
             >
               {run.isPending ? "Adding…" : "Add " + keeping.length}
             </Button>
@@ -230,160 +119,5 @@ export function ImportDialog({
         </>
       )}
     </Modal>
-  );
-}
-
-/**
- * One feed, with every tag you have underneath it.
- *
- * All of them, not just the ones the list mentioned, because filing a stranger's feed is
- * the moment you actually know where it belongs — and the alternative is importing it and
- * then going to find it again.
- */
-function PlanRow({
-  feed,
-  tags,
-  keep,
-  chosen,
-  onKeep,
-  onToggleTag,
-}: {
-  feed: PlannedFeed;
-  tags: Tag[];
-  keep: boolean;
-  chosen: Set<string>;
-  onKeep: (keep: boolean) => void;
-  onToggleTag: (key: string) => void;
-}) {
-  // Tags the list named that nobody here has yet.
-  const incoming = feed.tags.filter((tag) => !tag.tag_id);
-
-  return (
-    <li className="border-b border-rule px-3 py-2.5 last:border-b-0">
-      <label className="flex cursor-pointer items-baseline gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={keep}
-          onChange={(event) => onKeep(event.target.checked)}
-        />
-        <span className="min-w-0">
-          <span className="block truncate text-ink">{feed.title}</span>
-          <span className="block truncate text-xs text-ink-faint">
-            {feed.feed_url}
-          </span>
-        </span>
-      </label>
-      {keep ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
-          {tags.map((tag) => (
-            <Chip
-              key={tag.id}
-              label={tagLabel(tags, tag.id)}
-              on={chosen.has(ownKey(tag.id))}
-              onClick={() => onToggleTag(ownKey(tag.id))}
-            />
-          ))}
-
-          {incoming.length > 0 ? (
-            <>
-              {/* The gap is the point: what is already yours and what would be created are
-                  different kinds of thing, and running them together is how somebody
-                  acquires a taxonomy without noticing. */}
-              <span className="mx-2 h-4 w-px bg-rule" aria-hidden="true" />
-              {incoming.map((tag) => (
-                <Chip
-                  key={newKey(tag.path)}
-                  label={tag.name}
-                  isNew
-                  on={chosen.has(newKey(tag.path))}
-                  onClick={() => onToggleTag(newKey(tag.path))}
-                />
-              ))}
-            </>
-          ) : null}
-
-          {tags.length === 0 && incoming.length === 0 ? (
-            <span className="text-xs text-ink-faint">no tags</span>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-function Chip({
-  label,
-  on,
-  isNew,
-  onClick,
-}: {
-  label: string;
-  on: boolean;
-  isNew?: boolean;
-  onClick: () => void;
-}) {
-  const style = on
-    ? isNew
-      ? "border-dashed border-accent bg-accent/10 text-accent"
-      : "border-accent bg-accent/10 text-accent"
-    : isNew
-      ? "border-dashed border-ink-faint text-ink-muted hover:text-ink"
-      : "border-rule text-ink-muted hover:text-ink";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      title={isNew ? "new — would be created" : "one of yours"}
-      className={"rounded-full border px-2.5 py-0.5 text-xs " + style}
-    >
-      {label}
-      {isNew ? " +" : ""}
-    </button>
-  );
-}
-
-function Done({
-  result,
-  onAgain,
-  onClose,
-}: {
-  result: {
-    added: number;
-    skipped: number;
-    failed: { feed_url: string }[];
-    tags_created: string[];
-  };
-  onAgain: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <p className="text-sm text-ink">
-        Added {result.added} feed{result.added === 1 ? "" : "s"}
-        {result.skipped > 0
-          ? ", skipped " + result.skipped + " you already follow"
-          : ""}
-        .
-      </p>
-      {result.tags_created.length > 0 ? (
-        <p className="text-xs text-ink-muted">
-          New tags: {result.tags_created.join(", ")}
-        </p>
-      ) : null}
-      {result.failed.length > 0 ? (
-        <Alert>
-          {result.failed.length} could not be added:{" "}
-          {result.failed.map((f) => f.feed_url).join(", ")}
-        </Alert>
-      ) : null}
-      <div className="flex justify-end gap-2">
-        <Button onClick={onAgain}>Import another</Button>
-        <Button variant="primary" onClick={onClose}>
-          Done
-        </Button>
-      </div>
-    </>
   );
 }

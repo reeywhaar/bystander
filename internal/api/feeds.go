@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"bystander/internal/feeds"
+	"bystander/internal/opml"
 	"bystander/internal/store"
 )
 
@@ -138,12 +139,6 @@ func (s *Server) addFeed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, subscriptionOf(sub))
 }
 
-type candidateBody struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
-	Type  string `json:"type"`
-}
-
 type discoverRequest struct {
 	URL string `json:"url"`
 }
@@ -183,9 +178,31 @@ func (s *Server) discoverFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]candidateBody, 0, len(found.Candidates))
+	// The same shape a pasted list produces, because after "where did these come from" the
+	// question is the same both times: which of them do I want, and filed under what. One
+	// shape means one selection screen rather than two that drift.
+	following, err := s.following(r, p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	feeds := make([]opml.Feed, 0, len(found.Candidates))
 	for _, candidate := range found.Candidates {
-		out = append(out, candidateBody{URL: candidate.URL, Title: candidate.Title, Type: candidate.Type})
+		feeds = append(feeds, opml.Feed{
+			Title:   candidate.Title,
+			FeedURL: candidate.URL,
+			SiteURL: found.PageURL,
+			// A feed found in a site's markup carries no tags and no priority; the
+			// defaults apply and the interface offers every tag this person has.
+			Priority: -1,
+		})
+	}
+
+	out, err := s.plan(r, feeds, following)
+	if err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"candidates": out})
 }

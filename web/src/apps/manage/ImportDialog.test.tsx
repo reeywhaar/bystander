@@ -69,7 +69,7 @@ describe("ImportDialog", () => {
     await paste([planned({ already_subscribed: true })]);
 
     expect(
-      await screen.findByText("You already follow everything in that list."),
+      await screen.findByText("You already follow that one."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add 0" })).toBeDisabled();
   });

@@ -152,6 +152,11 @@ type Discovery struct {
 	// Candidates is every feed on offer, in the order the page named them. Exactly one
 	// entry when the URL was itself a feed.
 	Candidates []Candidate
+
+	// PageURL is the address that was actually read, after redirects — the site, when the
+	// candidates came from a page's markup. Somewhere to point a "source" link at until
+	// the first fetch replaces it with whatever the feed says about itself.
+	PageURL string
 }
 
 // Discover works out what somebody typed.
@@ -179,6 +184,7 @@ func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (*
 		return &Discovery{
 			Feed:       parsed,
 			FeedURL:    finalURL,
+			PageURL:    parsed.SiteURL,
 			Candidates: []Candidate{{URL: finalURL, Title: parsed.Title}},
 		}, nil
 	}
@@ -195,7 +201,7 @@ func (f *Fetcher) Discover(ctx context.Context, rawURL string, now time.Time) (*
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("%w: %s", ErrNotAFeed, canonical)
 	}
-	return &Discovery{Candidates: candidates}, nil
+	return &Discovery{Candidates: candidates, PageURL: finalURL}, nil
 }
 
 // wellKnownFeedPaths are where a site that declares nothing still tends to keep a feed.
