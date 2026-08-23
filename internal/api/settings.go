@@ -10,7 +10,10 @@ import (
 type settingsBody struct {
 	EditionInterval int64 `json:"edition_interval"` // seconds
 	EditionSize     int   `json:"edition_size"`
-	NextEditionAt   int64 `json:"next_edition_at"`
+	// ArticleWindow is how old an article may be and still reach a page, in seconds.
+	// Zero is no limit — bounded in practice by how long articles are kept.
+	ArticleWindow int64 `json:"article_window"`
+	NextEditionAt int64 `json:"next_edition_at"`
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -22,6 +25,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settingsBody{
 		EditionInterval: int64(settings.EditionInterval.Seconds()),
 		EditionSize:     settings.EditionSize,
+		ArticleWindow:   int64(settings.ArticleWindow.Seconds()),
 		NextEditionAt:   settings.NextEditionAt.Unix(),
 	})
 }
@@ -29,6 +33,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 type patchSettingsRequest struct {
 	EditionInterval *int64 `json:"edition_interval"`
 	EditionSize     *int   `json:"edition_size"`
+	ArticleWindow   *int64 `json:"article_window"`
 }
 
 func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
@@ -39,25 +44,18 @@ func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var interval *time.Duration
+	patch := store.SettingsPatch{EditionSize: body.EditionSize}
 	if body.EditionInterval != nil {
 		d := time.Duration(*body.EditionInterval) * time.Second
-		interval = &d
+		patch.EditionInterval = &d
 	}
-	if err := s.store.UpdateSettings(r.Context(), p.ID, interval, body.EditionSize); err != nil {
+	if body.ArticleWindow != nil {
+		d := time.Duration(*body.ArticleWindow) * time.Second
+		patch.ArticleWindow = &d
+	}
+	if err := s.store.UpdateSettings(r.Context(), p.ID, patch); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.getSettings(w, r)
-}
-
-// intervals is the closed set the interface offers. Exposed so the segmented control is
-// built from the same list the store validates against, rather than a copy of it that can
-// drift.
-func intervals() []int64 {
-	out := make([]int64, 0, len(store.EditionIntervals))
-	for _, d := range store.EditionIntervals {
-		out = append(out, int64(d.Seconds()))
-	}
-	return out
 }

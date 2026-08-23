@@ -43,7 +43,8 @@ func newInstance(t *testing.T, articles int) *instance {
 	}
 
 	items := make([]*store.Item, articles)
-	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	// Recent, because a page only takes articles inside its window.
+	base := time.Now().Add(-time.Duration(articles+1) * time.Hour)
 	for i := range articles {
 		items[i] = &store.Item{
 			ID:          ids.New(ids.Article),
@@ -71,7 +72,8 @@ func newInstance(t *testing.T, articles int) *instance {
 
 func (in *instance) size(t *testing.T, articles int) {
 	t.Helper()
-	if err := in.store.UpdateSettings(context.Background(), in.principal.ID, nil, &articles); err != nil {
+	if err := in.store.UpdateSettings(context.Background(), in.principal.ID,
+		store.SettingsPatch{EditionSize: &articles}); err != nil {
 		t.Fatalf("UpdateSettings(): %v", err)
 	}
 }

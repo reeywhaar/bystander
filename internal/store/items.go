@@ -31,13 +31,23 @@ type Item struct {
 // Retention. Items are a pool, not an archive: this is a front page, and anything worth
 // keeping is worth keeping somewhere that is not here.
 //
-// ShownRetention is three times ItemRetention, so the record that an article was shown
-// always outlives the article. If it did not, a long-dormant feed could resurface
-// something a person has already read.
+// It is not a fixed number, because it cannot be. Somebody who has asked to see a year of
+// articles needs a year of articles kept; somebody who wants a day does not. So the bounds
+// are here and EffectiveItemRetention picks between them from what people have actually
+// chosen — see settings.go.
 const (
-	ItemRetention  = 30 * 24 * time.Hour
-	ShownRetention = 90 * 24 * time.Hour
+	// MinItemRetention is the floor, whatever anybody has asked for. Below a month the
+	// pool gets thin enough that a page starts repeating itself.
+	MinItemRetention = 30 * 24 * time.Hour
+
+	// MaxItemRetention is the ceiling, and what "no limit" means in practice. Unbounded
+	// growth is not a setting anybody meant to choose.
+	MaxItemRetention = 365 * 24 * time.Hour
 )
+
+// shownMultiple keeps the record that an article was shown outliving the article itself.
+// If it did not, a long-dormant feed could resurface something already read.
+const shownMultiple = 3
 
 // SaveItems writes what a fetch produced and reports how many were new.
 //
@@ -113,7 +123,8 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 // of the guid and SQLite has no sha256: there is nothing to join on. Reading one feed's
 // hashes and filtering as the rows come back costs a set lookup per row, against a table
 // that holds at most a few thousand entries per person.
-func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []string, perFeed int) (map[string][]*Item, error) {
+// notOlderThan bounds how far back a candidate may be published. A zero time is no bound.
+func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan time.Time) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 	for _, feedID := range feedIDs {
 		seen, err := s.shownHashes(ctx, principalID, feedID)
@@ -124,9 +135,19 @@ func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []st
 		// Reading more than perFeed, because some of what comes back will be filtered
 		// out here: taking exactly perFeed would leave a feed whose recent articles have
 		// all been shown looking empty when it is not.
+		// The age bound is in the query rather than in the loop below: an article too old
+		// to appear is not a candidate that gets filtered, it is not a candidate — and
+		// leaving it to the loop would let a feed's whole window be spent on articles
+		// that were never eligible.
+		since := int64(0)
+		if !notOlderThan.IsZero() {
+			since = unix(notOlderThan)
+		}
 		rows, err := s.derived.QueryContext(ctx,
-			`SELECT `+itemColumns+` FROM items WHERE feed_id = ? ORDER BY published_at DESC LIMIT ?`,
-			feedID, perFeed*4)
+			`SELECT `+itemColumns+` FROM items
+			  WHERE feed_id = ? AND published_at >= ?
+			  ORDER BY published_at DESC LIMIT ?`,
+			feedID, since, perFeed*4)
 		if err != nil {
 			return nil, err
 		}
@@ -190,8 +211,8 @@ func GUIDHash(guid string) []byte {
 //
 // Feeds are in the other database, so which ones exist has to be passed in: no constraint
 // can cross the boundary and no query can join across it.
-func (s *Store) PruneItems(ctx context.Context, liveFeedIDs []string) (int64, error) {
-	cutoff := unix(s.Now().Add(-ItemRetention))
+func (s *Store) PruneItems(ctx context.Context, liveFeedIDs []string, retention time.Duration) (int64, error) {
+	cutoff := unix(s.Now().Add(-retention))
 
 	res, err := s.derived.ExecContext(ctx,
 		`DELETE FROM items
@@ -230,10 +251,11 @@ func (s *Store) PruneItems(ctx context.Context, liveFeedIDs []string) (int64, er
 }
 
 // PruneShown drops the record of articles shown long enough ago that their items are gone
-// too.
-func (s *Store) PruneShown(ctx context.Context) (int64, error) {
+// too. Kept for a multiple of however long articles are being kept, so the record always
+// outlives what it refers to.
+func (s *Store) PruneShown(ctx context.Context, retention time.Duration) (int64, error) {
 	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM shown WHERE shown_at < ?`, unix(s.Now().Add(-ShownRetention)))
+		`DELETE FROM shown WHERE shown_at < ?`, unix(s.Now().Add(-retention*shownMultiple)))
 	if err != nil {
 		return 0, err
 	}

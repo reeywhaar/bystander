@@ -174,7 +174,13 @@ func rssBody(items int) string {
 		body.WriteString(`<guid>https://example.com/story-` + itoa(i) + `</guid>`)
 		body.WriteString(`<description><![CDATA[<p>A summary of story ` + itoa(i) +
 			`</p><script>alert(1)</script><img src="/pic-` + itoa(i) + `.png">]]></description>`)
-		body.WriteString(`<pubDate>Mon, 0` + itoa(1+i%9) + ` Aug 2026 12:00:00 GMT</pubDate>`)
+		// Published within the last day or so, relative to whenever the test runs. Fixed
+		// dates in the past used to work and stopped the moment articles gained an age
+		// limit — a feed whose newest article is three weeks old is correctly invisible
+		// on a page set to a week.
+		body.WriteString(`<pubDate>` +
+			time.Now().Add(-time.Duration(i+1)*time.Hour).UTC().Format(time.RFC1123) +
+			`</pubDate>`)
 		body.WriteString(`</item>`)
 	}
 	body.WriteString(`</channel></rss>`)

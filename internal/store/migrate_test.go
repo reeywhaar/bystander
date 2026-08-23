@@ -23,6 +23,7 @@ import (
 var released = map[string][]string{
 	"main": {
 		"b30dcee9f4d4de71d3cfcadbd18e1b90cab1955fa1f3c6ddf9fd97154599d950",
+		"206eecdf7889b3b45133e81a4f750a78ad937c87092d40f5f87c02431d79098e",
 	},
 	"derived": {
 		"8f55e11fee80d6347a4296ff5ab8106403792b4bfbeb963cf0e624e6fd9d2ee5",

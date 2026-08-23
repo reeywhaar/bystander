@@ -11,6 +11,22 @@ export const EDITION_INTERVALS: { seconds: number; label: string }[] = [
   { seconds: 604800, label: "Weekly" },
 ];
 
+/**
+ * How recent an article must be to reach a page, in seconds. Zero is no limit.
+ *
+ * The server holds the same closed set and refuses anything else. "No limit" is bounded in
+ * practice by how long articles are kept — which follows the longest window anybody has
+ * chosen, so choosing a year means a year is kept.
+ */
+export const ARTICLE_WINDOWS: { seconds: number; label: string }[] = [
+  { seconds: 0, label: "No limit" },
+  { seconds: 31536000, label: "A year" },
+  { seconds: 2592000, label: "A month" },
+  { seconds: 1209600, label: "Two weeks" },
+  { seconds: 604800, label: "A week" },
+  { seconds: 86400, label: "A day" },
+];
+
 /** Where a page's article count may sit. Matches the store's bounds. */
 export const EDITION_SIZE = { min: 10, max: 200, step: 10 };
 

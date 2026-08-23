@@ -105,6 +105,10 @@ func (s *Store) SchemaVersions(ctx context.Context) (main, derived int, err erro
 // SetClock replaces the clock. For tests; the daemon never calls it.
 func (s *Store) SetClock(now func() time.Time) { s.now = now }
 
+// Derived exposes the second database for tests that need to arrange something no API can
+// arrange — articles published a fortnight ago, say. Nothing in the program calls it.
+func (s *Store) Derived() *sql.DB { return s.derived }
+
 // Now is the store's clock, in UTC.
 func (s *Store) Now() time.Time { return s.now().UTC() }
 

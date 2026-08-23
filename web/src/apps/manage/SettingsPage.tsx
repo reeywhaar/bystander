@@ -3,7 +3,11 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Slider } from "@app/components/ui/Slider";
 import { Spinner } from "@app/components/ui/Spinner";
-import { EDITION_INTERVALS, EDITION_SIZE } from "@app/lib/constants";
+import {
+  ARTICLE_WINDOWS,
+  EDITION_INTERVALS,
+  EDITION_SIZE,
+} from "@app/lib/constants";
 import { until } from "@app/lib/time";
 import {
   useRegenerate,
@@ -74,6 +78,39 @@ export function SettingsPage() {
           label="Articles on a page"
           format={(size) => <span className="text-ink">{size} articles</span>}
         />
+      </section>
+
+      <section>
+        <h2 className="font-serif text-xl text-ink">How far back it reaches</h2>
+        <p className="mt-1 mb-4 text-sm text-ink-muted">
+          Articles older than this are not picked. A front page is about what is
+          going on, and a fortnight-old article on one is a different kind of
+          object — but a feed that publishes monthly needs a longer reach to
+          appear at all.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {ARTICLE_WINDOWS.map((window) => {
+            const on = window.seconds === current.article_window;
+            return (
+              <button
+                key={window.seconds}
+                type="button"
+                onClick={() =>
+                  update.mutate({ article_window: window.seconds })
+                }
+                disabled={update.isPending}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  on
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-rule text-ink-muted hover:text-ink"
+                }`}
+              >
+                {window.label}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <section>

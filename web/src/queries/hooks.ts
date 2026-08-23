@@ -304,6 +304,7 @@ export function useUpdateSettings() {
     mutationFn: (changes: {
       edition_interval?: number;
       edition_size?: number;
+      article_window?: number;
     }) => callApi(patchSettings(changes)),
     onSuccess: (settings) => {
       client.setQueryData(qk.settings, settings);

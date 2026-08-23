@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"bystander/internal/store"
 )
@@ -531,5 +532,72 @@ func TestDeclaredFeedsAreNotSupplementedByGuesses(t *testing.T) {
 		map[string]string{"url": site.URL}), http.StatusOK, &found)
 	if len(found.Candidates) != 1 {
 		t.Fatalf("%d candidates, want only the declared one", len(found.Candidates))
+	}
+}
+
+// A front page is about what is going on, so an article older than the window somebody
+// chose is not a candidate at all.
+func TestArticlesOlderThanTheWindowAreNotPicked(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+	feed := newFeedServer(t, 6)
+
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	// The harness publishes within the last few hours, so a day's window takes everything.
+	var settings settingsBody
+	h.expect(h.do(http.MethodGet, "/api/settings", nil), http.StatusOK, &settings)
+	if settings.ArticleWindow != int64(store.DefaultArticleWindow.Seconds()) {
+		t.Errorf("a new account's window is %ds, want a week", settings.ArticleWindow)
+	}
+
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	if len(page.Items) != 6 {
+		t.Fatalf("%d articles with a week's window, want all 6", len(page.Items))
+	}
+
+	// Age them past every window by moving the articles back a fortnight.
+	if _, err := h.store.Derived().ExecContext(t.Context(),
+		`UPDATE items SET published_at = published_at - ?`, int64((14 * 24 * time.Hour).Seconds())); err != nil {
+		t.Fatalf("age the articles: %v", err)
+	}
+	// A fresh page, so nothing survives from the one already composed.
+	h.expect(h.do(http.MethodPatch, "/api/settings",
+		map[string]int64{"article_window": 86400}), http.StatusOK, nil)
+
+	res := h.do(http.MethodPost, "/api/edition/regenerate", nil)
+	res.Body.Close()
+	if res.StatusCode == http.StatusOK {
+		var after editionBody
+		h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &after)
+		for _, article := range after.Items {
+			t.Errorf("%q is a fortnight old and reached a page with a day's window", article.Title)
+		}
+	}
+
+	// Widening the window brings them back — the articles were never thrown away, they
+	// were out of reach.
+	h.expect(h.do(http.MethodPatch, "/api/settings",
+		map[string]int64{"article_window": 2592000}), http.StatusOK, nil)
+
+	var wider editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &wider)
+	if len(wider.Items) == 0 {
+		t.Error("a month's window found nothing, though the articles are a fortnight old")
+	}
+}
+
+func TestTheWindowIsAClosedSet(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	for _, bad := range []int64{1, 3600, 999999} {
+		h.expect(h.do(http.MethodPatch, "/api/settings",
+			map[string]int64{"article_window": bad}), http.StatusBadRequest, nil)
+	}
+	for _, good := range []int64{0, 86400, 604800, 1209600, 2592000, 31536000} {
+		h.expect(h.do(http.MethodPatch, "/api/settings",
+			map[string]int64{"article_window": good}), http.StatusOK, nil)
 	}
 }

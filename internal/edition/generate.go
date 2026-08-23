@@ -56,7 +56,13 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	for _, sub := range subs {
 		feedIDs = append(feedIDs, sub.FeedID)
 	}
-	candidates, err := g.store.Candidates(ctx, principalID, feedIDs, candidateDepth)
+	// Nothing older than the window this person chose. A front page is about what is
+	// going on, and how far back that reaches is theirs to say.
+	var notOlderThan time.Time
+	if settings.ArticleWindow > 0 {
+		notOlderThan = g.store.Now().Add(-settings.ArticleWindow)
+	}
+	candidates, err := g.store.Candidates(ctx, principalID, feedIDs, candidateDepth, notOlderThan)
 	if err != nil {
 		return nil, err
 	}

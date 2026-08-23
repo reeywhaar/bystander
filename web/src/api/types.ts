@@ -151,6 +151,8 @@ export interface Settings {
   /** Seconds. One of the four in `EDITION_INTERVALS`. */
   edition_interval: number;
   edition_size: number;
+  /** Seconds. How old an article may be and still appear; 0 is no limit. */
+  article_window: number;
   next_edition_at: number;
 }
 

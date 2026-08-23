@@ -103,13 +103,23 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		s.log.Error("could not list feeds for the sweep", "error", err)
 		return
 	}
-	if n, err := s.store.PruneItems(ctx, feedIDs); err != nil {
+
+	// How long articles are kept follows whoever wants to see furthest back. A flat
+	// retention would quietly make the longer windows a lie: a page set to show a year of
+	// articles with a month of articles kept has nothing to show for eleven of them.
+	retention, err := s.store.EffectiveItemRetention(ctx)
+	if err != nil {
+		s.log.Error("could not work out how long to keep articles", "error", err)
+		return
+	}
+
+	if n, err := s.store.PruneItems(ctx, feedIDs, retention); err != nil {
 		s.log.Error("could not prune articles", "error", err)
 	} else if n > 0 {
 		s.log.Info("pruned articles", "count", n)
 	}
 
-	if n, err := s.store.PruneShown(ctx); err != nil {
+	if n, err := s.store.PruneShown(ctx, retention); err != nil {
 		s.log.Error("could not prune the record of what has been shown", "error", err)
 	} else if n > 0 {
 		s.log.Debug("pruned shown records", "count", n)
