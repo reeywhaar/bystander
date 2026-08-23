@@ -28,8 +28,15 @@ export interface Account {
   username: string;
   role: Role;
   created_at: number;
-  /** Where this account could be recovered from, or empty. */
+  /** An address this account has *proved* it can read, or empty. */
   recovery_email: string;
+  /**
+   * An address partway through being proved, or empty.
+   *
+   * So a page reopened mid-flow says which address it is waiting on rather than starting
+   * somebody over on a code they are already holding.
+   */
+  recovery_pending: string;
   /**
    * Whether a relay is configured at all.
    *

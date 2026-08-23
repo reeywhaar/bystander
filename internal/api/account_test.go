@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"bystander/internal/store"
@@ -33,29 +35,223 @@ func TestAccountSaysWhetherMailCouldReachIt(t *testing.T) {
 	}
 }
 
-func TestRecoveryEmailRoundTrips(t *testing.T) {
+func TestRecoveryNeedsARelayBeforeItNeedsAnything(t *testing.T) {
 	h := newHarness(t)
-	h.signIn(store.RoleUser, "alice")
+	h.signIn(store.RoleAdmin, "alice")
+
+	// Refused before anything is written, so nobody ends up holding a code for a flow that
+	// could never have finished.
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "alice@example.com"}), http.StatusConflict, nil)
 
 	var body accountBody
-	// A display name is accepted and only the address is kept: what goes in a To header
-	// is the address, and storing the rest would store something that is never used.
-	h.expect(h.do(http.MethodPatch, "/api/account",
-		map[string]any{"recovery_email": "Alice <alice@example.com>"}), http.StatusOK, &body)
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryPending != "" {
+		t.Errorf("a refused start left %q waiting", body.RecoveryPending)
+	}
+}
+
+func TestARecoveryCodeThatCouldNotBeSentLeavesNothingWaiting(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+	relay.refuse = errors.New("the relay rejected the credentials: 535")
+
+	res := h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "alice@example.com"})
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", res.StatusCode)
+	}
+
+	// Nothing was sent, so nothing is waiting. Left behind, the row would have the account
+	// page say it is waiting on a code that never left — and the way out of that state is
+	// the button somebody just watched fail.
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryPending != "" {
+		t.Errorf("recovery_pending = %q after a send that failed", body.RecoveryPending)
+	}
+}
+
+func TestAFailedChangeLeavesTheAddressThatAlreadyWorked(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "alice@example.com"}), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": relay.codeSentTo(t, "alice@example.com")}), http.StatusOK, nil)
+
+	// Now a change that cannot be delivered. Undoing the attempt must not take the address
+	// that already works with it — losing a working recovery address by trying to improve
+	// on it is the worst outcome this whole flow exists to avoid.
+	relay.refuse = errors.New("the relay rejected the message: 550")
+	res := h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "elsewhere@example.com"})
+	res.Body.Close()
+
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "alice@example.com" {
+		t.Errorf("recovery_email = %q, want the one that already worked", body.RecoveryEmail)
+	}
+	if body.RecoveryPending != "" {
+		t.Errorf("recovery_pending = %q after a send that failed", body.RecoveryPending)
+	}
+}
+
+func TestRecoveryAddressIsNotOnRecordUntilItIsProved(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "Alice <alice@example.com>"}), http.StatusNoContent, nil)
+
+	// Waiting on it, and only waiting. An address nobody has proved they can read is not
+	// something this account can be recovered through.
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "" {
+		t.Errorf("an unproved address went straight onto the record: %q", body.RecoveryEmail)
+	}
+	// A display name is accepted and only the address is kept: what goes in a To header is
+	// the address, and keeping the rest would keep something that is never used.
+	if body.RecoveryPending != "alice@example.com" {
+		t.Fatalf("recovery_pending = %q", body.RecoveryPending)
+	}
+
+	code := relay.codeSentTo(t, "alice@example.com")
+
+	// Wrong first, because that is the case that must not put anything on the record.
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": "AAAAAAAA"}), http.StatusBadRequest, nil)
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "" {
+		t.Fatalf("a wrong code confirmed the address anyway")
+	}
+
+	// Lower case is the same code: it is typed by hand off another screen.
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": strings.ToLower(code)}), http.StatusOK, &body)
 	if body.RecoveryEmail != "alice@example.com" {
 		t.Fatalf("recovery_email = %q", body.RecoveryEmail)
 	}
-
-	// Empty clears it. "No address" and "the empty address" are the same thing.
-	h.expect(h.do(http.MethodPatch, "/api/account",
-		map[string]any{"recovery_email": ""}), http.StatusOK, &body)
-	if body.RecoveryEmail != "" {
-		t.Errorf("recovery_email = %q, want it cleared", body.RecoveryEmail)
+	if body.RecoveryPending != "" {
+		t.Errorf("recovery_pending = %q, want it cleared", body.RecoveryPending)
 	}
 
-	h.expect(h.do(http.MethodPatch, "/api/account",
-		map[string]any{"recovery_email": "not an address"}), http.StatusBadRequest, nil)
-	h.expect(h.do(http.MethodPatch, "/api/account", map[string]any{}), http.StatusBadRequest, nil)
+	// And forgetting it takes both.
+	h.expect(h.do(http.MethodDelete, "/api/account/recovery", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "" || body.RecoveryPending != "" {
+		t.Errorf("something survived being forgotten: %+v", body)
+	}
+}
+
+func TestRecoveryCodeCanBeWorkedThroughOnlyFiveTimes(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "alice@example.com"}), http.StatusNoContent, nil)
+	code := relay.codeSentTo(t, "alice@example.com")
+
+	// Five wrong guesses is what makes eight characters enough.
+	for range store.MaxRecoveryAttempts {
+		h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+			map[string]any{"code": "AAAAAAAA"}), http.StatusBadRequest, nil)
+	}
+
+	// The attempt is thrown away rather than locked, so even the right code is now no use
+	// — and starting again is one request.
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": code}), http.StatusBadRequest, nil)
+
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "" {
+		t.Error("an exhausted attempt still confirmed")
+	}
+}
+
+func TestProvingAnAddressTakesItFromWhoeverHadIt(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "shared@example.com"}), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": relay.codeSentTo(t, "shared@example.com")}), http.StatusOK, nil)
+
+	// A second account, signed in through its own jar.
+	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.expect(h.do(http.MethodPost, "/api/invites/"+token+"/accept",
+		map[string]string{"username": "bob", "password": harnessPassword}), http.StatusNoContent, nil)
+
+	// Bob proves the same address — differently cased, because nobody thinks of those as
+	// two addresses.
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]any{"email": "Shared@Example.com"}), http.StatusNoContent, nil)
+	var bob accountBody
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]any{"code": relay.codeSentTo(t, "Shared@Example.com")}), http.StatusOK, &bob)
+	if bob.RecoveryEmail != "Shared@Example.com" {
+		t.Fatalf("bob's recovery_email = %q", bob.RecoveryEmail)
+	}
+
+	// And Alice no longer has it. Whoever can read the inbox today is who recovery through
+	// it would actually reach, and two accounts sharing one is two accounts a single inbox
+	// can take.
+	h.expect(h.do(http.MethodPost, "/api/logout", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodPost, "/api/login",
+		map[string]any{"username": "alice", "password": harnessPassword}), http.StatusNoContent, nil)
+
+	var alice accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &alice)
+	if alice.RecoveryEmail != "" {
+		t.Errorf("alice kept an address bob proved: %q", alice.RecoveryEmail)
+	}
+}
+
+func TestReProvingYourOwnAddressIsNotATakeover(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	relay := h.relay()
+
+	for range 2 {
+		h.expect(h.do(http.MethodPost, "/api/account/recovery",
+			map[string]any{"email": "alice@example.com"}), http.StatusNoContent, nil)
+		h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+			map[string]any{"code": relay.codeSentTo(t, "alice@example.com")}), http.StatusOK, nil)
+	}
+
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	if body.RecoveryEmail != "alice@example.com" {
+		t.Errorf("recovery_email = %q", body.RecoveryEmail)
+	}
+}
+
+func TestRecoveryRefusesSomethingThatIsNotAnAddress(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+	h.relay()
+
+	for _, bad := range []string{"", "not an address", "alice@localhost", "alice@.com"} {
+		res := h.do(http.MethodPost, "/api/account/recovery", map[string]any{"email": bad})
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q was accepted with %d", bad, res.StatusCode)
+		}
+		res.Body.Close()
+	}
 }
 
 func TestChangingAPasswordNeedsTheCurrentOne(t *testing.T) {
@@ -119,8 +315,10 @@ func TestAccountIsYourOwnOnly(t *testing.T) {
 		method, path string
 	}{
 		{http.MethodGet, "/api/account"},
-		{http.MethodPatch, "/api/account"},
 		{http.MethodPost, "/api/account/password"},
+		{http.MethodPost, "/api/account/recovery"},
+		{http.MethodPost, "/api/account/recovery/confirm"},
+		{http.MethodDelete, "/api/account/recovery"},
 	} {
 		res := h.do(call.method, call.path, map[string]any{})
 		if res.StatusCode != http.StatusUnauthorized {

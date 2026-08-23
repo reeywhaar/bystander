@@ -8,12 +8,34 @@ export function getAccount(): ApiAction<Account> {
   );
 }
 
-/** `PATCH /api/account` — the recovery address. Empty clears it. */
-export function patchAccount(changes: {
-  recovery_email: string;
-}): ApiAction<Account> {
+/**
+ * `POST /api/account/recovery` — sends a code to an address and records nothing.
+ *
+ * The account has no recovery address until the code comes back. An address nobody has
+ * proved they can read is worse than none: a typo sends recovery to a stranger's inbox, and
+ * the owner finds out at the one moment they cannot afford to.
+ */
+export function postAccountRecovery(email: string): ApiAction<void> {
   return createApiAction((d) =>
-    d.call({ method: "PATCH", path: "/api/account", body: changes }),
+    d.call({ method: "POST", path: "/api/account/recovery", body: { email } }),
+  );
+}
+
+/** `POST /api/account/recovery/confirm` — the only step that changes anything. */
+export function postAccountRecoveryConfirm(code: string): ApiAction<Account> {
+  return createApiAction((d) =>
+    d.call({
+      method: "POST",
+      path: "/api/account/recovery/confirm",
+      body: { code },
+    }),
+  );
+}
+
+/** `DELETE /api/account/recovery` — forgets the address and anything in flight. */
+export function deleteAccountRecovery(): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: "/api/account/recovery" }),
   );
 }
 

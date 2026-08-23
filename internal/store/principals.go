@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/mail"
 	"strings"
 	"time"
 	"unicode"
@@ -52,10 +51,6 @@ type Principal struct {
 	Role       Role
 	CreatedAt  time.Time
 	DisabledAt time.Time // zero when enabled
-
-	// RecoveryEmail is an address this account can be recovered through, or empty. It is
-	// stored ahead of anything that can send to it — see the migration.
-	RecoveryEmail string
 
 	// hash is the bcrypt hash. Unexported so it cannot be serialised into a response by
 	// somebody adding a json tag to a struct they did not read to the bottom of.
@@ -139,7 +134,7 @@ func insertPrincipal(ctx context.Context, tx *sql.Tx, p *Principal, now time.Tim
 	return p, nil
 }
 
-const principalColumns = `id, username, password_hash, role, created_at, disabled_at, recovery_email`
+const principalColumns = `id, username, password_hash, role, created_at, disabled_at`
 
 func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 	var (
@@ -148,7 +143,7 @@ func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 		created  int64
 		disabled sql.NullInt64
 	)
-	if err := row.Scan(&p.ID, &p.Username, &p.hash, &role, &created, &disabled, &p.RecoveryEmail); err != nil {
+	if err := row.Scan(&p.ID, &p.Username, &p.hash, &role, &created, &disabled); err != nil {
 		return nil, err
 	}
 	p.Role = Role(role)
@@ -320,29 +315,6 @@ func (s *Store) ChangePassword(ctx context.Context, id, current, next, keepToken
 		return err
 	}
 	return tx.Commit()
-}
-
-// SetRecoveryEmail records where an account could be recovered from. Empty clears it.
-func (s *Store) SetRecoveryEmail(ctx context.Context, id, address string) error {
-	address = strings.TrimSpace(address)
-	if address != "" {
-		// net/mail rather than a regular expression. Every hand-written email pattern is
-		// wrong in one of two directions, and this one is the parser the rest of the
-		// program would use to send anything anyway.
-		parsed, err := mail.ParseAddress(address)
-		if err != nil {
-			return Invalid("%q does not look like an email address", address)
-		}
-		// ParseAddress accepts "Name <a@b>"; only the address itself is wanted.
-		address = parsed.Address
-	}
-
-	res, err := s.main.ExecContext(ctx,
-		`UPDATE principals SET recovery_email = ? WHERE id = ?`, address, id)
-	if err != nil {
-		return err
-	}
-	return expectOne(res, NotFound("no account %s", id))
 }
 
 // SetDisabled switches an account off or back on.

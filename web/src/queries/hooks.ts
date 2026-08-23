@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  deleteAccountRecovery,
   getAccount,
-  patchAccount,
   postAccountPassword,
+  postAccountRecovery,
+  postAccountRecoveryConfirm,
 } from "@app/api/actions/account";
 import {
   deleteAdminInvitesById,
@@ -335,16 +337,40 @@ export function useAccount() {
   });
 }
 
-export function useSetRecoveryEmail() {
+/** Sends a code. Nothing about the account changes until it comes back. */
+export function useBeginRecovery() {
   const callApi = useApiCall();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (recovery_email: string) =>
-      callApi(patchAccount({ recovery_email })),
+    mutationFn: (email: string) => callApi(postAccountRecovery(email)),
+    onSuccess: () => {
+      // Only the pending address moved, and the answer carries nothing, so this is the one
+      // that has to go back and ask.
+      void client.invalidateQueries({ queryKey: qk.account });
+    },
+  });
+}
+
+export function useConfirmRecovery() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => callApi(postAccountRecoveryConfirm(code)),
     onSuccess: (account) => {
       // The response is the account as stored, so it replaces the cache outright rather
       // than prompting a second request for what we were just handed.
       client.setQueryData(qk.account, account);
+    },
+  });
+}
+
+export function useForgetRecovery() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => callApi(deleteAccountRecovery()),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.account });
     },
   });
 }

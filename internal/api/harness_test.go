@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"bystander/internal/config"
 	"bystander/internal/edition"
 	"bystander/internal/feeds"
+	mailer "bystander/internal/mail"
 	"bystander/internal/session"
 	"bystander/internal/store"
 )
@@ -31,6 +35,7 @@ type harness struct {
 	client *http.Client
 	store  *store.Store
 	cfg    *config.Config
+	api    *Server
 }
 
 func newHarness(t *testing.T) *harness {
@@ -71,7 +76,8 @@ func newHarness(t *testing.T) *harness {
 	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
 	generator := edition.NewGenerator(st, log)
 
-	server := httptest.NewServer(New(cfg, st, sessions, generator, fetcher, spa, log).Handler())
+	api := New(cfg, st, sessions, generator, fetcher, spa, log)
+	server := httptest.NewServer(api.Handler())
 	t.Cleanup(server.Close)
 
 	jar, err := cookiejar.New(nil)
@@ -85,7 +91,73 @@ func newHarness(t *testing.T) *harness {
 		client: &http.Client{Jar: jar, Timeout: 10 * time.Second},
 		store:  st,
 		cfg:    cfg,
+		api:    api,
 	}
+}
+
+// sentMail is every message that would have gone out.
+type sentMail struct {
+	// refuse, when set, is what the relay says instead of accepting.
+	refuse error
+
+	mu   sync.Mutex
+	sent []mailer.Message
+}
+
+func (s *sentMail) record(_ context.Context, _ mailer.Settings, m mailer.Message) error {
+	if s.refuse != nil {
+		return s.refuse
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sent = append(s.sent, m)
+	return nil
+}
+
+// codeSentTo digs the confirmation code out of the last message sent to an address.
+//
+// Read from the message rather than from the database, because the database only has its
+// hash — which is the point of storing it that way, and means the only way to know the code
+// is to be the recipient.
+func (s *sentMail) codeSentTo(t *testing.T, address string) string {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := len(s.sent) - 1; i >= 0; i-- {
+		if !strings.EqualFold(s.sent[i].To, address) {
+			continue
+		}
+		code := recoveryCode.FindStringSubmatch(s.sent[i].Body)
+		if code == nil {
+			t.Fatalf("no code in the message sent to %s:\n%s", address, s.sent[i].Body)
+		}
+		return code[1]
+	}
+	t.Fatalf("nothing was sent to %s", address)
+	return ""
+}
+
+// The code as the message writes it: eight of Crockford's base32.
+var recoveryCode = regexp.MustCompile(`code is ([0-9A-HJKMNP-TV-Z]{8})`)
+
+// relay configures a relay and captures what would be sent through it.
+//
+// Both halves are needed together: the handlers refuse to start anything when no relay is
+// configured, which is deliberate, so a test about codes has to set one up first.
+func (h *harness) relay() *sentMail {
+	h.t.Helper()
+
+	if err := h.store.SetSMTP(h.t.Context(), mailer.Settings{
+		Host: "smtp.example.com", Port: 587, TLS: mailer.StartTLS,
+		Username: "operator", Password: "hunter2", FromAddress: "paper@example.com",
+	}); err != nil {
+		h.t.Fatalf("SetSMTP(): %v", err)
+	}
+
+	out := &sentMail{}
+	h.api.sendMail = out.record
+	return out
 }
 
 // do sends a request. A nil body sends none; anything else is sent as JSON, which is what

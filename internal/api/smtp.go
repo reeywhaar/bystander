@@ -173,7 +173,7 @@ func (s *Server) testSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := mailer.Send(r.Context(), settings, mailer.Message{
+	if err := s.sendMail(r.Context(), settings, mailer.Message{
 		To:      to,
 		Subject: "bystander can send mail",
 		// Deliberately says nothing about the relay being saved: this same message goes

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { postLogout } from "@app/api/actions/auth";
 import { useApiCall } from "@app/api/provider";
@@ -10,8 +10,10 @@ import { absolute } from "@app/lib/time";
 import {
   useAccount,
   useChangePassword,
-  useSetRecoveryEmail,
+  useForgetRecovery,
 } from "@app/queries/hooks";
+
+import { RecoveryDialog } from "@app/apps/manage/RecoveryDialog";
 
 /** What the server will refuse anything shorter than. Mirrors `store.MinPasswordLen`. */
 const MIN_PASSWORD = 8;
@@ -26,19 +28,14 @@ const MIN_PASSWORD = 8;
 export function AccountPage() {
   const account = useAccount();
   const change = useChangePassword();
-  const recovery = useSetRecoveryEmail();
+  const forget = useForgetRecovery();
   const callApi = useApiCall();
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
-  const [email, setEmail] = useState("");
   const [signingOut, setSigningOut] = useState(false);
-
-  const loaded = account.data;
-  useEffect(() => {
-    if (loaded) setEmail(loaded.recovery_email);
-  }, [loaded]);
+  const [proving, setProving] = useState(false);
 
   if (account.isPending) return <Spinner />;
   if (account.error) throw account.error;
@@ -147,46 +144,58 @@ export function AccountPage() {
           ever sent here, and it is not a way to sign in — only a way back in.
         </p>
 
-        {/* Said plainly rather than left to be discovered. An address stored against an
-            instance that cannot send is a promise nobody can keep, and the moment somebody
+        {/* Said plainly rather than left to be discovered. Adding an address on an instance
+            that cannot send would be a promise nobody can keep, and the moment somebody
             finds that out is the moment they are already locked out. */}
         {!me.mail_configured ? (
           <Alert tone="note">
-            No mail relay is configured on this instance yet, so nothing can
-            actually be sent to this address. An administrator sets one up under
-            Admin → Mail.
+            No mail relay is configured on this instance yet, so an address
+            cannot be confirmed. An administrator sets one up under Admin →
+            Mail.
           </Alert>
         ) : null}
 
-        <div className="flex flex-wrap items-end gap-3">
-          <Field
-            label="Address"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="min-w-64 flex-1"
-          />
-          <Button
-            disabled={email.trim() === me.recovery_email || recovery.isPending}
-            onClick={() => recovery.mutate(email.trim())}
-          >
-            {recovery.isPending
-              ? "Saving…"
-              : email.trim() === ""
-                ? "Remove it"
-                : "Save"}
-          </Button>
-        </div>
+        <p className="text-sm text-ink">
+          {me.recovery_email === "" ? (
+            <span className="text-ink-muted">
+              None. Without one, a forgotten password needs an administrator.
+            </span>
+          ) : (
+            me.recovery_email
+          )}
+        </p>
 
-        {recovery.error ? <Alert>{recovery.error.message}</Alert> : null}
-        {recovery.isSuccess && email.trim() === me.recovery_email ? (
-          <p className="text-sm text-ink-muted">
-            {me.recovery_email === ""
-              ? "Removed."
-              : `Saved. ${me.recovery_email} is where recovery would go.`}
+        {/* Named, so reopening resumes rather than starting somebody over on a code they
+            are already holding. */}
+        {me.recovery_pending ? (
+          <p className="text-xs text-ink-faint">
+            Waiting on a code sent to {me.recovery_pending}.
           </p>
         ) : null}
+
+        {forget.error ? <Alert>{forget.error.message}</Alert> : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={!me.mail_configured}
+            onClick={() => setProving(true)}
+          >
+            {me.recovery_pending
+              ? "Finish confirming"
+              : me.recovery_email === ""
+                ? "Add an address"
+                : "Change it"}
+          </Button>
+          {me.recovery_email || me.recovery_pending ? (
+            <Button
+              variant="danger"
+              disabled={forget.isPending}
+              onClick={() => forget.mutate()}
+            >
+              {forget.isPending ? "Removing…" : "Remove it"}
+            </Button>
+          ) : null}
+        </div>
       </section>
 
       <section className="flex flex-col gap-3 border-t border-rule pt-8">
@@ -205,6 +214,12 @@ export function AccountPage() {
           </Button>
         </div>
       </section>
+
+      {/* Mounted only while open, so it starts from what is on record every time rather
+          than from whatever was typed and abandoned last time. */}
+      {proving ? (
+        <RecoveryDialog account={me} onClose={() => setProving(false)} />
+      ) : null}
     </div>
   );
 }

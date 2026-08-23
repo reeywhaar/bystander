@@ -26,6 +26,7 @@ import (
 	"bystander/internal/config"
 	"bystander/internal/edition"
 	"bystander/internal/feeds"
+	mailer "bystander/internal/mail"
 	"bystander/internal/session"
 	"bystander/internal/store"
 )
@@ -43,6 +44,13 @@ type Server struct {
 	logins    *limiter
 	discovery *limiter
 	mail      *limiter
+
+	// sendMail is how a message leaves.
+	//
+	// A field rather than a direct call, so a test can watch what would have been sent
+	// without standing up a relay with a certificate of its own. What happens on the wire
+	// is internal/mail's to prove, and it proves it against a real one.
+	sendMail func(context.Context, mailer.Settings, mailer.Message) error
 }
 
 // New builds a server.
@@ -66,7 +74,8 @@ func New(cfg *config.Config, st *store.Store, sessions *session.Table, gen *edit
 		// A test send is an outbound connection to somebody else's relay, made on
 		// demand. Administrators are trusted, and relays still have rate limits of
 		// their own worth staying under.
-		mail: newLimiter(5, time.Minute),
+		mail:     newLimiter(5, time.Minute),
+		sendMail: mailer.Send,
 	}
 }
 
@@ -85,8 +94,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/me", s.requireSession(s.me))
 
 	mux.Handle("GET /api/account", s.requireSession(s.account))
-	mux.Handle("PATCH /api/account", s.requireSession(s.patchAccount))
 	mux.Handle("POST /api/account/password", s.requireSession(s.changePassword))
+	mux.Handle("POST /api/account/recovery", s.requireSession(s.beginRecovery))
+	mux.Handle("POST /api/account/recovery/confirm", s.requireSession(s.confirmRecovery))
+	mux.Handle("DELETE /api/account/recovery", s.requireSession(s.clearRecovery))
 
 	mux.Handle("GET /api/edition", s.requireSession(s.edition))
 	mux.Handle("POST /api/edition/regenerate", s.requireSession(s.regenerate))
