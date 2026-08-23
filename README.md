@@ -80,13 +80,13 @@ be the unread-count problem wearing a different hat.
 
 Read marks belong to the page they were made on. When the page goes, they go with it.
 
-What you **read**, though, is kept for a month, under Feeds → Recently read. That is not an
+What you **read**, though, is kept for a month, under Settings → Recently read. That is not an
 unread count in disguise: it counts nothing, it lists only what you have already dealt
 with, and it expires. A list of things you have finished with asks nothing of you.
 
 ### Making a page yourself
 
-**Make a different page** in the reader's footer — and **Your page** under Feeds — composes
+**Make a different page** in the reader's footer — and **Your page** under Settings — composes
 one now rather than waiting for the schedule. It is a *re-roll*, not a page turn: articles
 you have not read go back in the pool first, so you can press it as often as you like while
 settling on your priorities and watch what actually changes. Only the scheduled turn spends

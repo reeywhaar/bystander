@@ -45,7 +45,7 @@ export function Masthead({
         <div className="ml-auto flex items-center gap-4 text-sm">
           {children}
           <a href="/manage" className="text-ink-muted hover:text-ink">
-            Feeds
+            Settings
           </a>
           {me.role === "admin" ? (
             <a href="/admin" className="text-ink-muted hover:text-ink">
