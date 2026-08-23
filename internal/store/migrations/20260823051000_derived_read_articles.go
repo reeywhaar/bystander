@@ -1,3 +1,8 @@
+package migrations
+
+var derivedReadArticles = Migration{
+	Name: "20260823051000_derived_read_articles",
+	Up: exec(`
 -- What somebody actually read, kept for a month.
 --
 -- A read mark on edition_items belongs to its page and dies with it — that is what lets a
@@ -25,3 +30,5 @@ CREATE TABLE read_articles (
 ) WITHOUT ROWID;
 CREATE INDEX read_articles_when ON read_articles(principal_id, read_at DESC);
 CREATE INDEX read_articles_age  ON read_articles(read_at);
+`),
+}

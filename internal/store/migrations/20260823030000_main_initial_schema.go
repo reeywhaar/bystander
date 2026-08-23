@@ -1,3 +1,8 @@
+package migrations
+
+var mainInitialSchema = Migration{
+	Name: "20260823030000_main_initial_schema",
+	Up: exec(`
 -- Accounts. COLLATE NOCASE on the username because "Alice" and "alice" are the same
 -- person trying to log in, and letting both exist is a support ticket waiting to happen.
 CREATE TABLE principals (
@@ -112,3 +117,5 @@ CREATE TABLE settings (
   next_edition_at  INTEGER NOT NULL
 );
 CREATE INDEX settings_due ON settings(next_edition_at);
+`),
+}

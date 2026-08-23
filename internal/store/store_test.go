@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"bystander/internal/store/migrations"
 )
 
 // testStore opens a store in a temp directory. A real file rather than :memory:, because
@@ -48,8 +50,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 		db   *sql.DB
 		want int
 	}{
-		{MainFile, second.main, len(mainMigrations())},
-		{DerivedFile, second.derived, len(derivedMigrations())},
+		{MainFile, second.main, len(migrations.Main)},
+		{DerivedFile, second.derived, len(migrations.Derived)},
 	} {
 		var version int
 		if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {

@@ -27,9 +27,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, no cgo, so the image stays static
+
+	"bystander/internal/store/migrations"
 )
 
 // The error vocabulary handlers map onto status codes. Three sentinels, wrapped with
@@ -76,11 +80,11 @@ func Open(dir string) (*Store, error) {
 	s := &Store{main: main, derived: derived, now: time.Now}
 
 	ctx := context.Background()
-	if err := migrate(ctx, main, MainFile, mainMigrations()); err != nil {
+	if err := migrate(ctx, main, derived, MainFile, migrations.Main); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := migrate(ctx, derived, DerivedFile, derivedMigrations()); err != nil {
+	if err := migrate(ctx, derived, main, DerivedFile, migrations.Derived); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -182,7 +186,14 @@ func verifyPragmas(db *sql.DB, path string) error {
 //
 // Each runs in its own transaction that also stamps the version, so a failure leaves the
 // database at the last version that fully applied rather than half way through one.
-func migrate(ctx context.Context, db *sql.DB, name string, migrations []Migration) error {
+func migrate(ctx context.Context, db, other *sql.DB, name string, list []migrations.Migration) error {
+	// Sorted by name, which is a timestamp, so a file added out of order still applies in
+	// the right place. The declared order in migrations.go is documentation; this is what
+	// actually decides.
+	list = slices.SortedFunc(slices.Values(list), func(a, b migrations.Migration) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
 	var version int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("%s: read user_version: %w", name, err)
@@ -190,22 +201,23 @@ func migrate(ctx context.Context, db *sql.DB, name string, migrations []Migratio
 	// Refusing rather than proceeding: a binary that does not understand the schema in
 	// front of it cannot know which of its statements are still correct, and downgrading
 	// is not supported. Saying so beats corrupting data quietly.
-	if version > len(migrations) {
+	if version > len(list) {
 		return fmt.Errorf("%s: schema version %d is newer than this build understands (%d); downgrading is not supported",
-			name, version, len(migrations))
+			name, version, len(list))
 	}
 
-	for i := version; i < len(migrations); i++ {
-		// Named rather than numbered wherever it is said out loud: "20260823061500_
-		// article_window.sql failed" is a file somebody can open, and "migration 2"
-		// is a thing they have to go and count.
-		step := migrations[i]
+	for i := version; i < len(list); i++ {
+		step := list[i]
 
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("%s: %s: %w", name, step.Name, err)
 		}
-		if _, err := tx.ExecContext(ctx, step.SQL); err != nil {
+		// The other database is handed over for the migrations that have to move data
+		// across. Nothing done through it is atomic with this transaction — SQLite cannot
+		// give one that spans both — so a migration that uses it reads there and writes
+		// here.
+		if err := step.Up(migrations.Context{Ctx: ctx, Tx: tx, Other: other}); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("%s: %s: %w", name, step.Name, err)
 		}

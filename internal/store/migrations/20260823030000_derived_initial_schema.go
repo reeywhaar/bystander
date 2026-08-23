@@ -1,3 +1,8 @@
+package migrations
+
+var derivedInitialSchema = Migration{
+	Name: "20260823030000_derived_initial_schema",
+	Up: exec(`
 -- feed_id references main.db; there is no FK, because no constraint can cross a database
 -- and no transaction may span the two. A row pointing at a deleted feed is garbage to be
 -- collected, not an inconsistency to be repaired.
@@ -59,3 +64,5 @@ CREATE TABLE shown (
   PRIMARY KEY (principal_id, feed_id, guid_hash)
 ) WITHOUT ROWID;
 CREATE INDEX shown_age ON shown(shown_at);
+`),
+}
