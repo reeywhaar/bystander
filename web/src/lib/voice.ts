@@ -88,6 +88,49 @@ export function proseStep(id: string): number {
 }
 
 /**
+ * How a card is framed: boxed, or not.
+ *
+ * Newspapers box a story to set it apart from the columns around it — a sidebar, a standalone
+ * item, something that is not part of the flow. It is one of the few marks a page makes that
+ * is not type, and a page with none of them is flatter for it.
+ *
+ * The transparent one is doing real work. Every card carries the same border and the same
+ * padding, and only the *paint* changes — so a boxed story sits on exactly the same
+ * gridlines as an unboxed one, and boxing costs nothing in alignment. Give the border only
+ * to the boxed cards and their text insets by a couple of pixels relative to their
+ * neighbours, which reads as a wobble rather than as a box.
+ */
+export const FRAMES = ["transparent", "solid", "dashed", "dotted"] as const;
+
+export type Frame = (typeof FRAMES)[number];
+
+/**
+ * How often a card is boxed at all, as one in this many.
+ *
+ * Boxing is punctuation. A page where a sixth of the cards are boxed has texture; a page
+ * where half of them are has a table.
+ */
+const BOXED_IN = 6;
+
+/**
+ * Which frame a card takes.
+ *
+ * A pure function of the id, as the voice and the type ladder are, and for the same reason:
+ * the layout is fixed so that where an article sits is how somebody remembers where they
+ * were, and a box that came and went on reload would undo that.
+ *
+ * Its own slice of the hash again, so being boxed is not secretly the same fact as being
+ * set in Oswald.
+ */
+export function frameFor(id: string): Frame {
+  const h = hash(id) >>> 24;
+  if (h % BOXED_IN !== 0) return "transparent";
+  // Of the boxed ones, which line. Taken from a different part of the same byte so the
+  // three styles are evenly spread among them rather than one being far rarer.
+  return FRAMES[1 + (((h / BOXED_IN) | 0) % (FRAMES.length - 1))] as Frame;
+}
+
+/**
  * Assign a voice to each article, in the order the server put them in.
  *
  * Returns the articles paired with their voices rather than a bare list, so a caller cannot

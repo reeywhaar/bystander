@@ -101,6 +101,16 @@ body {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-auto-flow: dense;
     gap: 1.75rem;
+    /*
+     * Cards hug their content instead of stretching to the tallest in their row.
+     *
+     * It changes nothing about where the whitespace goes — a row is still as tall as its
+     * tallest card — but it changes what the whitespace *is*. Stretched, a boxed story with
+     * four lines in it draws a frame around four lines and a foot of nothing, which reads as
+     * a mistake. Unstretched, the box ends where the story does and the empty space belongs
+     * to the page, where it is unremarkable.
+     */
+    align-items: start;
   }
 
   .slot-lead {
@@ -144,6 +154,40 @@ body {
     .slot-brief {
       grid-column: span 1;
     }
+  }
+
+  /*
+   * A card's frame.
+   *
+   * Every card carries one and only the paint changes, which is what keeps a boxed story on
+   * the same gridlines as the columns beside it — see lib/voice.ts. The padding is here
+   * rather than on the boxed ones alone for exactly that reason: give it only to the boxed
+   * cards and their text insets a few pixels relative to their neighbours, which reads as a
+   * wobble rather than as a box.
+   *
+   * No negative margin to pull it back out, though that is the obvious trick: it would take
+   * the padding out of the gutter, and two boxes either side of a gap would end up almost
+   * touching. The gap between cards is the page's, not the box's, and boxing does not get to
+   * spend it.
+   *
+   * `--rule` is the paper's hairline, the same line that separates everything else here. A
+   * box should be noticed on the second pass, not the first.
+   */
+  .frame {
+    border: 1px solid transparent;
+    padding: 0.625rem;
+  }
+  .frame-solid {
+    border-style: solid;
+    border-color: var(--rule);
+  }
+  .frame-dashed {
+    border-style: dashed;
+    border-color: var(--rule);
+  }
+  .frame-dotted {
+    border-style: dotted;
+    border-color: var(--rule);
   }
 
   /*

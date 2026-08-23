@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
-import { proseStep, type Voice } from "@app/lib/voice";
+import { frameFor, proseStep, type Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -51,7 +51,9 @@ export function ArticleCard({
 
   return (
     <article
-      className={`slot-${article.slot} flex flex-col ${read ? "is-read" : ""}`}
+      className={`slot-${article.slot} frame frame-${frameFor(article.id)} flex flex-col ${
+        read ? "is-read" : ""
+      }`}
     >
       {showImage ? (
         <a

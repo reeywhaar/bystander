@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignVoices,
+  frameFor,
   PROSE_STEPS,
   proseStep,
   VOICES,
+  type Frame,
   type Voice,
 } from "@app/lib/voice";
 
@@ -92,5 +94,28 @@ describe("proseStep", () => {
       ),
     );
     expect(pairs.size).toBe(VOICES.length * PROSE_STEPS);
+  });
+});
+
+describe("frameFor", () => {
+  it("is the same every time, so a box does not come and go", () => {
+    const id = "a_06G30HM6D10P236HGJDFTSHXFW";
+    expect(frameFor(id)).toBe(frameFor(id));
+  });
+
+  it("boxes a minority, and spreads the three lines evenly among them", () => {
+    const frames = Array.from({ length: 3000 }, (_, i) => frameFor("a_" + i));
+    const tally = new Map<Frame, number>();
+    for (const f of frames) tally.set(f, (tally.get(f) ?? 0) + 1);
+
+    // Boxing is punctuation. A page where half the cards are boxed is a table.
+    const boxed = frames.length - (tally.get("transparent") ?? 0);
+    expect(boxed / frames.length).toBeGreaterThan(0.1);
+    expect(boxed / frames.length).toBeLessThan(0.25);
+
+    // And no line is rare enough to look like an accident when it turns up.
+    for (const line of ["solid", "dashed", "dotted"] as const) {
+      expect(tally.get(line) ?? 0).toBeGreaterThan(boxed / 6);
+    }
   });
 });
