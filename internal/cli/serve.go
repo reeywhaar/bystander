@@ -42,6 +42,10 @@ func serve(parent context.Context) error {
 	}
 	defer st.Close()
 
+	if main, derived, err := st.SchemaVersions(parent); err == nil {
+		log.Info("databases open", "dir", cfg.DataDir, "main_schema", main, "derived_schema", derived)
+	}
+
 	if cfg.InsecurePublicURL() {
 		// Legitimate behind a terminating proxy on a private network, and a real mistake
 		// anywhere else. Warning rather than refusing, because we cannot tell which.

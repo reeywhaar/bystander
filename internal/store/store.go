@@ -87,6 +87,21 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
+// SchemaVersions reports what each database has applied.
+//
+// Logged at startup, because "did my deployment actually migrate?" is otherwise a question
+// answered by shelling into a container with sqlite3 — and the moment somebody wants the
+// answer is the moment something has already gone wrong.
+func (s *Store) SchemaVersions(ctx context.Context) (main, derived int, err error) {
+	if err = s.main.QueryRowContext(ctx, "PRAGMA user_version").Scan(&main); err != nil {
+		return 0, 0, fmt.Errorf("read %s version: %w", MainFile, err)
+	}
+	if err = s.derived.QueryRowContext(ctx, "PRAGMA user_version").Scan(&derived); err != nil {
+		return 0, 0, fmt.Errorf("read %s version: %w", DerivedFile, err)
+	}
+	return main, derived, nil
+}
+
 // SetClock replaces the clock. For tests; the daemon never calls it.
 func (s *Store) SetClock(now func() time.Time) { s.now = now }
 
