@@ -9,6 +9,24 @@ previous one is gone for good.
 Nothing accumulates. Nothing is owed. A feed that publishes forty items a day contributes
 the same handful as one that publishes two.
 
+## What it looks like
+
+[![A front page](docs/screenshots/frontpage.png)](docs/screenshots/frontpage.png)
+
+A lead, two features and the rest, in positions fixed when the page was made. The headlines
+are not all in one face; that is [Typography](#typography), below.
+
+| | |
+| --- | --- |
+| [![The feeds you follow](docs/screenshots/feeds.png)](docs/screenshots/feeds.png) | [![One feed's settings](docs/screenshots/feed.png)](docs/screenshots/feed.png) |
+| The feeds you follow, and what each is worth to you | Everything about one feed, behind its name |
+| [![Your page](docs/screenshots/settings.png)](docs/screenshots/settings.png) | [![Recently read](docs/screenshots/read.png)](docs/screenshots/read.png) |
+| How often a page turns, and how much is on it | What you have already read — the only list here |
+
+Real captures of the real reader; only the publications are invented. They are regenerated
+by [`docs/screenshots/capture.sh`](docs/screenshots/), which builds the thing, runs it
+against eight stand-in publishers and drives headless Chromium at the result.
+
 ## Why
 
 Every reader I have used turns reading into bookkeeping. A number goes up, and the only way
@@ -44,7 +62,22 @@ of the log:
 docker exec bystander bystander invite
 ```
 
-Then add a feed. A site's address is enough — bystander follows it to the feed it names.
+Then add a feed. A site's address is enough — bystander follows it to the feed it names, and
+offers you the list when it names several.
+
+### Bringing a list in, and getting one out
+
+**Import a list** under Settings → Feeds takes an OPML file or a pasted list of addresses.
+It reads the list first and shows you the plan — which feeds, filed under which of your
+tags, and which are already yours — and imports only what you tick. An import is somebody
+else's decisions arriving in bulk, and applying that unseen is how you end up with a
+taxonomy you did not choose and cannot unpick.
+
+**Share my feeds** goes the other way: pick some or all of them and get either a plain list
+of addresses or an OPML file. That OPML is flat, with tags in each outline's `category`
+attribute rather than as folders, because a feed here can carry several tags and a folder is
+a tree. The reader is more forgiving than the writer and takes folders too, since that is
+what everything else exports.
 
 ## How a page is made
 
@@ -80,6 +113,30 @@ where an article sits is how you remember where you were, and rearranging under 
 be the unread-count problem wearing a different hat.
 
 Read marks belong to the page they were made on. When the page goes, they go with it.
+
+### Typography
+
+A newspaper has never set every headline on a page in one face. It keeps a handful of
+display faces and picks between them story by story, and that is most of what makes a sheet
+of forty unrelated headlines read as one publication rather than as a list of links — which
+is exactly the problem a page composed out of strangers' feeds has.
+
+So there are six **voices**, one per genre of display face rather than six variations on
+one: a didone, an antique, a plain transitional workhorse, a slab, a condensed gothic and a
+humanist. Each carries its own scale and leading, because the faces do not agree about how
+big twenty pixels is.
+
+Which article gets which is **random, and decided once**. The face is a function of the
+article's id, so the same article is in the same face on every load and in every tab for as
+long as it is on the page — the same reason its position is fixed. No two headlines in a row
+share a face, which is the one rule a newspaper's headline typography actually has.
+
+The faces are served from this instance and never from Google, so rendering a page makes no
+request to a third party. Latin, Latin Extended and Cyrillic; about 400 KB in the binary,
+of which a browser fetches only the subsets a page has glyphs in. A script they cannot draw
+falls back to the reading face, which is what the page did before any of this existed.
+[`web/scripts/fetch-fonts.sh`](web/scripts/fetch-fonts.sh) holds the list, and adding one is
+a line in it.
 
 What you **read**, though, is kept for a month, under Settings → Recently read. That is not an
 unread count in disguise: it counts nothing, it lists only what you have already dealt
@@ -153,16 +210,21 @@ Back `main.db` up with `sqlite3 main.db ".backup out.db"` or a filesystem snapsh
 `cp`: a plain copy of a WAL database while it is being written is a copy of an inconsistent
 moment.
 
-Articles are pruned at 30 days, and the record of what you have been shown at 90 — three
-times longer, so it always outlives the article it refers to and nothing resurfaces.
+Articles are kept for as long as the longest window anybody set needs — a month at least,
+a year at most, since unbounded growth is not a setting anybody meant to choose. The record
+of what you have been *shown* is kept three times longer than that, so it always outlives
+the article it refers to and a long-dormant feed cannot resurface something you have already
+seen.
 
 ## What it deliberately does not do
 
 - **No unread count.** Not on a tag, not on a feed, not in the title. This is the product.
 - **No archive and no search.** A front page, not a library. Anything worth keeping is
   worth keeping somewhere that is not here.
-- **No OPML import**, yet.
 - **No push, email digest or mobile app.** The page is the product.
+- **No folders.** Tags nest and a feed can carry several of them, which a folder cannot.
+- **No web font fetched from anywhere else.** The headline faces are served from this
+  instance, so rendering a page makes no request to a third party.
 - **No CORS.** The browser only ever talks to this origin, and that absence is what makes
   two of the three CSRF defences worth anything. There is a test asserting the header is
   never emitted.
@@ -188,7 +250,13 @@ times longer, so it always outlives the article it refers to and nothing resurfa
 go test ./...                    # works with no frontend build present
 cd web && npm ci && npm test
 cd web && npm run build          # then rebuild the binary to embed it
+
+docs/screenshots/capture.sh      # regenerate the screenshots above
+web/scripts/fetch-fonts.sh       # re-download the headline faces
 ```
+
+Both scripts write files that are committed, so neither is part of a build. They exist so
+that "where did these come from" has an answer that can be re-run.
 
 `web/dist/.gitkeep` is tracked and `vite.config.ts` deliberately does not empty the
 directory: `//go:embed all:dist` needs something to match, or a fresh clone fails to
