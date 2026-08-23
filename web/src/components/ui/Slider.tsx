@@ -59,9 +59,15 @@ export function Slider({
         onKeyUp={commit}
         onBlur={commit}
         aria-label={label}
-        className={`${className} accent-[var(--accent)]`}
+        // shrink-0 is load-bearing. The label beside the track changes length as the value
+        // moves — "as usual" becomes "less often" — and a flex item will not shrink below
+        // its own content, so the growing label was squeezing the track under the finger
+        // that was dragging it.
+        className={`${className} shrink-0 accent-[var(--accent)]`}
       />
-      <span className="tabular-nums">{format(local)}</span>
+      <span className="shrink-0 whitespace-nowrap tabular-nums">
+        {format(local)}
+      </span>
     </span>
   );
 }

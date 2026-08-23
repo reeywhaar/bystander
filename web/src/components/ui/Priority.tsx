@@ -26,8 +26,12 @@ export function Priority({
       onCommit={onChange}
       label={label}
       className="w-32"
+      // Wide enough for the longest of these — "100 · more often" — so the label occupies
+      // the same space at every value and nothing moves while the thumb does.
       format={(priority) => (
-        <span className={`w-24 ${priority === 0 ? "text-accent" : ""}`}>
+        <span
+          className={`inline-block w-32 ${priority === 0 ? "text-accent" : ""}`}
+        >
           {priority} · {describePriority(priority)}
         </span>
       )}
