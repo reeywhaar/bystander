@@ -45,10 +45,20 @@ type Fetcher struct {
 	userAgent string
 }
 
-// NewFetcher builds a fetcher. publicURL goes in the User-Agent, so a publisher wondering
-// what is hitting them can find out — which is the difference between being rate-limited
-// and being blocked.
-func NewFetcher(publicURL string) *Fetcher {
+// ProjectURL is where somebody wondering what bystander is can go and read it.
+//
+// It rides in the User-Agent alongside the instance's own address: the project link says
+// what the software is and what it does, the instance link says who to talk to about this
+// particular one. A publisher looking at their logs wants both, and giving them neither is
+// how a fetcher ends up blocked rather than merely rate-limited.
+const ProjectURL = "https://github.com/reeywhaar/bystander"
+
+// NewFetcher builds a fetcher.
+//
+// version is the build this is, stamped at compile time — "dev" from a local build. Naming
+// a version somebody can act on beats the "1.0" that was here before, which was never true
+// of any build.
+func NewFetcher(publicURL, version string) *Fetcher {
 	return &Fetcher{
 		client: &http.Client{
 			Timeout: requestTimeout,
@@ -59,7 +69,7 @@ func NewFetcher(publicURL string) *Fetcher {
 				return nil
 			},
 		},
-		userAgent: "bystander/1.0 (+" + publicURL + ")",
+		userAgent: "bystander/" + version + " (+" + ProjectURL + "; +" + publicURL + ")",
 	}
 }
 
