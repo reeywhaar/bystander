@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  getAccount,
+  patchAccount,
+  postAccountPassword,
+} from "@app/api/actions/account";
+import {
   deleteAdminInvitesById,
   deleteAdminUsersById,
   deleteAdminSmtp,
@@ -319,6 +324,44 @@ export function useUpdateSettings() {
     onSuccess: (settings) => {
       client.setQueryData(qk.settings, settings);
     },
+  });
+}
+
+export function useAccount() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.account,
+    queryFn: ({ signal }) => callApi(getAccount(), signal),
+  });
+}
+
+export function useSetRecoveryEmail() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (recovery_email: string) =>
+      callApi(patchAccount({ recovery_email })),
+    onSuccess: (account) => {
+      // The response is the account as stored, so it replaces the cache outright rather
+      // than prompting a second request for what we were just handed.
+      client.setQueryData(qk.account, account);
+    },
+  });
+}
+
+/**
+ * Changes your password.
+ *
+ * Nothing is invalidated afterwards: this session survives on purpose, and none of what is
+ * cached describes a password.
+ */
+export function useChangePassword() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (passwords: {
+      current_password: string;
+      new_password: string;
+    }) => callApi(postAccountPassword(passwords)),
   });
 }
 

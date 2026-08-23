@@ -9,12 +9,15 @@ const tabs = [
   { to: "/manage/tags", label: "Tags", end: false },
   { to: "/manage/settings", label: "Your page", end: false },
   { to: "/manage/read", label: "Recently read", end: false },
+  { to: "/manage/account", label: "Account", end: false },
 ];
 
 export function Layout({ me, children }: { me: Me; children: ReactNode }) {
   return (
     <>
-      <Masthead me={me} subtitle={`Signed in as ${me.username}`} />
+      {/* No subtitle: the masthead now carries the name beside the person icon, and a band
+          that said it twice would be a band saying it twice. */}
+      <Masthead me={me} />
       <main className="mx-auto max-w-3xl px-6 py-10">
         <nav className="mb-8 flex gap-1 border-b border-rule">
           {tabs.map((tab) => (

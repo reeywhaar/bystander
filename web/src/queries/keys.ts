@@ -12,6 +12,8 @@
  */
 export const qk = {
   me: ["me"] as const,
+  /** Its own root: the masthead's `me` and the account page answer different questions. */
+  account: ["account"] as const,
 
   edition: ["edition"] as const,
   /** Its own root: marking something read changes both, and neither is a prefix of the other. */

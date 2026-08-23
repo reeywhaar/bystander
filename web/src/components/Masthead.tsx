@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 
-import { useApiCall } from "@app/api/provider";
-import { postLogout } from "@app/api/actions/auth";
 import type { Me } from "@app/api/types";
+import { PersonIcon } from "@app/components/icons/PersonIcon";
 
 /**
  * The band across the top of every island.
@@ -19,18 +18,6 @@ export function Masthead({
   subtitle?: ReactNode;
   children?: ReactNode;
 }) {
-  const callApi = useApiCall();
-
-  async function signOut() {
-    try {
-      await callApi(postLogout());
-    } finally {
-      // Whatever the server said, the cookie is gone or was never valid. Sending them to
-      // the login island either way beats leaving them on a page that cannot load.
-      window.location.href = "/login";
-    }
-  }
-
   return (
     <header className="border-b border-rule">
       {/* On a wide screen the nav sits at the right, opposite the name. On a narrow one it
@@ -56,13 +43,17 @@ export function Masthead({
               Admin
             </a>
           ) : null}
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="text-ink-muted hover:text-ink"
+          {/* Who you are, and the way to the page that says what that means — including
+              the way out. Sign out used to live here, one slip away from being pressed by
+              somebody aiming at the link beside it, and in exchange for that risk it told
+              nobody anything. */}
+          <a
+            href="/manage/account"
+            className="flex items-center gap-1.5 text-ink-muted hover:text-ink"
           >
-            Sign out
-          </button>
+            <PersonIcon />
+            {me.username}
+          </a>
         </div>
       </div>
     </header>

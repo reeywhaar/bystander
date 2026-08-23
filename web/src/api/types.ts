@@ -17,6 +17,29 @@ export interface Me {
   created_at: number;
 }
 
+/**
+ * Your own account, as only you see it.
+ *
+ * Separate from [Me], which every island fetches on load and which stays small: a name, a
+ * role, and whether to show the admin link. What an account *is* belongs to the one page
+ * that shows it.
+ */
+export interface Account {
+  username: string;
+  role: Role;
+  created_at: number;
+  /** Where this account could be recovered from, or empty. */
+  recovery_email: string;
+  /**
+   * Whether a relay is configured at all.
+   *
+   * A recovery address is worth nothing without one, and a page that invited somebody to
+   * add an address while quietly being unable to send to it would be making a promise the
+   * instance cannot keep.
+   */
+  mail_configured: boolean;
+}
+
 /** What an invitation link is, before anybody types a password into it. */
 export interface Invite {
   role: Role;

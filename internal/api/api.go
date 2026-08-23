@@ -84,6 +84,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.Handle("GET /api/me", s.requireSession(s.me))
 
+	mux.Handle("GET /api/account", s.requireSession(s.account))
+	mux.Handle("PATCH /api/account", s.requireSession(s.patchAccount))
+	mux.Handle("POST /api/account/password", s.requireSession(s.changePassword))
+
 	mux.Handle("GET /api/edition", s.requireSession(s.edition))
 	mux.Handle("POST /api/edition/regenerate", s.requireSession(s.regenerate))
 	mux.Handle("GET /api/read", s.requireSession(s.readArticles))

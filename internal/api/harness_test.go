@@ -19,6 +19,9 @@ import (
 	"bystander/internal/store"
 )
 
+// harnessPassword is what every account in these tests is created with.
+const harnessPassword = "correct-horse"
+
 // harness is a running bystander with a real store on disk, a real router, and a cookie
 // jar — so a test walks the same path a browser does rather than calling handlers
 // directly.
@@ -89,6 +92,12 @@ func newHarness(t *testing.T) *harness {
 // the CSRF guard requires of a mutating request.
 func (h *harness) do(method, path string, body any) *http.Response {
 	h.t.Helper()
+	return h.doAs(h.client, method, path, body)
+}
+
+// doAs is do, through somebody else's cookie jar.
+func (h *harness) doAs(client *http.Client, method, path string, body any) *http.Response {
+	h.t.Helper()
 
 	var reader io.Reader
 	if body != nil {
@@ -106,7 +115,7 @@ func (h *harness) do(method, path string, body any) *http.Response {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	res, err := h.client.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		h.t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -140,7 +149,30 @@ func (h *harness) signIn(role store.Role, username string) {
 		h.t.Fatalf("CreateInvite(): %v", err)
 	}
 	h.expect(h.do(http.MethodPost, "/api/invites/"+token+"/accept",
-		map[string]string{"username": username, "password": "correct-horse"}), http.StatusNoContent, nil)
+		map[string]string{"username": username, "password": harnessPassword}), http.StatusNoContent, nil)
+}
+
+// signInElsewhere signs the same account in again with a jar of its own, as if from another
+// device, and hands back the client holding that second session.
+//
+// A second jar rather than a second harness: the point is two live sessions against one
+// account, which is what "this signs out my other devices" is about.
+func (h *harness) signInElsewhere(username, password string) *http.Client {
+	h.t.Helper()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		h.t.Fatalf("cookiejar.New(): %v", err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
+
+	res := h.doAs(client, http.MethodPost, "/api/login",
+		map[string]string{"username": username, "password": password})
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		h.t.Fatalf("second sign-in answered %d", res.StatusCode)
+	}
+	return client
 }
 
 // feedServer serves a small RSS feed, and counts how often it was asked for.
