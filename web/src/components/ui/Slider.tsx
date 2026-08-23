@@ -47,7 +47,13 @@ export function Slider({
   }
 
   return (
+    // The value reads before the track, not after: it is what the control is *for*, and a
+    // number chasing along behind the thumb is harder to read than one holding still in
+    // front of it.
     <span className="flex items-center gap-3 text-xs text-ink-muted">
+      <span className="shrink-0 whitespace-nowrap tabular-nums">
+        {format(local)}
+      </span>
       <input
         type="range"
         min={min}
@@ -65,9 +71,6 @@ export function Slider({
         // that was dragging it.
         className={`${className} shrink-0 accent-[var(--accent)]`}
       />
-      <span className="shrink-0 whitespace-nowrap tabular-nums">
-        {format(local)}
-      </span>
     </span>
   );
 }

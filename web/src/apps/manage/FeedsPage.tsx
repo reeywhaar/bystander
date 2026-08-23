@@ -221,29 +221,40 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
 
   return (
     <div className="border-b border-rule py-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/* Two columns, one line each. The name gives way first — trimmed with an ellipsis
+          and carrying the whole of itself in a title — so a long one makes the row no
+          taller and never shoves the slider onto a line of its own, which is what turned
+          this list into a staircase. */}
+      <div className="flex items-baseline gap-4">
         <button
           type="button"
           onClick={() => setOpen((was) => !was)}
-          className="text-left font-serif text-lg text-ink hover:text-accent"
           aria-expanded={open}
+          title={feed.title}
+          className="flex min-w-0 flex-1 items-baseline gap-x-2 text-left"
         >
-          {feed.title}
+          <span className="truncate font-serif text-lg text-ink hover:text-accent">
+            {feed.title}
+          </span>
+          {failing ? (
+            <span
+              className="shrink-0 text-xs text-accent"
+              title={feed.last_error}
+            >
+              not answering ({feed.failure_count})
+            </span>
+          ) : feed.last_success_at ? (
+            <span className="shrink-0 text-xs text-ink-faint">
+              {since(feed.last_success_at)}
+            </span>
+          ) : (
+            <span className="shrink-0 text-xs text-ink-faint">
+              not fetched yet
+            </span>
+          )}
         </button>
 
-        {failing ? (
-          <span className="text-xs text-accent" title={feed.last_error}>
-            not answering ({feed.failure_count})
-          </span>
-        ) : feed.last_success_at ? (
-          <span className="text-xs text-ink-faint">
-            fetched {since(feed.last_success_at)}
-          </span>
-        ) : (
-          <span className="text-xs text-ink-faint">not fetched yet</span>
-        )}
-
-        <div className="ml-auto">
+        <div className="shrink-0">
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}

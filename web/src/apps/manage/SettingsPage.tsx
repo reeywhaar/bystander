@@ -77,7 +77,9 @@ export function SettingsPage() {
           onCommit={(size) => update.mutate({ edition_size: size })}
           label="Articles on a page"
           format={(size) => (
-            <span className="inline-block w-24 text-ink">{size} articles</span>
+            <span className="inline-block w-24 text-right text-ink">
+              {size} articles
+            </span>
           )}
         />
       </section>
