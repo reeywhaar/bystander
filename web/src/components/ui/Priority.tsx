@@ -30,7 +30,9 @@ export function Priority({
       // the same space at every value and nothing moves while the thumb does.
       format={(priority) => (
         <span
-          className={`inline-block w-32 text-right ${priority === 0 ? "text-accent" : ""}`}
+          className={`inline-block w-32 text-left sm:text-right ${
+            priority === 0 ? "text-accent" : ""
+          }`}
         >
           {priority} · {describePriority(priority)}
         </span>

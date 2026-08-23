@@ -69,13 +69,15 @@ describe("FeedsPage", () => {
     );
 
     // Full paths: a nested tag reads as where it sits, not just its own name.
-    expect(await line()).toBe("News / World · Art · added 3 days ago");
+    expect(await line()).toBe(
+      "News / World · Art · added 3 days ago · fetched 10 minutes ago",
+    );
   });
 
   it("says when it was added even with no tags", async () => {
     render([subscription()], [news]);
 
-    expect(await line()).toBe("added 3 days ago");
+    expect(await line()).toBe("added 3 days ago · fetched 10 minutes ago");
   });
 
   // Opening the row shows the tags as chips that can be acted on, so the summary would be
@@ -83,11 +85,13 @@ describe("FeedsPage", () => {
   it("drops the tag summary once the row is open", async () => {
     render([subscription({ tag_ids: ["t_art"] })], [art]);
 
-    expect(await line()).toBe("Art · added 3 days ago");
+    expect(await line()).toBe(
+      "Art · added 3 days ago · fetched 10 minutes ago",
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "The Example" }));
 
-    expect(await line()).toBe("added 3 days ago");
+    expect(await line()).toBe("added 3 days ago · fetched 10 minutes ago");
     expect(screen.getByRole("button", { name: "Art" })).toBeInTheDocument();
   });
 

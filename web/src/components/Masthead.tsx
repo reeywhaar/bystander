@@ -33,16 +33,23 @@ export function Masthead({
 
   return (
     <header className="border-b border-rule">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-2 px-6 py-5">
+      {/* On a wide screen the nav sits at the right, opposite the name. On a narrow one it
+          wraps, and `ml-auto` would leave it clinging to the right edge with a hole beside
+          it — so below `sm` it starts at the same left edge as everything else. */}
+      <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-5">
         <a
           href="/"
           className="font-serif text-3xl leading-none tracking-tight text-ink hover:text-accent"
         >
           bystander
         </a>
-        {subtitle ? <p className="text-sm text-ink-muted">{subtitle}</p> : null}
+        {subtitle ? (
+          <p className="basis-full text-sm text-ink-muted sm:basis-auto">
+            {subtitle}
+          </p>
+        ) : null}
 
-        <div className="ml-auto flex items-center gap-4 text-sm">
+        <div className="flex basis-full items-center gap-4 text-sm sm:ml-auto sm:basis-auto">
           {children}
           <a href="/manage" className="text-ink-muted hover:text-ink">
             Settings

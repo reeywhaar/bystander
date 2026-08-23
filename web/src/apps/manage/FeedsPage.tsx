@@ -277,7 +277,9 @@ function FeedRow({
           </button>
 
           {/* Beside the name, because that is what it renames. Its own button rather than
-              part of the toggle, so opening a row and renaming it stay separate gestures. */}
+              part of the toggle, so opening a row and renaming it stay separate gestures.
+              Nothing else shares this line: the name is the thing being looked for, and a
+              timestamp beside it is just something to read past. */}
           <button
             type="button"
             onClick={() => onRename(feed)}
@@ -287,22 +289,6 @@ function FeedRow({
           >
             <PencilIcon />
           </button>
-          {failing ? (
-            <span
-              className="shrink-0 text-xs text-accent"
-              title={feed.last_error}
-            >
-              not answering ({feed.failure_count})
-            </span>
-          ) : feed.last_success_at ? (
-            <span className="shrink-0 text-xs text-ink-faint">
-              {since(feed.last_success_at)}
-            </span>
-          ) : (
-            <span className="shrink-0 text-xs text-ink-faint">
-              not fetched yet
-            </span>
-          )}
         </div>
 
         {/* A quieter line for what the name has no room for: where this feed is filed,
@@ -314,6 +300,18 @@ function FeedRow({
           ) : null}
           {!open && labels.length > 0 ? " · " : ""}
           added {since(feed.created_at)}
+          {failing ? (
+            <>
+              {" · "}
+              <span className="text-accent" title={feed.last_error}>
+                not answering ({feed.failure_count})
+              </span>
+            </>
+          ) : feed.last_success_at ? (
+            <> · fetched {since(feed.last_success_at)}</>
+          ) : (
+            <> · not fetched yet</>
+          )}
         </p>
 
         <div className="order-3 shrink-0 sm:order-2 sm:ml-auto">
