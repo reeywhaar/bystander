@@ -18,13 +18,17 @@ export const EDITION_INTERVALS: { seconds: number; label: string }[] = [
  * practice by how long articles are kept — which follows the longest window anybody has
  * chosen, so choosing a year means a year is kept.
  */
-export const ARTICLE_WINDOWS: { seconds: number; label: string }[] = [
-  { seconds: 0, label: "No limit" },
-  { seconds: 31536000, label: "A year" },
-  { seconds: 2592000, label: "A month" },
-  { seconds: 1209600, label: "Two weeks" },
-  { seconds: 604800, label: "A week" },
-  { seconds: 86400, label: "A day" },
+export const ARTICLE_WINDOWS: {
+  seconds: number;
+  label: string;
+  short: string;
+}[] = [
+  { seconds: 0, label: "No limit", short: "no limit" },
+  { seconds: 31536000, label: "A year", short: "1y" },
+  { seconds: 2592000, label: "A month", short: "1m" },
+  { seconds: 1209600, label: "Two weeks", short: "2w" },
+  { seconds: 604800, label: "A week", short: "1w" },
+  { seconds: 86400, label: "A day", short: "1d" },
 ];
 
 /**
@@ -37,6 +41,35 @@ export function describeWindow(seconds: number): string {
   if (seconds === 0) return "reaches back without limit";
   const window = ARTICLE_WINDOWS.find((option) => option.seconds === seconds);
   return window ? `reaches back ${window.label.toLowerCase()}` : "";
+}
+
+/**
+ * A feed's reach as a label, for a list where it is one fact among several.
+ *
+ * "no limit" stays a phrase because there is no honest abbreviation of it, and it is the one
+ * worth reading anyway. Empty for a value the server would refuse, so an unknown number
+ * renders as nothing rather than as a chip saying nothing.
+ */
+export function shortWindow(seconds: number): string {
+  return (
+    ARTICLE_WINDOWS.find((option) => option.seconds === seconds)?.short ?? ""
+  );
+}
+
+/**
+ * How much a reach is worth noticing, from 0 to 2.
+ *
+ * A long reach is the one that changes what a page can contain — it is what lets something
+ * from last winter turn up beside this morning — so it is the one that gets colour. A day
+ * or a week is the ordinary case and is left quiet.
+ *
+ * Three steps rather than one per option: this is a tint on a label in a list, and six
+ * shades of the same idea would be six things to tell apart instead of one to notice.
+ */
+export function windowWeight(seconds: number): 0 | 1 | 2 {
+  if (seconds === 0 || seconds >= 31536000) return 2;
+  if (seconds >= 1209600) return 1;
+  return 0;
 }
 
 /** Where a page's article count may sit. Matches the store's bounds. */

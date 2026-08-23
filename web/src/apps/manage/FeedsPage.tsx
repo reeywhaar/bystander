@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import type { PlannedFeed, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
+import { Reach } from "@app/components/ui/Reach";
 import { Modal } from "@app/components/ui/Modal";
 
 import {
@@ -18,7 +19,6 @@ import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
-import { describeWindow } from "@app/lib/constants";
 import { tagLabel } from "@app/lib/tags";
 import { since } from "@app/lib/time";
 import {
@@ -280,7 +280,8 @@ function FeedRow({
           {labels.length > 0 ? " · " : ""}
           {/* Everything the dialog holds is said here too, so opening one tells you
               nothing the list was keeping back. */}
-          {describeWindow(feed.article_window)} · added {since(feed.created_at)}
+          <Reach seconds={feed.article_window} /> · added{" "}
+          {since(feed.created_at)}
           {failing ? (
             <>
               {" · "}

@@ -74,16 +74,29 @@ describe("FeedsPage", () => {
 
     // Full paths: a nested tag reads as where it sits, not just its own name.
     expect(await line()).toBe(
-      "News / World · Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
+      "News / World · Art · 1w · added 3 days ago · fetched 10 minutes ago",
+    );
+  });
+
+  // The label is short enough to be meaningless on its own, so the sentence it replaced
+  // has to still be somewhere.
+  it("keeps the reach readable for anyone who does not know what 1w means", async () => {
+    render([subscription({ article_window: 0 })], [news]);
+
+    const label = await screen.findByText("no limit");
+    expect(label).toHaveAttribute("title", "reaches back without limit");
+
+    render([subscription({ article_window: 2592000 })], [news]);
+    expect(await screen.findByText("1m")).toHaveAttribute(
+      "title",
+      "reaches back a month",
     );
   });
 
   it("says when it was added even with no tags", async () => {
     render([subscription()], [news]);
 
-    expect(await line()).toBe(
-      "reaches back a week · added 3 days ago · fetched 10 minutes ago",
-    );
+    expect(await line()).toBe("1w · added 3 days ago · fetched 10 minutes ago");
   });
 
   // Everything about a feed now lives behind its name, so the summary line is not
@@ -92,7 +105,7 @@ describe("FeedsPage", () => {
     render([subscription({ tag_ids: ["t_art"] })], [art]);
 
     expect(await line()).toBe(
-      "Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
+      "Art · 1w · added 3 days ago · fetched 10 minutes ago",
     );
 
     await userEvent.click(screen.getByRole("button", { name: "The Example" }));
@@ -111,7 +124,7 @@ describe("FeedsPage", () => {
 
     // …and the summary is still under the row behind it.
     expect(await line()).toBe(
-      "Art · reaches back a week · added 3 days ago · fetched 10 minutes ago",
+      "Art · 1w · added 3 days ago · fetched 10 minutes ago",
     );
   });
 
