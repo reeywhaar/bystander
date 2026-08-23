@@ -14,7 +14,9 @@ import {
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
+import { RenameDialog } from "@app/apps/manage/RenameDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
+import { PencilIcon } from "@app/components/ui/icons/PencilIcon";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { tagLabel } from "@app/lib/tags";
@@ -33,6 +35,7 @@ export function FeedsPage() {
   const tags = useTags();
   const discover = useDiscoverFeeds();
   const add = useImportFeeds();
+  const rename = useUpdateFeed();
 
   const [url, setUrl] = useState("");
   // What the site turned out to offer, once there is more than one thing to choose from.
@@ -46,6 +49,7 @@ export function FeedsPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [renaming, setRenaming] = useState<Subscription | null>(null);
 
   function subscribe(feed: PlannedFeed) {
     // One feed and no choice to make: straight in, untagged, as it always was. The picker
@@ -139,6 +143,17 @@ export function FeedsPage() {
         tags={tags.data}
       />
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
+      <RenameDialog
+        feed={renaming}
+        saving={rename.isPending}
+        onClose={() => setRenaming(null)}
+        onSave={(title) =>
+          rename.mutate(
+            { id: renaming?.id ?? "", changes: { title_override: title } },
+            { onSuccess: () => setRenaming(null) },
+          )
+        }
+      />
 
       <Modal
         open={choices !== null}
@@ -205,7 +220,12 @@ export function FeedsPage() {
           </p>
         ) : (
           feeds.data.map((feed) => (
-            <FeedRow key={feed.id} feed={feed} tags={tags.data} />
+            <FeedRow
+              key={feed.id}
+              feed={feed}
+              tags={tags.data}
+              onRename={setRenaming}
+            />
           ))
         )}
       </section>
@@ -213,7 +233,15 @@ export function FeedsPage() {
   );
 }
 
-function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
+function FeedRow({
+  feed,
+  tags,
+  onRename,
+}: {
+  feed: Subscription;
+  tags: Tag[];
+  onRename: (feed: Subscription) => void;
+}) {
   const update = useUpdateFeed();
   const remove = useRemoveFeed();
   const [open, setOpen] = useState(false);
@@ -229,16 +257,28 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
           taller and never shoves the slider onto a line of its own, which is what turned
           this list into a staircase. */}
       <div className="flex items-baseline gap-4">
-        <button
-          type="button"
-          onClick={() => setOpen((was) => !was)}
-          aria-expanded={open}
-          title={feed.title}
-          className="flex min-w-0 flex-1 items-baseline gap-x-2 text-left"
-        >
-          <span className="truncate font-serif text-lg text-ink hover:text-accent">
+        <div className="flex min-w-0 flex-1 items-baseline gap-x-2">
+          <button
+            type="button"
+            onClick={() => setOpen((was) => !was)}
+            aria-expanded={open}
+            title={feed.title}
+            className="min-w-0 truncate text-left font-serif text-lg text-ink hover:text-accent"
+          >
             {feed.title}
-          </span>
+          </button>
+
+          {/* Beside the name, because that is what it renames. Its own button rather than
+              part of the toggle, so opening a row and renaming it stay separate gestures. */}
+          <button
+            type="button"
+            onClick={() => onRename(feed)}
+            aria-label={`Rename ${feed.title}`}
+            title="Rename"
+            className="shrink-0 text-ink-faint hover:text-ink"
+          >
+            <PencilIcon />
+          </button>
           {failing ? (
             <span
               className="shrink-0 text-xs text-accent"
@@ -255,7 +295,7 @@ function FeedRow({ feed, tags }: { feed: Subscription; tags: Tag[] }) {
               not fetched yet
             </span>
           )}
-        </button>
+        </div>
 
         <div className="shrink-0">
           <Priority

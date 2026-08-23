@@ -37,6 +37,7 @@ function subscription(overrides: Partial<Subscription> = {}): Subscription {
     url: "https://example.com/rss",
     site_url: "https://example.com",
     title: "The Example",
+    feed_title: "The Example",
     title_override: "",
     priority: 50,
     tag_ids: [],
@@ -84,9 +85,56 @@ describe("FeedsPage", () => {
 
     expect(await line()).toBe("Art · added 3 days ago");
 
-    await userEvent.click(screen.getByRole("button", { name: /The Example/ }));
+    await userEvent.click(screen.getByRole("button", { name: "The Example" }));
 
     expect(await line()).toBe("added 3 days ago");
     expect(screen.getByRole("button", { name: "Art" })).toBeInTheDocument();
+  });
+
+  // Some publishers title their feed "technology archives | designboom | architecture &
+  // design magazine". The name in a list is the subscriber's to choose.
+  it("renames a feed without losing the publisher's own name", async () => {
+    const { transport } = render(
+      [subscription({ title: "unbearable | name | here" })],
+      [],
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Rename unbearable/ }),
+    );
+
+    const field = screen.getByLabelText("What to call it");
+    expect(field).toHaveValue("unbearable | name | here");
+    expect(screen.getByText(/The publisher calls it/)).toBeInTheDocument();
+
+    await userEvent.clear(field);
+    await userEvent.type(field, "Design Boom");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const sent = transport.calls.find((call) => call.method === "PATCH");
+    expect(sent?.body).toEqual({ title_override: "Design Boom" });
+  });
+
+  // Typing the publisher's name back is the same as having no override at all.
+  it("stores no override when the name matches the publisher's", async () => {
+    const { transport } = render(
+      [
+        subscription({
+          title: "Mine",
+          feed_title: "Theirs",
+          title_override: "Mine",
+        }),
+      ],
+      [],
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Rename Mine/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Use theirs" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const sent = transport.calls.find((call) => call.method === "PATCH");
+    expect(sent?.body).toEqual({ title_override: "" });
   });
 });

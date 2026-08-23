@@ -129,7 +129,10 @@ export interface Subscription {
   id: string;
   url: string;
   site_url: string;
+  /** What to call it here: the override if there is one, the publisher's otherwise. */
   title: string;
+  /** What the publisher calls it, always — so a rename can show what it overrides. */
+  feed_title: string;
   title_override: string;
   priority: number;
   tag_ids: string[];

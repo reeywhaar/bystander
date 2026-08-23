@@ -604,3 +604,36 @@ func TestTheWindowIsAClosedSet(t *testing.T) {
 			map[string]int64{"article_window": good}), http.StatusOK, nil)
 	}
 }
+
+// A feed can be given a better name, and the publisher's own has to survive so it can be
+// shown and put back.
+func TestRenamingAFeed(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+	feed := newFeedServer(t, 3)
+
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, &sub)
+	if sub.Title != "The Example" || sub.FeedTitle != "The Example" {
+		t.Fatalf("before renaming: title=%q feed_title=%q", sub.Title, sub.FeedTitle)
+	}
+
+	var renamed subscriptionBody
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"title_override": "Something bearable"}), http.StatusOK, &renamed)
+
+	if renamed.Title != "Something bearable" {
+		t.Errorf("title = %q, want the new name", renamed.Title)
+	}
+	if renamed.FeedTitle != "The Example" {
+		t.Errorf("feed_title = %q, want the publisher's own to survive", renamed.FeedTitle)
+	}
+
+	// Emptying it puts the publisher's name back rather than leaving a blank.
+	var reset subscriptionBody
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"title_override": ""}), http.StatusOK, &reset)
+	if reset.Title != "The Example" || reset.TitleOverride != "" {
+		t.Errorf("after clearing: title=%q override=%q", reset.Title, reset.TitleOverride)
+	}
+}

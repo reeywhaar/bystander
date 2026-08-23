@@ -15,10 +15,15 @@ import (
 // last_error is here because "this feed has gone quiet" without "and here is why" sends
 // somebody to logs they do not have.
 type subscriptionBody struct {
-	ID            string   `json:"id"`
-	URL           string   `json:"url"`
-	SiteURL       string   `json:"site_url"`
-	Title         string   `json:"title"`
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	SiteURL string `json:"site_url"`
+	// Title is what to call this feed here: the override if there is one, the publisher's
+	// otherwise.
+	Title string `json:"title"`
+	// FeedTitle is what the publisher calls it, always — so a rename can show what it is
+	// overriding, and offer to put it back.
+	FeedTitle     string   `json:"feed_title"`
 	TitleOverride string   `json:"title_override"`
 	Priority      int      `json:"priority"`
 	TagIDs        []string `json:"tag_ids"`
@@ -35,6 +40,7 @@ func subscriptionOf(sub *store.Subscription) subscriptionBody {
 		URL:           sub.Feed.CanonicalURL,
 		SiteURL:       sub.Feed.SiteURL,
 		Title:         sub.Title(),
+		FeedTitle:     sub.Feed.Title,
 		TitleOverride: sub.TitleOverride,
 		Priority:      sub.Priority,
 		TagIDs:        sub.TagIDs,
