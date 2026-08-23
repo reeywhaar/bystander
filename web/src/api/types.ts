@@ -63,12 +63,20 @@ export interface Export {
   count: number;
 }
 
-/** One tag on a feed in a pasted list, and whether it is already yours. */
+/** One tag on a feed in a pasted list, and which of yours it matched. */
 export interface PlannedTag {
   path: string[];
   /** The path rendered for reading: "News / World". */
   name: string;
-  existing: boolean;
+  /**
+   * The tag you already have that this path names, or empty when you have none.
+   *
+   * The id rather than a flag, because the dialog offers every tag you own under every
+   * feed and has to know which of them to tick. Working that out in the browser would be a
+   * second implementation of path matching, with its own opinion about case and about the
+   * escaping.
+   */
+  tag_id: string;
 }
 
 /** One feed in a pasted list, as it would land here. */

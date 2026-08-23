@@ -22,6 +22,11 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Where the press started. A click on the backdrop targets the <dialog> itself, but so
+  // does one that began on the text inside and finished outside it — which is what
+  // selecting a URL and dragging past the edge looks like. Requiring both ends to be on
+  // the backdrop is the difference between closing on purpose and closing by accident.
+  const startedOnBackdrop = useRef(false);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -44,6 +49,14 @@ export function Modal({
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onPointerDown={(event) => {
+        startedOnBackdrop.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (startedOnBackdrop.current && event.target === event.currentTarget)
+          onClose();
+        startedOnBackdrop.current = false;
       }}
       // `m-auto` is load-bearing. A modal <dialog> is centred by the user agent with
       // `inset: 0; margin: auto`, and Tailwind's preflight resets `margin: 0` on every

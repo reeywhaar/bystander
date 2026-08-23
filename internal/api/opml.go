@@ -111,10 +111,15 @@ type importRequest struct {
 type previewTag struct {
 	Path []string `json:"path"`
 	Name string   `json:"name"`
-	// Existing is whether this person already has this tag. The interface shows the ones
-	// they have as their own and the rest as new, so nobody is surprised by a taxonomy
-	// appearing.
-	Existing bool `json:"existing"`
+	// TagID is the tag this person already has, when the path names one. Empty when it
+	// does not — which is what the interface shows separately, so nobody is surprised by
+	// a taxonomy appearing in their account.
+	//
+	// The id rather than a flag, because the interface offers every tag somebody has under
+	// every feed and needs to know which of them to tick. Re-deriving that in the browser
+	// would mean a second implementation of path matching, with its own opinion about case
+	// and about the escaping.
+	TagID string `json:"tag_id"`
 }
 
 type previewFeed struct {
@@ -141,7 +146,10 @@ func (s *Server) previewImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := opml.Decode(strings.NewReader(body.OPML))
+	// Either form. Somebody sharing a list in a message pastes something a person can
+	// read, not XML, and being handed back "that does not read as OPML" for the format
+	// this program itself hands out would be a poor joke.
+	doc, err := opml.DecodeAny(body.OPML)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -196,11 +204,11 @@ func (s *Server) previewImport(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, r, err)
 				return
 			}
-			entry.Tags = append(entry.Tags, previewTag{
-				Path:     path,
-				Name:     strings.Join(path, " / "),
-				Existing: existing != nil,
-			})
+			tag := previewTag{Path: path, Name: strings.Join(path, " / ")}
+			if existing != nil {
+				tag.TagID = existing.ID
+			}
+			entry.Tags = append(entry.Tags, tag)
 		}
 		out = append(out, entry)
 	}

@@ -142,15 +142,15 @@ func TestPreviewSaysWhatIsAlreadyHereAndWhichTagsAreMine(t *testing.T) {
 		t.Errorf("the preview subscribed to something: %d feeds", len(subs))
 	}
 
-	tags := map[string]bool{}
+	tags := map[string]string{}
 	for _, tag := range byTitle["New one"].Tags {
-		tags[tag.Name] = tag.Existing
+		tags[tag.Name] = tag.TagID
 	}
-	if !tags["Art"] {
+	if tags["Art"] == "" {
 		t.Error("Art is one of alice's tags and was not matched to it")
 	}
-	if existing, named := tags["Woodworking"]; !named || existing {
-		t.Errorf("Woodworking should be offered as a new tag, got existing=%v named=%v", existing, named)
+	if id, named := tags["Woodworking"]; !named || id != "" {
+		t.Errorf("Woodworking should be offered as a new tag, got id=%q named=%v", id, named)
 	}
 }
 
@@ -255,7 +255,7 @@ func TestAnExportImportsIntoAnotherAccount(t *testing.T) {
 	if len(plan.Feeds) != 1 {
 		t.Fatalf("%d feeds in bob's plan", len(plan.Feeds))
 	}
-	if plan.Feeds[0].Tags[0].Existing {
+	if plan.Feeds[0].Tags[0].TagID != "" {
 		t.Error("alice's tag is marked as one bob already has")
 	}
 
@@ -316,5 +316,67 @@ func TestExportIsScopedToItsOwner(t *testing.T) {
 
 	if strings.Contains(h.exportOPML(), feed.URL) {
 		t.Error("bob's export carries alice's feed")
+	}
+}
+
+// The plain list is what somebody pastes into a message, so it has to come back in.
+func TestImportingThePlainList(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	first, second := newFeedServer(t, 3), newFeedServer(t, 2)
+	shared := "The Example\n" + first.URL + "\nArt, News / World\n\n" +
+		"Another\n" + second.URL + "\nArt"
+
+	var plan struct {
+		Feeds []previewFeed `json:"feeds"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/import/preview",
+		map[string]string{"opml": shared}), http.StatusOK, &plan)
+
+	if len(plan.Feeds) != 2 {
+		t.Fatalf("%d feeds read from the plain list: %+v", len(plan.Feeds), plan.Feeds)
+	}
+	if plan.Feeds[0].Title != "The Example" {
+		t.Errorf("title = %q", plan.Feeds[0].Title)
+	}
+	names := map[string]bool{}
+	for _, tag := range plan.Feeds[0].Tags {
+		names[tag.Name] = true
+	}
+	if !names["Art"] || !names["News / World"] {
+		t.Errorf("tags = %+v, want Art and the nested one", plan.Feeds[0].Tags)
+	}
+}
+
+// What this hands out has to be what it takes back.
+func TestTheSharedListRoundTrips(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	var art tagBody
+	h.expect(h.do(http.MethodPost, "/api/tags", map[string]any{"name": "Art"}), http.StatusCreated, &art)
+	feed := newFeedServer(t, 3)
+	h.expect(h.do(http.MethodPost, "/api/feeds",
+		map[string]any{"url": feed.URL, "tag_ids": []string{art.ID}}), http.StatusCreated, nil)
+
+	// The shape ShareDialog builds client-side: title, address, tags.
+	var subs []subscriptionBody
+	h.expect(h.do(http.MethodGet, "/api/feeds", nil), http.StatusOK, &subs)
+	shared := subs[0].Title + "\n" + subs[0].URL + "\nArt"
+
+	h.expect(h.do(http.MethodPost, "/api/logout", nil), http.StatusNoContent, nil)
+	h.signIn(store.RoleUser, "bob")
+
+	var plan struct {
+		Feeds []previewFeed `json:"feeds"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/import/preview",
+		map[string]string{"opml": shared}), http.StatusOK, &plan)
+	if len(plan.Feeds) != 1 {
+		t.Fatalf("%d feeds: %+v", len(plan.Feeds), plan.Feeds)
+	}
+	if plan.Feeds[0].Tags[0].TagID != "" {
+		t.Error("alice's tag was matched to one of bob's, and bob has none")
 	}
 }

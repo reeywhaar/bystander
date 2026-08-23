@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Subscription, Tag } from "@app/api/types";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
+import { tagLabel } from "@app/lib/tags";
 import { useExportFeeds } from "@app/queries/hooks";
 
 type Shape = "list" | "opml";
@@ -42,23 +43,7 @@ export function ShareDialog({
     [feeds, chosen],
   );
 
-  const names = useMemo(() => {
-    const byID = new Map(tags.map((tag) => [tag.id, tag]));
-    // A tag's full ancestry, so "World" under "News" reads as "News / World" — the same
-    // path the OPML carries.
-    return (id: string): string => {
-      const parts: string[] = [];
-      for (
-        let at = byID.get(id);
-        at;
-        at = at.parent_id ? byID.get(at.parent_id) : undefined
-      ) {
-        parts.unshift(at.name);
-        if (parts.length > 16) break;
-      }
-      return parts.join(" / ");
-    };
-  }, [tags]);
+  const names = useMemo(() => (id: string) => tagLabel(tags, id), [tags]);
 
   const asList = useMemo(
     () =>
