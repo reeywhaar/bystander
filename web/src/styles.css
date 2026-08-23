@@ -82,8 +82,18 @@ body {
  *
  * Slots were decided on the server and stored, so this is a static declaration rather than
  * a measurement pass: no masonry library, no reflow after paint, and two loads of one
- * edition are identical. `dense` lets a narrow card fill a hole a wide one left, which is
- * what stops a front page looking like a spreadsheet.
+ * edition are identical.
+ *
+ * `dense` currently does nothing, and the comment here used to claim otherwise. The spans
+ * are 4, 2 and 1 in a four-track grid, and all three divide four exactly — so every row
+ * tiles perfectly, there is never a hole, and there is nothing to backfill. Measured: it
+ * has not moved a single card. It stays because it costs nothing and becomes load-bearing
+ * the moment a span that does *not* divide the grid is introduced, which is the thing worth
+ * doing here.
+ *
+ * The other half of that: a row is as tall as its tallest card, and a card is as tall as
+ * whatever the publisher put in the feed. Nearly a third of this page's vertical space is
+ * empty for that reason alone.
  */
 @layer components {
   .page-grid {
