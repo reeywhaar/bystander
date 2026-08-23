@@ -154,23 +154,9 @@ export function FeedsPage() {
         open={choices !== null}
         onClose={() => setChoices(null)}
         title="Which of these?"
-      >
-        {choices ? (
-          <>
-            <p className="text-sm text-ink-muted">
-              That site offers {choices.length} feeds. Take as many as you like.
-            </p>
-
-            <FeedPlan
-              feeds={choices}
-              tags={tags.data ?? []}
-              selection={selection}
-              onChange={setSelection}
-            />
-
-            {add.error ? <Alert>{add.error.message}</Alert> : null}
-
-            <div className="flex justify-end gap-2">
+        footer={
+          choices ? (
+            <>
               <Button onClick={() => setChoices(null)}>Cancel</Button>
               <Button
                 variant="primary"
@@ -190,7 +176,24 @@ export function FeedsPage() {
                   ? "Adding…"
                   : "Add " + kept(choices, selection).length}
               </Button>
-            </div>
+            </>
+          ) : null
+        }
+      >
+        {choices ? (
+          <>
+            <p className="text-sm text-ink-muted">
+              That site offers {choices.length} feeds. Take as many as you like.
+            </p>
+
+            <FeedPlan
+              feeds={choices}
+              tags={tags.data ?? []}
+              selection={selection}
+              onChange={setSelection}
+            />
+
+            {add.error ? <Alert>{add.error.message}</Alert> : null}
           </>
         ) : null}
       </Modal>
@@ -199,13 +202,13 @@ export function FeedsPage() {
         open={problem !== null}
         onClose={() => setProblem(null)}
         title="That did not work"
-      >
-        <p className="text-sm text-ink-muted">{problem}</p>
-        <div className="flex justify-end">
+        footer={
           <Button variant="primary" onClick={() => setProblem(null)}>
             Close
           </Button>
-        </div>
+        }
+      >
+        <p className="text-sm text-ink-muted">{problem}</p>
       </Modal>
 
       <section className="flex flex-col gap-1">

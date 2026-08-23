@@ -22,11 +22,15 @@ export function Modal({
   title: string;
   children: ReactNode;
   /**
-   * Buttons that stay put while the rest scrolls.
+   * What this dialog does, as buttons.
    *
-   * A tall form on a short screen otherwise puts its Save below the fold, where it reads as
-   * a form with no way to finish it. Passing them here rather than at the end of `children`
-   * is the difference between a row that scrolls away and one that does not.
+   * Laid out here rather than at each call site, because six dialogs laying out their own
+   * button row produced six arrangements — primary left, primary right, one pair pushed
+   * apart — and which button is Save became something to look for rather than something
+   * to know. The order is: whatever dismisses, then the one that acts, along the right.
+   * An action that belongs to neither group — a destructive one, an alternative export —
+   * takes `mr-auto` and sits on the left.
+   *
    */
   footer?: ReactNode;
 }) {
@@ -71,25 +75,21 @@ export function Modal({
       // `inset: 0; margin: auto`, and Tailwind's preflight resets `margin: 0` on every
       // element — which leaves only the inset, and drops the dialog in the top-left corner.
       //
-      // `max-h` is for the picker: a site can name a dozen feeds, and a list that runs off
-      // the bottom of the screen has no way back. The scroll is on the body rather than
-      // here, so that a footer can sit outside it and stay in view.
-      className="m-auto flex max-h-[85dvh] w-[min(28rem,calc(100vw-2rem))] flex-col
-        overflow-hidden rounded-md border border-rule bg-paper-raised p-0 text-ink
-        backdrop:bg-black/50"
+      // `max-h` and the scroll are for the picker: a site can name a dozen feeds, and a
+      // list that runs off the bottom of the screen has no way back.
+      className="m-auto max-h-[85dvh] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto
+        rounded-md border border-rule bg-paper-raised p-0 text-ink backdrop:bg-black/50"
     >
       {open ? (
-        <>
-          <div className="flex flex-col gap-4 overflow-y-auto p-5">
-            <h2 className="font-serif text-xl text-ink">{title}</h2>
-            {children}
-          </div>
+        <div className="flex flex-col gap-4 p-5">
+          <h2 className="font-serif text-xl text-ink">{title}</h2>
+          {children}
           {footer ? (
-            <div className="border-t border-rule bg-paper-raised px-5 py-4">
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
               {footer}
             </div>
           ) : null}
-        </>
+        </div>
       ) : null}
     </dialog>
   );

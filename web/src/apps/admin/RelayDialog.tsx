@@ -64,10 +64,9 @@ export function RelayDialog({
       open
       onClose={onClose}
       title={current === null ? "Set up a relay" : "Change the relay"}
-      // Out of the scrolling body, because this form is taller than a short screen and a
-      // Save that has scrolled out of sight reads as a form with no way to finish it.
       footer={
-        <div className="flex flex-wrap gap-2">
+        <>
+          <Button onClick={onClose}>Cancel</Button>
           <Button
             variant="primary"
             disabled={!complete || save.isPending}
@@ -75,8 +74,7 @@ export function RelayDialog({
           >
             {save.isPending ? "Saving…" : "Save"}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
-        </div>
+        </>
       }
     >
       <div className="flex flex-col gap-4">

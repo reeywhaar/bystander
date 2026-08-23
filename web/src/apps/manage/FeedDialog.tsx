@@ -96,7 +96,34 @@ export function FeedDialog({
   }
 
   return (
-    <Modal open onClose={onClose} title={feed.title}>
+    <Modal
+      open
+      onClose={onClose}
+      title={feed.title}
+      footer={
+        <>
+          {/* Unfollowing belongs to neither group, so it sits away from both. */}
+          <Button
+            className="mr-auto"
+            variant="danger"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(feed.id, { onSuccess: onClose })}
+          >
+            Stop following
+          </Button>
+          {/* Closing any other way — Cancel, Escape, the backdrop — leaves the feed as it
+              was. Save is the only thing that writes. */}
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            onClick={save}
+            disabled={name.trim() === "" || update.isPending}
+          >
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
+    >
       <div className="flex flex-col gap-1.5">
         <Field
           label="What to call it"
@@ -190,28 +217,6 @@ export function FeedDialog({
       {feed.failure_count > 0 ? <Alert>{feed.last_error}</Alert> : null}
       {update.error ? <Alert>{update.error.message}</Alert> : null}
       {remove.error ? <Alert>{remove.error.message}</Alert> : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button
-          variant="danger"
-          disabled={remove.isPending}
-          onClick={() => remove.mutate(feed.id, { onSuccess: onClose })}
-        >
-          Stop following
-        </Button>
-        <span className="flex gap-2">
-          {/* Closing any other way — Cancel, Escape, the backdrop — leaves the feed as it
-              was. Save is the only thing that writes. */}
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            onClick={save}
-            disabled={name.trim() === "" || update.isPending}
-          >
-            {update.isPending ? "Saving…" : "Save"}
-          </Button>
-        </span>
-      </div>
     </Modal>
   );
 }

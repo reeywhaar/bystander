@@ -95,7 +95,34 @@ export function ShareDialog({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Share your feeds">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Share your feeds"
+      footer={
+        <>
+          {/* Saving a file is a different way of taking the same list away, rather than a
+              step towards or away from copying it, so it sits with neither. */}
+          {shape === "opml" ? (
+            <Button
+              className="mr-auto"
+              onClick={download}
+              disabled={text === ""}
+            >
+              Save as a file
+            </Button>
+          ) : null}
+          <Button onClick={onClose}>Done</Button>
+          <Button
+            variant="primary"
+            onClick={() => void copy()}
+            disabled={text === ""}
+          >
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </>
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={() => setChosen(new Set(feeds.map((feed) => feed.id)))}
@@ -170,24 +197,6 @@ export function ShareDialog({
         className="w-full resize-y rounded-md border border-rule bg-paper-sunken p-2 font-mono
           text-xs text-ink"
       />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          onClick={() => void copy()}
-          disabled={text === ""}
-        >
-          {copied ? "Copied" : "Copy"}
-        </Button>
-        {shape === "opml" ? (
-          <Button onClick={download} disabled={text === ""}>
-            Save as a file
-          </Button>
-        ) : null}
-        <Button className="ml-auto" onClick={onClose}>
-          Done
-        </Button>
-      </div>
     </Modal>
   );
 }

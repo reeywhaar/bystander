@@ -1,19 +1,13 @@
 import type { ImportResult } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
-import { Button } from "@app/components/ui/Button";
 
-/** What an import did, said plainly. Shared by both ways feeds arrive. */
-export function ImportOutcome({
-  result,
-  onAgain,
-  onClose,
-  againLabel = "Import another",
-}: {
-  result: ImportResult;
-  onAgain?: () => void;
-  onClose: () => void;
-  againLabel?: string;
-}) {
+/**
+ * What an import did, said plainly.
+ *
+ * The summary only. What to do next is a dialog's action row, and a component that carried
+ * its own buttons into one would be a second opinion about where they go.
+ */
+export function ImportOutcome({ result }: { result: ImportResult }) {
   return (
     <>
       <p className="text-sm text-ink">
@@ -34,12 +28,6 @@ export function ImportOutcome({
           {result.failed.map((failure) => failure.feed_url).join(", ")}
         </Alert>
       ) : null}
-      <div className="flex justify-end gap-2">
-        {onAgain ? <Button onClick={onAgain}>{againLabel}</Button> : null}
-        <Button variant="primary" onClick={onClose}>
-          Done
-        </Button>
-      </div>
     </>
   );
 }

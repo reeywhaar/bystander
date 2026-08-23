@@ -62,10 +62,43 @@ export function ImportDialog({
 
   const keeping = plan ? kept(plan, selection) : [];
 
+  // One row, three steps. Written out here rather than at the end of each branch, so the
+  // arrangement cannot drift between them.
+  const footer = run.data ? (
+    <>
+      <Button onClick={reset}>Import another</Button>
+      <Button variant="primary" onClick={close}>
+        Done
+      </Button>
+    </>
+  ) : !plan ? (
+    <>
+      <Button onClick={close}>Cancel</Button>
+      <Button
+        variant="primary"
+        onClick={read}
+        disabled={text.trim() === "" || preview.isPending}
+      >
+        {preview.isPending ? "Reading…" : "Read it"}
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button onClick={reset}>Back</Button>
+      <Button
+        variant="primary"
+        disabled={keeping.length === 0 || run.isPending}
+        onClick={() => run.mutate(toImport(plan, selection, mine))}
+      >
+        {run.isPending ? "Adding…" : "Add " + keeping.length}
+      </Button>
+    </>
+  );
+
   return (
-    <Modal open={open} onClose={close} title="Import a list">
+    <Modal open={open} onClose={close} title="Import a list" footer={footer}>
       {run.data ? (
-        <ImportOutcome result={run.data} onAgain={reset} onClose={close} />
+        <ImportOutcome result={run.data} />
       ) : !plan ? (
         <>
           <p className="text-sm text-ink-muted">
@@ -84,16 +117,6 @@ export function ImportDialog({
               font-mono text-xs text-ink placeholder:text-ink-faint"
           />
           {preview.error ? <Alert>{preview.error.message}</Alert> : null}
-          <div className="flex justify-end gap-2">
-            <Button onClick={close}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={read}
-              disabled={text.trim() === "" || preview.isPending}
-            >
-              {preview.isPending ? "Reading…" : "Read it"}
-            </Button>
-          </div>
         </>
       ) : (
         <>
@@ -105,17 +128,6 @@ export function ImportDialog({
           />
 
           {run.error ? <Alert>{run.error.message}</Alert> : null}
-
-          <div className="flex justify-end gap-2">
-            <Button onClick={reset}>Back</Button>
-            <Button
-              variant="primary"
-              disabled={keeping.length === 0 || run.isPending}
-              onClick={() => run.mutate(toImport(plan, selection, mine))}
-            >
-              {run.isPending ? "Adding…" : "Add " + keeping.length}
-            </Button>
-          </div>
         </>
       )}
     </Modal>
