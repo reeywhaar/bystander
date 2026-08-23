@@ -228,10 +228,18 @@ for attempt in $(seq 12); do
   api -X POST "$BASE/api/edition/regenerate" -o /dev/null
   edition=$(api "$BASE/api/edition")
   slot=$(printf '%s' "$edition" | jget "d.items[0].slot")
-  [ "$slot" = "lead" ] && break
+  # The opener's width is drawn from the three that are wider than a column, so any of them
+  # is a real page. A brief is not: it means the first article had neither a picture nor a
+  # summary, which makes a poor first impression of a layout the README is there to show.
+  case "$slot" in
+  lead | wide | feature) break ;;
+  esac
   echo "  re-rolling: the page opened with a $slot (attempt $attempt)"
 done
-[ "$slot" = "lead" ] || echo "  giving up: twelve pages in a row opened with a brief" >&2
+case "$slot" in
+lead | wide | feature) ;;
+*) echo "  giving up: twelve pages in a row opened with a $slot" >&2 ;;
+esac
 
 # Three read articles, so the front page shows what "read" looks like — greyed and
 # desaturated, in place — and so Recently read has something in it. Not the first three: a

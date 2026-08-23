@@ -107,7 +107,7 @@ export function ArticleCard({
             // Only the widths over half a page: below that the measure is already short
             // enough, and two columns of it would be two narrow ribbons.
             (article.slot === "lead" || article.slot === "wide") &&
-            setsInColumns(article.id)
+            setsInColumns(article.id, article.summary)
               ? "prose-columns"
               : ""
           }`}

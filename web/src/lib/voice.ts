@@ -167,7 +167,16 @@ export function frameFor(id: string): Frame {
  * Not every wide story, so a page has some of each. Two wide stories set differently are two
  * things a reader can tell apart, which is the argument for all of this.
  */
-export function setsInColumns(id: string): boolean {
+export function setsInColumns(id: string, summary: string): boolean {
+  // Enough text to be worth splitting. Three lines cut down the middle is not two columns,
+  // it is one paragraph with a gap in it — which was visible the first time this shipped, on
+  // a lead whose standfirst was a sentence and a half.
+  //
+  // Characters rather than lines, because the number of lines depends on the width, the size
+  // drawn from the ladder and the face — none of which this can see. Six hundred is about
+  // eight lines across half a wide card, which is the point where two columns start reading
+  // as a decision.
+  if (summary.length < 600) return false;
   // Its own bit again, so this is not secretly the same fact as the frame or the face.
   return ((hash(id) >>> 12) & 1) === 1;
 }

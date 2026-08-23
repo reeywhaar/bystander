@@ -268,9 +268,17 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 		return
 	}
 
-	// Roughly one card in eight gets more than its column, the first one included. Fewer and
-	// the page is uniform again; more and wide stops meaning anything.
-	wides := max(len(picks)/8, 1)
+	// Roughly one card in four gets more than its column, the first one included.
+	//
+	// One in eight was the first attempt and it was too thin: on a page of twenty-eight that
+	// is three wide cards and twenty-five identical quarters, which reads as a uniform page
+	// with a couple of accidents in it rather than as a page that was laid out. The variation
+	// has to be common enough that a reader stops expecting the next card to look like the
+	// last one — that is the whole mechanism by which any of it becomes a landmark.
+	//
+	// Not much more than a quarter, though. If half the page is wide then wide is the norm
+	// and the quarters become the exception, which is the same problem wearing the other hat.
+	wides := max(len(picks)/4, 1)
 
 	for i := range picks {
 		item := picks[i].Item
