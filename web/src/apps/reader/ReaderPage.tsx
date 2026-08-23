@@ -82,7 +82,14 @@ export function ReaderPage({ me }: { me: Me }) {
             <p className="max-w-lg">
               The next page is due {until(page.next_edition_at)}. When it
               arrives, this one is gone for good — articles and read marks
-              alike.
+              alike. What you have{" "}
+              <a
+                href="/manage/read"
+                className="underline underline-offset-2 hover:text-ink"
+              >
+                already read
+              </a>{" "}
+              is kept for a month.
             </p>
             <div className="flex flex-col items-end gap-1">
               <Button

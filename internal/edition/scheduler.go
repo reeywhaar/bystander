@@ -114,4 +114,10 @@ func (s *Scheduler) sweep(ctx context.Context) {
 	} else if n > 0 {
 		s.log.Debug("pruned shown records", "count", n)
 	}
+
+	if n, err := s.store.PruneReadArticles(ctx); err != nil {
+		s.log.Error("could not prune what was read", "error", err)
+	} else if n > 0 {
+		s.log.Debug("pruned read articles past retention", "count", n)
+	}
 }

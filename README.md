@@ -80,6 +80,10 @@ be the unread-count problem wearing a different hat.
 
 Read marks belong to the page they were made on. When the page goes, they go with it.
 
+What you **read**, though, is kept for a month, under Feeds → Recently read. That is not an
+unread count in disguise: it counts nothing, it lists only what you have already dealt
+with, and it expires. A list of things you have finished with asks nothing of you.
+
 ### Making a page yourself
 
 **Make a different page** in the reader's footer — and **Your page** under Feeds — composes

@@ -125,6 +125,55 @@ func (s *Server) regenerate(w http.ResponseWriter, r *http.Request) {
 	s.edition(w, r)
 }
 
+type readArticleBody struct {
+	ItemID      string   `json:"item_id"`
+	Title       string   `json:"title"`
+	Link        string   `json:"link"`
+	PublishedAt int64    `json:"published_at"`
+	ReadAt      int64    `json:"read_at"`
+	Feed        feedStub `json:"feed"`
+}
+
+// readArticles is what somebody has read lately — a month of it, and nothing older.
+//
+// Deliberately not a count of anything. It lists only what has been dealt with, which is
+// the one kind of list that asks nothing of the person reading it.
+func (s *Server) readArticles(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	articles, err := s.store.ReadArticles(r.Context(), p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	// Feed titles live in the other database and cannot be joined to, so they are resolved
+	// here — and only for feeds still followed. Something read and then unsubscribed from
+	// keeps its own title and loses its source, which is the honest rendering of it.
+	subs, err := s.store.ListSubscriptions(r.Context(), p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	titles := make(map[string]feedStub, len(subs))
+	for _, sub := range subs {
+		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}
+	}
+
+	out := make([]readArticleBody, 0, len(articles))
+	for _, a := range articles {
+		out = append(out, readArticleBody{
+			ItemID:      a.ItemID,
+			Title:       a.Title,
+			Link:        a.Link,
+			PublishedAt: a.PublishedAt.Unix(),
+			ReadAt:      a.ReadAt.Unix(),
+			Feed:        titles[a.FeedID],
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) markRead(w http.ResponseWriter, r *http.Request)   { s.setRead(w, r, true) }
 func (s *Server) markUnread(w http.ResponseWriter, r *http.Request) { s.setRead(w, r, false) }
 

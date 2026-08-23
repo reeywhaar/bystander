@@ -171,21 +171,113 @@ func (s *Store) CurrentEdition(ctx context.Context, principalID string) (*Editio
 	return &ed, out, rows.Err()
 }
 
+// ReadRetention is how long the record of an article having been read is kept. A month, as
+// a convenience for looking back — not an archive.
+const ReadRetention = 30 * 24 * time.Hour
+
+// ReadArticle is something this person has read, as remembered after its page is gone.
+type ReadArticle struct {
+	ItemID      string
+	FeedID      string
+	Title       string
+	Link        string
+	PublishedAt time.Time
+	ReadAt      time.Time
+}
+
 // SetRead marks an article read or unread on this principal's live page.
 //
-// Scoped through the editions table rather than trusting the item id: an item id is
-// shared by everybody who follows that feed, so without the join one person could mark
-// another's page.
+// Scoped through the editions table rather than trusting the item id: an item id is shared
+// by everybody who follows that feed, so without the join one person could mark another's
+// page.
+//
+// Marking also writes to read_articles, in the same transaction, and unmarking removes it
+// again. Those two records answer different questions and have different lifetimes — the
+// mark greys a card on this page and dies with it; the record outlives the page by a month
+// — but they must never disagree about whether something was read.
 func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bool) error {
-	res, err := s.derived.ExecContext(ctx,
-		`UPDATE edition_items SET read_at = ?
-		  WHERE item_id = ?
-		    AND edition_id = (SELECT id FROM editions WHERE principal_id = ?)`,
-		nullTime(readAt(s.Now(), read)), itemID, principalID)
+	now := s.Now()
+
+	tx, err := s.derived.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	return expectOne(res, NotFound("that article is not on your page"))
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE edition_items SET read_at = ?
+		  WHERE item_id = ?
+		    AND edition_id = (SELECT id FROM editions WHERE principal_id = ?)`,
+		nullTime(readAt(now, read)), itemID, principalID)
+	if err != nil {
+		return err
+	}
+	if err := expectOne(res, NotFound("that article is not on your page")); err != nil {
+		return err
+	}
+
+	if read {
+		// INSERT ... SELECT so the article's details are copied inside the transaction
+		// rather than read out and written back. OR REPLACE because reading something,
+		// unreading it and reading it again should record the latest moment, not fail.
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO read_articles
+			   (principal_id, item_id, feed_id, title, link, published_at, read_at)
+			 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
+			   FROM items i WHERE i.id = ?`,
+			principalID, unix(now), itemID); err != nil {
+			return err
+		}
+	} else if _, err := tx.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE principal_id = ? AND item_id = ?`,
+		principalID, itemID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// ReadArticles is what this person has read lately, newest first.
+//
+// Bounded by retention rather than by a page size: the whole list is a month at most, and a
+// month of somebody's reading is a few hundred rows.
+func (s *Store) ReadArticles(ctx context.Context, principalID string) ([]*ReadArticle, error) {
+	rows, err := s.derived.QueryContext(ctx,
+		`SELECT item_id, feed_id, title, link, published_at, read_at
+		   FROM read_articles
+		  WHERE principal_id = ? AND read_at >= ?
+		  ORDER BY read_at DESC`,
+		principalID, unix(s.Now().Add(-ReadRetention)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*ReadArticle
+	for rows.Next() {
+		var (
+			a         ReadArticle
+			published int64
+			read      int64
+		)
+		if err := rows.Scan(&a.ItemID, &a.FeedID, &a.Title, &a.Link, &published, &read); err != nil {
+			return nil, err
+		}
+		a.PublishedAt = time.Unix(published, 0).UTC()
+		a.ReadAt = time.Unix(read, 0).UTC()
+		out = append(out, &a)
+	}
+	return out, rows.Err()
+}
+
+// PruneReadArticles drops what was read longer ago than the retention.
+func (s *Store) PruneReadArticles(ctx context.Context) (int64, error) {
+	res, err := s.derived.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE read_at < ?`, unix(s.Now().Add(-ReadRetention)))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func readAt(now time.Time, read bool) time.Time {
@@ -281,6 +373,11 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePrincipalIDs []str
 		if err != nil {
 			return 0, err
 		}
+		for _, table := range []string{"shown", "read_articles"} {
+			if _, err := s.derived.ExecContext(ctx, `DELETE FROM `+table); err != nil {
+				return 0, err
+			}
+		}
 		return res.RowsAffected()
 	}
 
@@ -297,9 +394,11 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePrincipalIDs []str
 	}
 	removed, _ := res.RowsAffected()
 
-	if _, err := s.derived.ExecContext(ctx,
-		`DELETE FROM shown WHERE principal_id NOT IN (`+placeholders+`)`, args...); err != nil {
-		return removed, err
+	for _, table := range []string{"shown", "read_articles"} {
+		if _, err := s.derived.ExecContext(ctx,
+			`DELETE FROM `+table+` WHERE principal_id NOT IN (`+placeholders+`)`, args...); err != nil {
+			return removed, err
+		}
 	}
 	return removed, nil
 }

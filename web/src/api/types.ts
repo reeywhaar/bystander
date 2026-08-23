@@ -56,6 +56,22 @@ export interface Edition {
 }
 
 /** A feed as its follower sees it: what they chose, plus what the fetcher learned. */
+/**
+ * Something already read, as remembered after its page is gone.
+ *
+ * Not an article on a page: it has no slot and no rank, because it is not on one. The
+ * server keeps these for a month and prunes them.
+ */
+export interface ReadArticle {
+  item_id: string;
+  title: string;
+  link: string;
+  published_at: number;
+  read_at: number;
+  /** Empty `id` once the feed is no longer followed — the title survives, the source does not. */
+  feed: FeedStub;
+}
+
 export interface Subscription {
   id: string;
   url: string;

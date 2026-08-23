@@ -14,6 +14,8 @@ export const qk = {
   me: ["me"] as const,
 
   edition: ["edition"] as const,
+  /** Its own root: marking something read changes both, and neither is a prefix of the other. */
+  read: ["read"] as const,
 
   feeds: ["feeds"] as const,
   feed: (id: string) => ["feeds", id] as const,

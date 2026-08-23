@@ -21,6 +21,7 @@ import {
   patchFeedsById,
   postFeeds,
 } from "@app/api/actions/feeds";
+import { getRead } from "@app/api/actions/read";
 import { getSettings, patchSettings } from "@app/api/actions/settings";
 import {
   deleteTagsById,
@@ -119,6 +120,20 @@ export function useSetRead() {
     onError: (_error, _variables, context) => {
       if (context?.previous) client.setQueryData(qk.edition, context.previous);
     },
+
+    // The page is written optimistically above; the month-long record behind it is not,
+    // because its ordering and its retention are the server's to decide.
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: qk.read });
+    },
+  });
+}
+
+export function useReadArticles() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.read,
+    queryFn: ({ signal }) => callApi(getRead(), signal),
   });
 }
 

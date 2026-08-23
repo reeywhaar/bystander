@@ -285,3 +285,93 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+// What somebody read outlives the page it was on. That is the point: last week's page is
+// gone, and "what did I read last week" still has an answer.
+func TestReadArticlesSurviveTheirPage(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+
+	read := page.Items[0]
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+read.ID+"/read", nil), http.StatusNoContent, nil)
+
+	var listed []readArticleBody
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &listed)
+	if len(listed) != 1 {
+		t.Fatalf("%d articles remembered, want 1", len(listed))
+	}
+	if listed[0].Title != read.Title {
+		t.Errorf("remembered %q, want %q", listed[0].Title, read.Title)
+	}
+	if listed[0].Feed.Title != "The Example" {
+		t.Errorf("the source is %q", listed[0].Feed.Title)
+	}
+
+	// A new page discards the old one and every read mark on it. The record must not go
+	// with them.
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, nil)
+
+	var afterwards []readArticleBody
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &afterwards)
+	if len(afterwards) != 1 {
+		t.Fatalf("%d articles remembered after regenerating, want 1", len(afterwards))
+	}
+
+	// …and the article itself must not come back onto a page.
+	var next editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &next)
+	for _, article := range next.Items {
+		if article.ID == read.ID {
+			t.Errorf("%q was read, and is on the page again", article.Title)
+		}
+	}
+}
+
+// Unreading is a correction, not a second event: it should leave no trace behind.
+func TestUnreadingForgets(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 4)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	id := page.Items[0].ID
+
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+id+"/read", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodDelete, "/api/edition/items/"+id+"/read", nil), http.StatusNoContent, nil)
+
+	var listed []readArticleBody
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &listed)
+	if len(listed) != 0 {
+		t.Errorf("%d articles remembered after unreading, want none", len(listed))
+	}
+}
+
+// One person's reading is their own.
+func TestReadArticlesAreScopedToTheirReader(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 4)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+page.Items[0].ID+"/read", nil), http.StatusNoContent, nil)
+
+	h.expect(h.do(http.MethodPost, "/api/logout", nil), http.StatusNoContent, nil)
+	h.signIn(store.RoleUser, "bob")
+
+	var bobs []readArticleBody
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &bobs)
+	if len(bobs) != 0 {
+		t.Errorf("bob can see %d of alice's read articles", len(bobs))
+	}
+}

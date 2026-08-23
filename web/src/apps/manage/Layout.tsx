@@ -8,6 +8,7 @@ const tabs = [
   { to: "/manage", label: "Feeds", end: true },
   { to: "/manage/tags", label: "Tags", end: false },
   { to: "/manage/settings", label: "Your page", end: false },
+  { to: "/manage/read", label: "Recently read", end: false },
 ];
 
 export function Layout({ me, children }: { me: Me; children: ReactNode }) {

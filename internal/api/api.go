@@ -83,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/edition", s.requireSession(s.edition))
 	mux.Handle("POST /api/edition/regenerate", s.requireSession(s.regenerate))
+	mux.Handle("GET /api/read", s.requireSession(s.readArticles))
 	mux.Handle("PUT /api/edition/items/{id}/read", s.requireSession(s.markRead))
 	mux.Handle("DELETE /api/edition/items/{id}/read", s.requireSession(s.markUnread))
 
