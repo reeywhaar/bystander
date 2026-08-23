@@ -1,0 +1,107 @@
+/**
+ * The shapes this API answers with.
+ *
+ * Written by hand against `internal/api`, and `snake_case` because that is what arrives —
+ * the server's field names are its Go struct tags and its SQL columns, and renaming them
+ * here would mean a field called one thing in the network tab and another in the code.
+ */
+
+export type Role = "admin" | "user";
+
+export type Slot = "lead" | "feature" | "standard" | "brief";
+
+export interface Me {
+  id: string;
+  username: string;
+  role: Role;
+  created_at: number;
+}
+
+/** What an invitation link is, before anybody types a password into it. */
+export interface Invite {
+  role: Role;
+  expires_at: number;
+  usable: boolean;
+  accepted: boolean;
+  expired: boolean;
+}
+
+export interface FeedStub {
+  id: string;
+  title: string;
+  site_url: string;
+}
+
+export interface Article {
+  id: string;
+  rank: number;
+  slot: Slot;
+  read_at: number | null;
+  title: string;
+  link: string;
+  author: string;
+  /** Sanitized on the server, at ingest. Never sanitized again here — see the reader. */
+  summary: string;
+  image_url: string;
+  published_at: number;
+  feed: FeedStub;
+}
+
+export interface Edition {
+  id: string;
+  generated_at: number;
+  next_edition_at: number;
+  size: number;
+  items: Article[];
+}
+
+/** A feed as its follower sees it: what they chose, plus what the fetcher learned. */
+export interface Subscription {
+  id: string;
+  url: string;
+  site_url: string;
+  title: string;
+  title_override: string;
+  priority: number;
+  tag_ids: string[];
+  created_at: number;
+  last_success_at: number | null;
+  last_error: string;
+  failure_count: number;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  priority: number;
+  created_at: number;
+}
+
+export interface Settings {
+  /** Seconds. One of the four in `EDITION_INTERVALS`. */
+  edition_interval: number;
+  edition_size: number;
+  next_edition_at: number;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  role: Role;
+  created_at: number;
+  disabled_at: number | null;
+  feed_count: number;
+}
+
+export interface AdminInvite {
+  id: string;
+  role: Role;
+  created_at: number;
+  expires_at: number;
+  accepted_at: number | null;
+  /** Who the invitation became, once accepted. */
+  username: string;
+  /** Present only in the response that minted it. It is never readable again. */
+  url?: string;
+}

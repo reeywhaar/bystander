@@ -1,0 +1,21 @@
+# Plans, scratch scripts, deploy keys — mine, not the repository's.
+private
+
+# The built frontend, except the one file that must be tracked: //go:embed all:dist needs
+# something to match, or a fresh clone fails to compile before Node has ever run. See
+# web/embed.go.
+web/dist/*
+!web/dist/.gitkeep
+
+node_modules
+
+# A local instance's databases, and the WAL sidecars beside them.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Local binaries, from `go build` without -o.
+/bystander
+
+.DS_Store

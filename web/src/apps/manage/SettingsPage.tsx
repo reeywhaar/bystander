@@ -1,0 +1,83 @@
+import { Alert } from "@app/components/ui/Alert";
+import { Spinner } from "@app/components/ui/Spinner";
+import { EDITION_INTERVALS, EDITION_SIZE } from "@app/lib/constants";
+import { until } from "@app/lib/time";
+import { useSettings, useUpdateSettings } from "@app/queries/hooks";
+
+export function SettingsPage() {
+  const settings = useSettings();
+  const update = useUpdateSettings();
+
+  if (settings.isPending) return <Spinner />;
+  if (settings.error) throw settings.error;
+
+  const current = settings.data;
+
+  return (
+    <div className="flex flex-col gap-10">
+      <section>
+        <h2 className="font-serif text-xl text-ink">
+          How often a new page is made
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-ink-muted">
+          When the next page arrives, the one before it is gone for good —
+          articles and read marks alike. The next is due{" "}
+          {until(current.next_edition_at)}.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {EDITION_INTERVALS.map((interval) => {
+            const on = interval.seconds === current.edition_interval;
+            return (
+              <button
+                key={interval.seconds}
+                type="button"
+                onClick={() =>
+                  update.mutate({ edition_interval: interval.seconds })
+                }
+                disabled={update.isPending}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  on
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-rule text-ink-muted hover:text-ink"
+                }`}
+              >
+                {interval.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="font-serif text-xl text-ink">How much is on it</h2>
+        <p className="mt-1 mb-4 text-sm text-ink-muted">
+          A ceiling, not a quota. If your feeds have published less than this,
+          the page is shorter — it is never padded with things you have already
+          seen.
+        </p>
+
+        <label className="flex items-center gap-4">
+          <input
+            type="range"
+            min={EDITION_SIZE.min}
+            max={EDITION_SIZE.max}
+            step={EDITION_SIZE.step}
+            value={current.edition_size}
+            disabled={update.isPending}
+            onChange={(event) =>
+              update.mutate({ edition_size: Number(event.target.value) })
+            }
+            className="w-64 accent-[var(--accent)]"
+            aria-label="Articles on a page"
+          />
+          <span className="tabular-nums text-ink">
+            {current.edition_size} articles
+          </span>
+        </label>
+      </section>
+
+      {update.error ? <Alert>{update.error.message}</Alert> : null}
+    </div>
+  );
+}
