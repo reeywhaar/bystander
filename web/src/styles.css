@@ -172,13 +172,12 @@ body {
  * and leaves a photograph reading as a photograph. Desaturating takes both, which is what
  * makes a read card read as spent rather than merely faint.
  *
- * Hovering brings most of it back, so a card can still be read without being unmarked.
+ * It does not come back under the pointer. Read is done with, and a card that brightened
+ * every time the mouse crossed it would put the page back in the business of asking for
+ * attention — which is the whole thing this reader exists to not do. The headline stays
+ * legible at this weight, so nothing is hidden; it is simply finished.
  */
 .is-read {
   opacity: 0.5;
   filter: grayscale(1);
-}
-.is-read:hover {
-  opacity: 0.85;
-  filter: grayscale(0.15);
 }
