@@ -35,6 +35,9 @@ import (
 // and a name nobody else would pick is enough to make it unambiguous.
 const PriorityAttr = "bystanderPriority"
 
+// dateFormat is RFC 1123 with the zone spelled the way the spec's examples spell it.
+const dateFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
+
 // Feed is one subscription in a list.
 type Feed struct {
 	Title   string
@@ -101,8 +104,10 @@ func Encode(w io.Writer, doc Document) error {
 		},
 	}
 	if !doc.CreatedAt.IsZero() {
-		// RFC 1123 in GMT, which is what the spec's own examples use.
-		out.Head.DateCreated = doc.CreatedAt.UTC().Format(time.RFC1123)
+		// Not time.RFC1123, which writes the zone's name — "UTC" for this one. The spec's
+		// examples all say GMT, as does every date in HTTP, and a parser that matches the
+		// literal is not wrong to.
+		out.Head.DateCreated = doc.CreatedAt.UTC().Format(dateFormat)
 	}
 
 	for _, feed := range doc.Feeds {

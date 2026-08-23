@@ -34,6 +34,12 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Encode(): %v", err)
 	}
 
+	// GMT, as in every date in the spec's examples — not "UTC", which is what
+	// time.RFC1123 would write for the same instant.
+	if !strings.Contains(buf.String(), "Sun, 23 Aug 2026 12:00:00 GMT") {
+		t.Errorf("dateCreated is not in the spec's form:\n%s", buf.String())
+	}
+
 	// Flat, deliberately: several tags per feed is the thing nesting cannot express.
 	if strings.Count(buf.String(), "<outline") != 2 {
 		t.Errorf("wrote %d outlines for 2 feeds; the list should be flat:\n%s",
