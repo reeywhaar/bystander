@@ -85,6 +85,16 @@ What you **read**, though, is kept for a month, under Settings → Recently read
 unread count in disguise: it counts nothing, it lists only what you have already dealt
 with, and it expires. A list of things you have finished with asks nothing of you.
 
+### How far back a feed reaches
+
+Each feed carries its own window — a day, a week, a fortnight, a month, a year, or no
+limit — set under **Settings → Feeds**, in the row you open. Articles older than it are not
+picked from that feed. A week by default.
+
+Per feed and not per person, because a news site worth a day and a blog that posts monthly
+are exactly the pair one number cannot serve. Articles are kept for as long as the longest
+window anybody set needs, so choosing a year means a year is there to reach into.
+
 ### Making a page yourself
 
 **Make a different page** in the reader's footer — and **Your page** under Settings — composes
