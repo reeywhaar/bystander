@@ -20,7 +20,14 @@ export type Recording = Record<string, { status?: number; body?: unknown }>;
 export class RecordedTransport implements Transport {
   readonly calls: { method: Method; path: string; body?: unknown }[] = [];
 
-  constructor(private readonly recording: Recording) {}
+  /**
+   * Mutable, so a test can change what a later request answers.
+   *
+   * That is the only way to exercise the thing an invalidation is *for*: a write happens,
+   * the list refetches, and the interface has to show what came back rather than what it
+   * was holding.
+   */
+  constructor(readonly recording: Recording) {}
 
   send(
     method: Method,

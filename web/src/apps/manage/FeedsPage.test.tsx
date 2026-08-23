@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -54,6 +54,9 @@ function render(feeds: Subscription[], tags: Tag[]) {
   return renderWith(<FeedsPage />, {
     "GET /api/feeds": { body: feeds },
     "GET /api/tags": { body: tags },
+    // Without this the write fails, `onSuccess` never runs, and nothing is invalidated —
+    // which would quietly hide the very thing these tests are about.
+    "PATCH /api/feeds/s_1": { status: 204 },
   });
 }
 
@@ -112,7 +115,7 @@ describe("FeedsPage", () => {
 
   // Some publishers title their feed "technology archives | designboom | architecture &
   // design magazine". The name in a list is the subscriber's to choose.
-  it("renames a feed without losing the publisher's own name", async () => {
+  it("renames a feed, showing whose name an empty field falls back to", async () => {
     const { transport } = render(
       [subscription({ title: "unbearable | name | here" })],
       [],
@@ -124,18 +127,22 @@ describe("FeedsPage", () => {
 
     const field = screen.getByLabelText("What to call it");
     expect(field).toHaveValue("unbearable | name | here");
-    expect(screen.getByText(/The publisher calls it/)).toBeInTheDocument();
 
     await userEvent.clear(field);
-    await userEvent.type(field, "Design Boom");
-    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    // Emptied, the field shows what it would fall back to rather than nothing at all.
+    expect(field).toHaveAttribute("placeholder", "The Example");
 
-    const sent = transport.calls.find((call) => call.method === "PATCH");
-    expect(sent?.body).toEqual({ title_override: "Design Boom" });
+    await userEvent.type(field, "Design Boom");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.find((call) => call.method === "PATCH");
+      expect(sent?.body).toMatchObject({ title_override: "Design Boom" });
+    });
   });
 
-  // Clearing the field is how you go back to the publisher's name, and storing an override
-  // that says the same thing as theirs would be storing nothing.
+  // Clearing it is how you go back to the publisher's name, and an override that says the
+  // same thing as theirs is no override at all.
   it("stores no override when the name is cleared", async () => {
     const { transport } = render(
       [
@@ -149,24 +156,112 @@ describe("FeedsPage", () => {
     );
 
     await userEvent.click(await screen.findByRole("button", { name: "Mine" }));
-
     await userEvent.clear(screen.getByLabelText("What to call it"));
-    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    const sent = transport.calls.find((call) => call.method === "PATCH");
-    expect(sent?.body).toEqual({ title_override: "" });
+    await waitFor(() => {
+      const sent = transport.calls.find((call) => call.method === "PATCH");
+      expect(sent?.body).toMatchObject({ title_override: "" });
+    });
   });
 
-  // The reach is the feed's, not the reader's.
-  it("sets how far back a page reaches into one feed", async () => {
-    const { transport } = render([subscription()], []);
+  // Typing the publisher's own name out is the same as leaving it empty.
+  it("stores no override when the name matches the publisher's", async () => {
+    const { transport } = render(
+      [
+        subscription({
+          title: "Mine",
+          feed_title: "Theirs",
+          title_override: "Mine",
+        }),
+      ],
+      [],
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mine" }));
+
+    const field = screen.getByLabelText("What to call it");
+    await userEvent.clear(field);
+    await userEvent.type(field, "Theirs");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.find((call) => call.method === "PATCH");
+      expect(sent?.body).toMatchObject({ title_override: "" });
+    });
+  });
+
+  // Nothing is written until Save, so a toggle has to show immediately from local state
+  // rather than waiting on a round trip.
+  it("shows a change at once and writes it on save", async () => {
+    const { transport } = render([subscription()], [art]);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "The Example" }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "A month" }));
+    await userEvent.click(screen.getByRole("button", { name: "Art" }));
+
+    expect(screen.getByRole("button", { name: "A month" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "A week" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Art" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Nothing has been written yet.
+    expect(
+      transport.calls.filter((call) => call.method === "PATCH"),
+    ).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.filter((call) => call.method === "PATCH");
+      expect(sent).toHaveLength(1);
+      // One request carrying the whole of what the dialog holds, name included.
+      expect(sent[0]?.body).toEqual({
+        title_override: "",
+        tag_ids: ["t_art"],
+        article_window: 2592000,
+      });
+    });
+  });
+
+  // Closing any other way leaves the feed as it was — otherwise there is no way out of a
+  // dialog without consequences.
+  it("writes nothing when it is cancelled", async () => {
+    const { transport } = render([subscription()], [art]);
 
     await userEvent.click(
       await screen.findByRole("button", { name: "The Example" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "A month" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    const sent = transport.calls.find((call) => call.method === "PATCH");
-    expect(sent?.body).toEqual({ article_window: 2592000 });
+    expect(
+      transport.calls.filter((call) => call.method === "PATCH"),
+    ).toHaveLength(0);
+  });
+
+  // Saving with nothing changed is a close, not a write.
+  it("writes nothing when nothing changed", async () => {
+    const { transport } = render([subscription()], [art]);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "The Example" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      transport.calls.filter((call) => call.method === "PATCH"),
+    ).toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 
 import type { Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
@@ -31,52 +31,77 @@ export function FeedDialog({
 }) {
   const update = useUpdateFeed();
   const remove = useRemoveFeed();
-  const [name, setName] = useState("");
 
-  // Starts from what it is called now, whichever of the two that is.
+  // Held here until Save, rather than written as you touch things.
+  //
+  // A dialog that saves on every click has no way to be closed without consequences, and
+  // each toggle becomes a request the list underneath has to catch up with. These are
+  // choices somebody makes together and confirms once.
+  const [name, setName] = useState("");
+  const [tagIDs, setTagIDs] = useState<string[]>([]);
+  const [reach, setReach] = useState(0);
+
+  // Keyed on which feed, not on the feed object. The object changes identity every time
+  // the list refetches — which is after every change made in here — and resetting on that
+  // would wipe out whatever was being typed.
+  const openFor = feed?.id;
   useEffect(() => {
-    if (feed) setName(feed.title);
-  }, [feed]);
+    if (!feed) return;
+    setName(feed.title);
+    setTagIDs(feed.tag_ids);
+    setReach(feed.article_window);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFor]);
 
   if (!feed) return null;
 
   const publisher = feed.feed_title || feed.url;
 
-  function saveName(event: FormEvent) {
-    event.preventDefault();
+  function save() {
     if (!feed) return;
-    // Empty puts the publisher's name back, and so does typing theirs out: there is no
-    // reason to store an override that says the same thing.
-    const trimmed = name.trim();
-    update.mutate({
-      id: feed.id,
-      changes: { title_override: trimmed === publisher ? "" : trimmed },
-    });
-  }
 
-  const renamed = name.trim() !== feed.title;
+    // Empty means the publisher's name — which is what the placeholder is showing — and so
+    // does typing theirs out. There is no reason to store an override that says the same
+    // thing as the title it overrides.
+    const trimmed = name.trim();
+    const override = trimmed === publisher ? "" : trimmed;
+
+    const sameTags =
+      tagIDs.length === feed.tag_ids.length &&
+      tagIDs.every((id) => feed.tag_ids.includes(id));
+
+    if (
+      sameTags &&
+      reach === feed.article_window &&
+      override === feed.title_override
+    ) {
+      onClose();
+      return;
+    }
+
+    update.mutate(
+      {
+        id: feed.id,
+        changes: {
+          title_override: override,
+          tag_ids: tagIDs,
+          article_window: reach,
+        },
+      },
+      { onSuccess: onClose },
+    );
+  }
 
   return (
     <Modal open onClose={onClose} title={feed.title}>
-      <form onSubmit={saveName} className="flex items-end gap-2">
-        <Field
-          label="What to call it"
-          value={name}
-          maxLength={200}
-          className="flex-1"
-          onChange={(event) => setName(event.target.value)}
-          hint={
-            <>
-              The publisher calls it{" "}
-              <span className="text-ink">{publisher}</span>. This name is yours
-              alone.
-            </>
-          }
-        />
-        <Button type="submit" disabled={!renamed || update.isPending}>
-          Rename
-        </Button>
-      </form>
+      <Field
+        label="What to call it"
+        value={name}
+        maxLength={200}
+        placeholder={publisher}
+        onChange={(event) => setName(event.target.value)}
+        hint="Leave it empty to use the publisher's own name."
+      />
 
       <div className="flex flex-col gap-1.5">
         <p className="text-xs text-ink-muted">Filed under</p>
@@ -88,21 +113,16 @@ export function FeedDialog({
             </p>
           ) : (
             tags.map((tag) => {
-              const on = feed.tag_ids.includes(tag.id);
+              const on = tagIDs.includes(tag.id);
               return (
                 <button
                   key={tag.id}
                   type="button"
                   aria-pressed={on}
                   onClick={() =>
-                    update.mutate({
-                      id: feed.id,
-                      changes: {
-                        tag_ids: on
-                          ? feed.tag_ids.filter((id) => id !== tag.id)
-                          : [...feed.tag_ids, tag.id],
-                      },
-                    })
+                    setTagIDs((was) =>
+                      on ? was.filter((id) => id !== tag.id) : [...was, tag.id],
+                    )
                   }
                   className={`rounded-full border px-2.5 py-0.5 text-xs ${
                     on
@@ -126,18 +146,13 @@ export function FeedDialog({
         </p>
         <div className="flex flex-wrap gap-1.5">
           {ARTICLE_WINDOWS.map((window) => {
-            const on = window.seconds === feed.article_window;
+            const on = window.seconds === reach;
             return (
               <button
                 key={window.seconds}
                 type="button"
                 aria-pressed={on}
-                onClick={() =>
-                  update.mutate({
-                    id: feed.id,
-                    changes: { article_window: window.seconds },
-                  })
-                }
+                onClick={() => setReach(window.seconds)}
                 className={`rounded-md border px-2.5 py-1 text-xs ${
                   on
                     ? "border-accent bg-accent/10 text-accent"
@@ -165,9 +180,14 @@ export function FeedDialog({
         >
           Stop following
         </Button>
-        <Button variant="primary" onClick={onClose}>
-          Done
-        </Button>
+        <span className="flex gap-2">
+          {/* Closing any other way — Cancel, Escape, the backdrop — leaves the feed as it
+              was. Save is the only thing that writes. */}
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={save}>
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
+        </span>
       </div>
     </Modal>
   );

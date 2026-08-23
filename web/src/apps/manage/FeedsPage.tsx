@@ -46,7 +46,10 @@ export function FeedsPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [editing, setEditing] = useState<Subscription | null>(null);
+  // The id, not the feed. Holding the object would hold a snapshot taken when the dialog
+  // opened: renaming or retagging from inside it would update the list underneath and
+  // leave the dialog still describing what used to be true.
+  const [editingID, setEditingID] = useState<string | null>(null);
 
   function subscribe(feed: PlannedFeed) {
     // One feed and no choice to make: straight in, untagged, as it always was. The picker
@@ -141,9 +144,9 @@ export function FeedsPage() {
       />
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
       <FeedDialog
-        feed={editing}
+        feed={feeds.data.find((feed) => feed.id === editingID) ?? null}
         tags={tags.data ?? []}
-        onClose={() => setEditing(null)}
+        onClose={() => setEditingID(null)}
       />
 
       <Modal
@@ -215,7 +218,7 @@ export function FeedsPage() {
               key={feed.id}
               feed={feed}
               tags={tags.data}
-              onOpen={setEditing}
+              onOpen={(feed) => setEditingID(feed.id)}
             />
           ))
         )}
