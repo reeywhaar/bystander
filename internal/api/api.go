@@ -22,15 +22,13 @@ import (
 	"strings"
 	"time"
 
+	"bystander/internal/app"
 	"bystander/internal/config"
 	"bystander/internal/edition"
 	"bystander/internal/feeds"
 	"bystander/internal/session"
 	"bystander/internal/store"
 )
-
-// Version is stamped at build time via -ldflags.
-var Version = "dev"
 
 // Server holds everything the handlers need.
 type Server struct {
@@ -121,7 +119,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": Version})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": app.Version})
 }
 
 // principalKey carries the signed-in account down to the handler.

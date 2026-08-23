@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"bystander/internal/config"
+	"bystander/internal/app"
 	"bystander/internal/store"
 )
 
@@ -64,7 +64,7 @@ func healthcheckCmd() *cobra.Command {
 
 			// The listen address is not configurable, so this needs no environment and
 			// works in a container that has none set.
-			target := "http://127.0.0.1" + config.ListenAddr + "/healthz"
+			target := "http://127.0.0.1" + app.ListenAddr + "/healthz"
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 			if err != nil {
 				return err

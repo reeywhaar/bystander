@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"bystander/internal/app"
 	"bystander/internal/store"
 )
 
@@ -45,20 +46,11 @@ type Fetcher struct {
 	userAgent string
 }
 
-// ProjectURL is where somebody wondering what bystander is can go and read it.
-//
-// It rides in the User-Agent alongside the instance's own address: the project link says
-// what the software is and what it does, the instance link says who to talk to about this
-// particular one. A publisher looking at their logs wants both, and giving them neither is
-// how a fetcher ends up blocked rather than merely rate-limited.
-const ProjectURL = "https://github.com/reeywhaar/bystander"
-
 // NewFetcher builds a fetcher.
 //
-// version is the build this is, stamped at compile time — "dev" from a local build. Naming
-// a version somebody can act on beats the "1.0" that was here before, which was never true
-// of any build.
-func NewFetcher(publicURL, version string) *Fetcher {
+// publicURL is this instance's own address, which rides in the User-Agent beside the
+// project's — see app.ProjectURL for why both.
+func NewFetcher(publicURL string) *Fetcher {
 	return &Fetcher{
 		client: &http.Client{
 			Timeout: requestTimeout,
@@ -69,7 +61,7 @@ func NewFetcher(publicURL, version string) *Fetcher {
 				return nil
 			},
 		},
-		userAgent: "bystander/" + version + " (+" + ProjectURL + "; +" + publicURL + ")",
+		userAgent: app.Name + "/" + app.Version + " (+" + app.ProjectURL + "; +" + publicURL + ")",
 	}
 }
 

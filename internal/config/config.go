@@ -4,10 +4,8 @@
 // have defaults. A file would have to be mounted, kept in sync with the compose stanza
 // that mounts it, and parsed — all to express what `docker run -e` already expresses.
 //
-// The listen address is not configurable at all. It is :80 inside the container and the
-// operator remaps it with a port binding, which is the stance both sibling projects take
-// and for the same reason: a port number inside a container is not a thing an operator
-// should have to think about twice.
+// What this program *is* — its name, its version, the address it listens on — lives in
+// internal/app instead. The line is whether an operator can change it without rebuilding.
 package config
 
 import (
@@ -18,10 +16,6 @@ import (
 	"strings"
 	"time"
 )
-
-// ListenAddr is where serve listens, inside the container. Not configurable — remap it
-// with `docker run -p 8080:80`.
-const ListenAddr = ":80"
 
 // Environment variables read by this package.
 const (

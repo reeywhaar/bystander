@@ -61,7 +61,7 @@ COPY --from=web /src/web/dist ./web/dist
 # CGO_ENABLED=0 because modernc.org/sqlite is pure Go — which is the whole reason the
 # runtime stage needs no toolchain and the binary is static.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
-      -ldflags "-s -w -buildid= -X bystander/internal/api.Version=${VERSION}" \
+      -ldflags "-s -w -buildid= -X bystander/internal/app.Version=${VERSION}" \
       -o /out/bystander .
 
 # ---------------------------------------------------------------------------

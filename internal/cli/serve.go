@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bystander/internal/api"
+	"bystander/internal/app"
 	"bystander/internal/config"
 	"bystander/internal/edition"
 	"bystander/internal/feeds"
@@ -63,7 +64,7 @@ func serve(parent context.Context) error {
 	}
 
 	sessions := session.New(st, cfg.Secure, log)
-	fetcher := feeds.NewFetcher(cfg.PublicURL.String(), api.Version)
+	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
 	poller := feeds.NewPoller(st, fetcher, cfg.FetchInterval, log)
 	generator := edition.NewGenerator(st, log)
 	scheduler := edition.NewScheduler(st, generator, log)
@@ -78,7 +79,7 @@ func serve(parent context.Context) error {
 	go scheduler.Run(ctx)
 
 	httpServer := &http.Server{
-		Addr:    config.ListenAddr,
+		Addr:    app.ListenAddr,
 		Handler: server.Handler(),
 		// A slow client must not be able to hold a connection open indefinitely. The
 		// write timeout is generous because nothing here streams.
@@ -90,7 +91,7 @@ func serve(parent context.Context) error {
 
 	errs := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", config.ListenAddr, "public_url", cfg.PublicURL.String(), "version", api.Version)
+		log.Info("listening", "addr", app.ListenAddr, "public_url", cfg.PublicURL.String(), "version", app.Version)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

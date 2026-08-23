@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"bystander/internal/api"
+	"bystander/internal/app"
 	"bystander/internal/config"
 	"bystander/internal/store"
 )
@@ -61,7 +61,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version this binary was built from",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cmd.Println(api.Version)
+			cmd.Println(app.Version)
 			return nil
 		},
 	}

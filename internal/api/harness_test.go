@@ -65,7 +65,7 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	sessions := session.New(st, cfg.Secure, log)
-	fetcher := feeds.NewFetcher(cfg.PublicURL.String(), "test")
+	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
 	generator := edition.NewGenerator(st, log)
 
 	server := httptest.NewServer(New(cfg, st, sessions, generator, fetcher, spa, log).Handler())

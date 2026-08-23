@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"bystander/internal/app"
 	"bystander/internal/store"
 )
 
@@ -52,7 +53,7 @@ func TestEveryRequestIdentifiesItself(t *testing.T) {
 	site := httptest.NewServer(rec)
 	defer site.Close()
 
-	f := NewFetcher("https://read.example.com", "a1b2c3d")
+	f := NewFetcher("https://read.example.com")
 	ctx := context.Background()
 	now := time.Now()
 
@@ -72,22 +73,22 @@ func TestEveryRequestIdentifiesItself(t *testing.T) {
 			t.Errorf("%s %s went out with no User-Agent", req.Method, req.URL.Path)
 			continue
 		}
-		if !strings.HasPrefix(agent, "bystander/") {
+		if !strings.HasPrefix(agent, app.Name+"/") {
 			t.Errorf("User-Agent = %q, want it to name this program", agent)
 		}
 		// Both links. The project says what the software is; the instance says who to
 		// talk to about this particular one. A publisher looking at their logs wants
 		// both, and giving them neither is how a fetcher ends up blocked rather than
 		// merely rate-limited.
-		if !strings.Contains(agent, ProjectURL) {
+		if !strings.Contains(agent, app.ProjectURL) {
 			t.Errorf("User-Agent = %q, want it to name the project", agent)
 		}
 		if !strings.Contains(agent, "https://read.example.com") {
 			t.Errorf("User-Agent = %q, want it to carry this instance's address", agent)
 		}
 		// The build, so a publisher can say which version misbehaved.
-		if !strings.Contains(agent, "a1b2c3d") {
-			t.Errorf("User-Agent = %q, want it to name the build", agent)
+		if !strings.Contains(agent, app.Version) {
+			t.Errorf("User-Agent = %q, want it to name the build (%s)", agent, app.Version)
 		}
 		if req.Header.Get("Accept") == "" {
 			t.Errorf("%s %s went out with no Accept", req.Method, req.URL.Path)
@@ -104,7 +105,7 @@ func TestAPollSendsItsValidators(t *testing.T) {
 	site := httptest.NewServer(rec)
 	defer site.Close()
 
-	f := NewFetcher("https://read.example.com", "a1b2c3d")
+	f := NewFetcher("https://read.example.com")
 	_, _ = f.Fetch(context.Background(), &store.Feed{
 		ID:           "f_1",
 		CanonicalURL: site.URL + "/feed.xml",
