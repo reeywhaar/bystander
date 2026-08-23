@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,8 +17,12 @@ import (
 )
 
 const (
-	// requestTimeout bounds one fetch, redirects included.
-	requestTimeout = 20 * time.Second
+	// requestTimeout bounds one fetch, redirects included — including reading the body,
+	// which is where slow publishers actually spend the time. Thirty seconds because a
+	// tired shared host answering a hundred-kilobyte feed genuinely takes tens of seconds
+	// on a cold cache and under a second once warm, and failing the first fetch of a feed
+	// somebody has just chosen is the worst possible moment to be strict.
+	requestTimeout = 30 * time.Second
 
 	// maxBody is what will be read from a feed. Large enough for the biggest real feeds;
 	// small enough that a misconfigured server streaming a gigabyte is a failed fetch
@@ -87,7 +92,7 @@ func (f *Fetcher) Fetch(ctx context.Context, feed *store.Feed, now time.Time) (*
 
 	res, err := f.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, unreachable(feed.CanonicalURL, err)
 	}
 	defer res.Body.Close()
 
@@ -219,7 +224,7 @@ func (f *Fetcher) get(ctx context.Context, target string) (body, finalURL string
 
 	res, err := f.client.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", unreachable(target, err)
 	}
 	defer res.Body.Close()
 
@@ -228,9 +233,25 @@ func (f *Fetcher) get(ctx context.Context, target string) (body, finalURL string
 	}
 	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody))
 	if err != nil {
-		return "", "", err
+		return "", "", unreachable(target, err)
 	}
 	return string(raw), res.Request.URL.String(), nil
+}
+
+// unreachable turns a transport failure into a sentence.
+//
+// Go's own text for a timeout is "context deadline exceeded (Client.Timeout or context
+// cancellation while reading body)", which is accurate and belongs in a log. It reaches
+// somebody who has just pasted an address and pressed a button, and it has to tell them
+// what to do about it — which is usually "try again", because a publisher that stalls once
+// is often fine a minute later.
+func unreachable(target string, err error) error {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Errorf("%s did not answer within %s; it may be slow rather than broken, so it is worth trying again",
+			target, requestTimeout)
+	}
+	return fmt.Errorf("could not reach %s: %w", target, err)
 }
 
 // feedTypes are the content types a <link rel="alternate"> may name for this to be a feed.
