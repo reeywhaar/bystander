@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"bystander/internal/ids"
 )
 
 // Item is one article as its feed published it.
@@ -81,6 +83,13 @@ func (s *Store) SaveItems(ctx context.Context, items []*Item) (int, error) {
 
 	added := 0
 	for _, item := range items {
+		// Named here rather than by whoever parsed it, because an article's id is derived
+		// from the feed it belongs to and the parser does not always know that: discovery
+		// parses a feed before there is a row for it. Naming articles there gave two
+		// different feeds' articles the same ids, and the second feed's were then dropped
+		// by the primary key — silently, one article at a time.
+		item.ID = ids.Derive(ids.Article, item.FeedID, item.GUID)
+
 		renamed, err := renameByLink(ctx, tx, item, unshared)
 		if err != nil {
 			return 0, err
@@ -175,6 +184,11 @@ func renameByLink(ctx context.Context, tx *sql.Tx, item *Item, unshared map[stri
 	if err != nil {
 		return false, err
 	}
+
+	// The row keeps the id it was first given, so everything pointing at it still does.
+	// Handed back on the item too, so a caller that saved an article and then asks what its
+	// id is gets the one in the table rather than the one this rename replaced.
+	item.ID = oldID
 
 	// published_at is deliberately left alone. A corrected headline is not a republication,
 	// and letting the date follow the guid would shuffle an article back up the page every

@@ -12,7 +12,6 @@ import (
 	"github.com/mmcdole/gofeed"
 	"golang.org/x/net/html"
 
-	"bystander/internal/ids"
 	"bystander/internal/store"
 )
 
@@ -52,7 +51,10 @@ func Parse(body io.Reader, feedURL, feedID string, now time.Time) (*Parsed, erro
 
 	for _, entry := range parsed.Items {
 		item := &store.Item{
-			ID:        ids.New(ids.Article),
+			// No id. An article's is derived from the feed it belongs to, and this
+			// function is also called during discovery — before there is a feed row, with
+			// an empty feed id — so naming articles here would name two different feeds'
+			// articles identically. The store assigns it, where the feed id is real.
 			FeedID:    feedID,
 			GUID:      identify(entry),
 			Title:     strings.TrimSpace(Text(entry.Title)),

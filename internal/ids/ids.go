@@ -10,10 +10,17 @@
 // 128-bit-integer encoding, so these are not interchangeable with other ULID
 // implementations. They are internal opaque ids and are never parsed back, so that costs
 // nothing and saves a dependency.
+//
+// [Derive] is the exception to all of that, and deliberately so: an article's identity is
+// its publisher's, not ours, so its id is a digest of that identity rather than a fresh
+// random one. Those do not sort by time. Nothing orders articles by id — they are ordered
+// by publication, which is the order that means something about an article — but a new
+// caller of Derive should check that the same is true of whatever it is naming.
 package ids
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
 	"strings"
@@ -57,6 +64,32 @@ func newAt(prefix string, t time.Time) string {
 	// Overwrites the two bytes the shift left as zero padding, and fills the rest.
 	rand.Read(b[6:])
 	return prefix + crockford.EncodeToString(b[:])
+}
+
+// Derive returns the id for a thing that already has an identity of its own.
+//
+// The same parts always produce the same id, on any instance and after any number of
+// rebuilds. That is the point: an article's identity belongs to its publisher — a feed id
+// and a guid — and minting a fresh random id for it every fetch would mean the same article
+// held a different id depending on when we happened to first see it. It does not, and
+// anything keyed by that id survives the article being pruned and coming back.
+//
+// The trade is that these do not sort by time, because there is no timestamp in them. Only
+// use Derive where something else orders the rows — articles are ordered by publication,
+// which is the order that means anything about them anyway.
+//
+// Not a security boundary. It is a digest of values the publisher chose, so anybody holding
+// the feed can compute it; ids are opaque handles, not secrets, and this one no more than
+// the rest.
+func Derive(prefix string, parts ...string) string {
+	h := sha256.New()
+	for _, part := range parts {
+		h.Write([]byte(part))
+		// A separator that cannot appear in the parts, so ("ab", "c") and ("a", "bc")
+		// cannot collide by concatenation.
+		h.Write([]byte{0})
+	}
+	return prefix + crockford.EncodeToString(h.Sum(nil)[:16])
 }
 
 // Valid reports whether s looks like an id of the given kind. It checks shape only: an id

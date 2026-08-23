@@ -224,3 +224,94 @@ func TestRefetchingAnUnchangedFeedAddsNothing(t *testing.T) {
 		t.Fatalf("second SaveItems() = %d, %v; a re-fetch is not news", added, err)
 	}
 }
+
+// The same article keeps the same id, whoever saved it and whenever.
+func TestAnArticleKeepsItsIdAcrossFetches(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	feed, err := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	now := time.Now()
+	one := func() *Item {
+		return article(feed.ID, "guid-1", "https://example.com/1", "One", now.Add(-time.Hour))
+	}
+
+	first := one()
+	if _, err := s.SaveItems(ctx, []*Item{first}); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+	// The id in the table, not the one the caller happened to arrive with.
+	if first.ID != ids.Derive(ids.Article, feed.ID, "guid-1") {
+		t.Errorf("id = %q, want one derived from the feed and the guid", first.ID)
+	}
+
+	second := one()
+	if _, err := s.SaveItems(ctx, []*Item{second}); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+	if second.ID != first.ID {
+		t.Errorf("a re-fetch renamed the article: %s then %s", first.ID, second.ID)
+	}
+
+	// Including after it has been pruned and the feed still lists it. Read marks and shown
+	// records outlive an article by design, and a new id would have wasted both.
+	if _, err := s.Derived().ExecContext(ctx, `DELETE FROM items WHERE id = ?`, first.ID); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	third := one()
+	if _, err := s.SaveItems(ctx, []*Item{third}); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+	if third.ID != first.ID {
+		t.Errorf("an article that came back got a new id: %s then %s", first.ID, third.ID)
+	}
+}
+
+// Two feeds carrying the same article are still two articles.
+//
+// The regression this exists for: articles were named while parsing, and discovery parses
+// before there is a feed to name them after. Every feed's articles came out identically
+// named, and the second feed's were dropped by the primary key one at a time.
+func TestTwoFeedsWithTheSameArticleKeepBoth(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	one, err := s.UpsertFeed(ctx, "https://one.example/feed.xml", "One", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	two, err := s.UpsertFeed(ctx, "https://two.example/feed.xml", "Two", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+
+	now := time.Now().Add(-time.Hour)
+	syndicated := func(feedID string) *Item {
+		return article(feedID, "https://wire.example/story-1", "https://wire.example/story-1",
+			"The same story, carried twice", now)
+	}
+
+	added, err := s.SaveItems(ctx, []*Item{syndicated(one.ID)})
+	if err != nil || added != 1 {
+		t.Fatalf("SaveItems() = %d, %v", added, err)
+	}
+	added, err = s.SaveItems(ctx, []*Item{syndicated(two.ID)})
+	if err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+	if added != 1 {
+		t.Fatalf("the second feed's copy was dropped: added = %d", added)
+	}
+
+	got, err := s.Candidates(ctx, "", []string{one.ID, two.ID}, 10, nil)
+	if err != nil {
+		t.Fatalf("Candidates(): %v", err)
+	}
+	if len(got[one.ID]) != 1 || len(got[two.ID]) != 1 {
+		t.Errorf("articles per feed = %d and %d, want one each",
+			len(got[one.ID]), len(got[two.ID]))
+	}
+}
