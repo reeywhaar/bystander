@@ -22,6 +22,11 @@ import {
   postFeeds,
 } from "@app/api/actions/feeds";
 import { postFeedsDiscover } from "@app/api/actions/discover";
+import {
+  postFeedsExport,
+  postFeedsImport,
+  postFeedsImportPreview,
+} from "@app/api/actions/opml";
 import { getRead } from "@app/api/actions/read";
 import { getSettings, patchSettings } from "@app/api/actions/settings";
 import {
@@ -31,7 +36,7 @@ import {
   postTags,
 } from "@app/api/actions/tags";
 import { useApiCall } from "@app/api/provider";
-import type { Article, Edition, Role } from "@app/api/types";
+import type { Article, Edition, ImportSelection, Role } from "@app/api/types";
 import { qk } from "@app/queries/keys";
 
 /**
@@ -197,6 +202,31 @@ export function useRemoveFeed() {
     mutationFn: (id: string) => callApi(deleteFeedsById(id)),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.feeds });
+    },
+  });
+}
+
+/** Builds a subscription list from the feeds that were ticked. */
+export function useExportFeeds() {
+  const callApi = useApiCall();
+  return useMutation({ mutationFn: (ids: string[]) => callApi(postFeedsExport(ids)) });
+}
+
+/** Reads a pasted list and says what it would do. Changes nothing. */
+export function usePreviewImport() {
+  const callApi = useApiCall();
+  return useMutation({ mutationFn: (opml: string) => callApi(postFeedsImportPreview(opml)) });
+}
+
+export function useImportFeeds() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (feeds: ImportSelection[]) => callApi(postFeedsImport(feeds)),
+    onSuccess: () => {
+      // An import creates tags as well as subscriptions, so both listings are stale.
+      void client.invalidateQueries({ queryKey: qk.feeds });
+      void client.invalidateQueries({ queryKey: qk.tags });
     },
   });
 }

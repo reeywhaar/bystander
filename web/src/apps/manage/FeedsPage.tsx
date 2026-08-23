@@ -4,6 +4,9 @@ import type { Candidate, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
+
+import { ImportDialog } from "@app/apps/manage/ImportDialog";
+import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { since } from "@app/lib/time";
@@ -29,6 +32,8 @@ export function FeedsPage() {
   // of text under the field, because this is the end of the attempt and not a hint about
   // it — the address needs changing, or the site has no feed at all.
   const [problem, setProblem] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   function subscribe(feedURL: string) {
     add.mutate(
@@ -96,7 +101,27 @@ export function FeedsPage() {
             and asks which you want.
           </p>
         </form>
+
+        {/* Beside adding one, because they are the same job at a different scale: getting
+            feeds in, and handing them on. */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={() => setImporting(true)}>Import a list</Button>
+          <Button
+            onClick={() => setSharing(true)}
+            disabled={feeds.data.length === 0}
+          >
+            Share my feeds
+          </Button>
+        </div>
       </section>
+
+      <ShareDialog
+        open={sharing}
+        onClose={() => setSharing(false)}
+        feeds={feeds.data}
+        tags={tags.data}
+      />
+      <ImportDialog open={importing} onClose={() => setImporting(false)} />
 
       <Modal
         open={choices !== null}

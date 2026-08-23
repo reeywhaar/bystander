@@ -56,6 +56,51 @@ export interface Edition {
 }
 
 /** A feed as its follower sees it: what they chose, plus what the fetcher learned. */
+/** A subscription list, ready to be copied or saved. */
+export interface Export {
+  opml: string;
+  filename: string;
+  count: number;
+}
+
+/** One tag on a feed in a pasted list, and whether it is already yours. */
+export interface PlannedTag {
+  path: string[];
+  /** The path rendered for reading: "News / World". */
+  name: string;
+  existing: boolean;
+}
+
+/** One feed in a pasted list, as it would land here. */
+export interface PlannedFeed {
+  title: string;
+  feed_url: string;
+  site_url: string;
+  priority: number;
+  already_subscribed: boolean;
+  tags: PlannedTag[];
+}
+
+export interface ImportPlan {
+  feeds: PlannedFeed[];
+}
+
+/** What the interface decided to keep. Unticking something is not sending it. */
+export interface ImportSelection {
+  feed_url: string;
+  title: string;
+  site_url: string;
+  priority: number;
+  tag_paths: string[][];
+}
+
+export interface ImportResult {
+  added: number;
+  skipped: number;
+  failed: { feed_url: string; error: string }[];
+  tags_created: string[];
+}
+
 /** A feed a URL offers, before anybody has subscribed to it. */
 export interface Candidate {
   url: string;
