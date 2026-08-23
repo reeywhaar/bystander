@@ -54,6 +54,9 @@ const shownMultiple = 3
 // INSERT OR IGNORE against the unique (feed_id, guid) index is what makes re-fetching
 // idempotent: a feed that republishes its whole window every hour produces no duplicates
 // and no work.
+//
+// A guid that moved is handled before that, by renameByLink. Between them, an article seen
+// twice is recognised whichever of its two identifiers the publisher failed to keep still.
 func (s *Store) SaveItems(ctx context.Context, items []*Item) (int, error) {
 	if len(items) == 0 {
 		return 0, nil
@@ -74,8 +77,18 @@ func (s *Store) SaveItems(ctx context.Context, items []*Item) (int, error) {
 	}
 	defer stmt.Close()
 
+	unshared := unsharedLinks(items)
+
 	added := 0
 	for _, item := range items {
+		renamed, err := renameByLink(ctx, tx, item, unshared)
+		if err != nil {
+			return 0, err
+		}
+		if renamed {
+			continue
+		}
+
 		res, err := stmt.ExecContext(ctx, item.ID, item.FeedID, item.GUID, item.Title, item.Link,
 			item.Author, item.Summary, item.ImageURL, unix(item.PublishedAt), unix(item.FetchedAt))
 		if err != nil {
@@ -89,6 +102,120 @@ func (s *Store) SaveItems(ctx context.Context, items []*Item) (int, error) {
 		return 0, err
 	}
 	return added, nil
+}
+
+// unsharedLinks is the links this fetch used exactly once.
+//
+// The guard on renaming. A feed whose items all point at one page is a real thing — a
+// summary feed, a badly generated one — and matching those on their link would fold the
+// whole feed into a single article. Appearing once is the cheap evidence that a link
+// identifies an article rather than the publication.
+func unsharedLinks(items []*Item) map[string]bool {
+	count := make(map[string]int, len(items))
+	for _, item := range items {
+		if item.Link != "" {
+			count[item.Link]++
+		}
+	}
+	out := make(map[string]bool, len(count))
+	for link, n := range count {
+		if n == 1 {
+			out[link] = true
+		}
+	}
+	return out
+}
+
+// renameByLink recognises an article whose guid has moved, and reports whether it did.
+//
+// An article's identity is the publisher's guid, and plenty of publishers cannot keep one
+// still: theblueprint.ru appends the publication time to the permalink inside it, so editing
+// an article changes the one field whose entire job is to stay the same. Every edit then
+// arrives as a new article, and the same story sits on the page twice with the old headline
+// beside the new one.
+//
+// So when a guid is one we have never seen but the link belongs to an article we already
+// have, this is that article under a new name. The row is updated in place rather than
+// inserted beside, which is the part that matters: the id stays, so being on somebody's page
+// stays, and so does having been read. Adding a row would have quietly marked a story unread
+// because its publisher fixed a typo.
+//
+// It cannot rescue an article whose guid *and* link both moved — a publisher who rewrites
+// slugs is out of reach without guessing at titles, and guessing merges stories that are
+// merely similar. Two identifiers is what a feed gives; using both is as far as this goes.
+func renameByLink(ctx context.Context, tx *sql.Tx, item *Item, unshared map[string]bool) (bool, error) {
+	if item.Link == "" || !unshared[item.Link] {
+		return false, nil
+	}
+
+	var known int
+	err := tx.QueryRowContext(ctx,
+		`SELECT 1 FROM items WHERE feed_id = ? AND guid = ?`, item.FeedID, item.GUID).Scan(&known)
+	if err == nil {
+		// A guid we already have. Nothing has moved, and the insert below will ignore it.
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+
+	var (
+		oldID   string
+		oldGUID string
+	)
+	// The most recent, when a link somehow has more than one article behind it. That is the
+	// version of the story a reader is looking at, and it is where the next edit should land.
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, guid FROM items
+		 WHERE feed_id = ? AND link = ?
+		 ORDER BY published_at DESC, id DESC LIMIT 1`, item.FeedID, item.Link).Scan(&oldID, &oldGUID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	// published_at is deliberately left alone. A corrected headline is not a republication,
+	// and letting the date follow the guid would shuffle an article back up the page every
+	// time somebody fixed a comma in it.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE items
+		   SET guid = ?, title = ?, author = ?, summary = ?, image_url = ?, fetched_at = ?
+		 WHERE id = ?`,
+		item.GUID, item.Title, item.Author, item.Summary, item.ImageURL,
+		unix(item.FetchedAt), oldID); err != nil {
+		return false, err
+	}
+
+	// The record of having shown it is keyed by the guid, so it has to follow. Without this
+	// the rename would hand the article straight back to the sampler as something nobody has
+	// seen — the duplicate, one cycle later.
+	//
+	// OR IGNORE and then a delete, because the new hash may already be there: an edition that
+	// showed this article under its new name would already have written that row, and a plain
+	// update would collide with it.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE OR IGNORE shown SET guid_hash = ? WHERE feed_id = ? AND guid_hash = ?`,
+		GUIDHash(item.GUID), item.FeedID, GUIDHash(oldGUID)); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM shown WHERE feed_id = ? AND guid_hash = ?`,
+		item.FeedID, GUIDHash(oldGUID)); err != nil {
+		return false, err
+	}
+
+	// What somebody has read keeps its own copy of the headline, because that row has to
+	// outlive the article it names. It is still a copy of *this* article though, so a
+	// corrected headline belongs there too — otherwise the same story reads one way on the
+	// page and another in the list of what has been read, which is the confusion this whole
+	// function exists to remove.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE read_articles SET title = ? WHERE item_id = ?`, item.Title, oldID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 const itemColumns = `id, feed_id, guid, title, link, author, summary, image_url, published_at, fetched_at`
