@@ -62,9 +62,10 @@ the page is full or the pool runs dry.
 
 Two things bound it:
 
-- **No feed may take the page.** One contributes at most a fifth of it — raised to an even
-  share when you follow too few feeds to fill a page otherwise, so a short subscription
-  list is not starved.
+- **Volume buys nothing.** A draw picks a feed and then takes one article from it, so a
+  publisher posting forty times a day is drawn no more often than one posting twice, at the
+  same priority. A feed's share of the page is its share of the priorities — which is what
+  the slider says, and the only thing it says.
 - **A short page is an honest page.** When your feeds have published little, the page is
   shorter. It is never padded with things you have already seen, and never reaches back
   through an archive.

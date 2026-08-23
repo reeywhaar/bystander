@@ -42,6 +42,20 @@ type Bucket struct {
 // Priority is a probability of being drawn rather than a sort order: a feed at 90 appears
 // more often than one at 10 across editions without ever silencing it.
 //
+// # There is no per-feed cap, and none is needed
+//
+// There was one, on the stated grounds that a prolific publisher should not be able to
+// take the page. It cannot. A draw picks a *feed* and then takes one article from it, so a
+// feed with five hundred articles is drawn exactly as often as one with five at the same
+// priority. Volume buys nothing; only priority does.
+//
+// The cap was therefore guarding against something the sampler already makes impossible,
+// and it was not free: any cap expressed as a fraction of the page flattens the mix
+// whenever there are few enough feeds that the caps alone can fill it. At a fifth and the
+// default page of sixty, that was everybody following five feeds or fewer — for whom the
+// priority sliders did precisely nothing. A feed's share of the page is now its share of
+// the weights, which is what the slider says it is.
+//
 // A short result is an honest result. When the pool runs dry the page is shorter, and it
 // is never padded with articles already shown or with a reach back through the archive.
 func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) []store.Pick {
@@ -70,8 +84,6 @@ func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) 
 	// Two streams from one seed, so a generation replays exactly.
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>32|1))
 
-	limit := perFeedCap(size, countFeeds(pool))
-	taken := make(map[string]int, len(sources)) // feed id -> how many it has contributed
 	cursor := make(map[string]int, len(sources))
 	picked := make(map[string]bool, size)
 
@@ -88,7 +100,7 @@ func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) 
 
 		// Advance past anything already taken. A feed reachable from two tags is one
 		// queue, so an article drawn through "Art" is not offered again through "News".
-		item := (*store.Item)(nil)
+		var item *store.Item
 		for cursor[feedID] < len(src.Items) {
 			candidate := src.Items[cursor[feedID]]
 			cursor[feedID]++
@@ -105,51 +117,14 @@ func Select(buckets []Bucket, sources map[string]*Source, size int, seed int64) 
 
 		picks = append(picks, store.Pick{Item: item, Rank: len(picks)})
 		picked[item.ID] = true
-		taken[feedID]++
 
-		// The cap is what stops one prolific publisher taking the page when the dice
-		// agree with it. A capped feed leaves every bucket, not just this one.
-		if taken[feedID] >= limit || cursor[feedID] >= len(src.Items) {
+		if cursor[feedID] >= len(src.Items) {
 			dropFeed(&pool, feedID)
 		}
 	}
 
 	assignSlots(picks, size)
 	return picks
-}
-
-// perFeedCap is how much of a page one feed may be.
-//
-// A fifth of the page — but never less than the page divided by the number of feeds that
-// could fill it. The cap exists to stop one prolific publisher taking the page when there
-// is enough variety to avoid it; it is not there to starve somebody who follows three
-// feeds. Without the second term, a person with two subscriptions asking for sixty
-// articles would be handed twenty-four and no explanation.
-//
-// Never less than two either, so a page drawn from a single feed is still a page.
-func perFeedCap(size, feeds int) int {
-	limit := (size + 4) / 5
-	if feeds > 0 {
-		if even := (size + feeds - 1) / feeds; even > limit {
-			limit = even
-		}
-	}
-	if limit < 2 {
-		return 2
-	}
-	return limit
-}
-
-// countFeeds is how many distinct feeds the pool can draw from, which is what decides
-// whether the cap has any variety to enforce.
-func countFeeds(pool []Bucket) int {
-	seen := make(map[string]bool)
-	for _, b := range pool {
-		for _, id := range b.FeedIDs {
-			seen[id] = true
-		}
-	}
-	return len(seen)
 }
 
 // dropFeed removes a feed from every bucket, and any bucket it empties.

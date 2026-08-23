@@ -107,18 +107,72 @@ func TestAllZeroTerminates(t *testing.T) {
 	}
 }
 
-// One prolific publisher must not take the page even when the dice agree with it.
-func TestPerFeedCap(t *testing.T) {
+// Volume buys nothing. A draw picks a feed and then takes one article from it, so a feed
+// with five hundred articles is drawn exactly as often as one with sixty at the same
+// priority — which is why no per-feed cap is needed to stop a prolific publisher taking
+// the page.
+func TestVolumeDoesNotBuyAShareOfThePage(t *testing.T) {
 	const size = 40
-	src := sources(feed("flood", 100, 500), feed("trickle", 50, 5))
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"flood", "trickle"}}}
+	counts := map[string]int{}
+	for seed := range 100 {
+		src := sources(feed("prolific", 50, 500), feed("occasional", 50, 200))
+		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"prolific", "occasional"}}}
+		for _, pick := range Select(buckets, src, size, int64(seed)) {
+			counts[pick.Item.FeedID]++
+		}
+	}
+
+	// Equal priorities, wildly unequal backlogs: the split should be close to even.
+	prolific, occasional := counts["prolific"], counts["occasional"]
+	ratio := float64(prolific) / float64(occasional)
+	if ratio < 0.85 || ratio > 1.18 {
+		t.Errorf("a feed with 500 articles took %d of the page against %d for one with 200 (ratio %.2f)",
+			prolific, occasional, ratio)
+	}
+}
+
+// The page fills from whoever is left when a small feed runs out, rather than coming up
+// short. Nobody wants two thirds of a page and no explanation.
+func TestASmallFeedDoesNotStarveThePage(t *testing.T) {
+	const size = 40
+	src := sources(feed("plenty", 50, 500), feed("trickle", 50, 5))
+	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"plenty", "trickle"}}}
+
+	picks := Select(buckets, src, size, 7)
+	if len(picks) != size {
+		t.Fatalf("Select() returned %d articles, want a full page of %d", len(picks), size)
+	}
 
 	counts := map[string]int{}
-	for _, pick := range Select(buckets, src, size, 7) {
+	for _, pick := range picks {
 		counts[pick.Item.FeedID]++
 	}
-	if limit := perFeedCap(size, 2); counts["flood"] > limit {
-		t.Errorf("one feed contributed %d of %d, over the cap of %d", counts["flood"], size, limit)
+	if counts["trickle"] != 5 {
+		t.Errorf("the small feed contributed %d of its 5 articles", counts["trickle"])
+	}
+}
+
+// The failure that removing the cap was for: with a handful of feeds, the weights have to
+// decide the mix. A cap set at a fraction of the page could not leave them room.
+func TestPriorityDecidesWithFewFeeds(t *testing.T) {
+	const size = 20
+	counts := map[string]int{}
+	for seed := range 200 {
+		src := sources(feed("loud", 90, 200), feed("quiet", 10, 200))
+		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"loud", "quiet"}}}
+		for _, pick := range Select(buckets, src, size, int64(seed)) {
+			counts[pick.Item.FeedID]++
+		}
+	}
+
+	// 90 against 10 is nine times the weight; anything close to even means the mix is
+	// being decided by something other than the sliders.
+	if ratio := float64(counts["loud"]) / float64(counts["quiet"]); ratio < 4 {
+		t.Errorf("a feed at 90 took %d of the page against %d for one at 10 (ratio %.2f); the sliders are not deciding",
+			counts["loud"], counts["quiet"], ratio)
+	}
+	if counts["quiet"] == 0 {
+		t.Error("the quieter feed never appeared at all")
 	}
 }
 
