@@ -147,7 +147,9 @@ func QueueImageMeasurements(ctx context.Context, st *store.Store, runner *jobs.R
 		}
 		// The URL is the identity: one picture, one measurement, however many articles use
 		// it. Enqueueing an existing job leaves the existing one alone, backoff included.
-		if err := runner.Enqueue(ctx, MeasureImage, MeasureImage+" "+url, string(payload)); err != nil {
+		// The URL is both the identity and the label: for a picture they are the same string,
+		// which is the only reason the queue got away without a label for as long as it did.
+		if err := runner.Enqueue(ctx, MeasureImage, MeasureImage+" "+url, url, string(payload)); err != nil {
 			return queued, err
 		}
 		queued++

@@ -124,7 +124,7 @@ func CanonicalURL(raw string) (string, error) {
 // UpsertFeed returns the feed for a URL, creating it if nobody follows it yet.
 //
 // Feeds are global: two people following the same URL cause one fetch, which matters to
-// the publisher more than to us and keeps the poller's work proportional to distinct URLs.
+// the publisher more than to us and keeps fetching proportional to distinct URLs.
 func (s *Store) UpsertFeed(ctx context.Context, rawURL, title, siteURL string) (*Feed, error) {
 	canonical, err := CanonicalURL(rawURL)
 	if err != nil {

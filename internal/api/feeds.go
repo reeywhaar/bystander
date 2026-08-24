@@ -151,12 +151,12 @@ func (s *Server) addFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The articles this discovery already parsed, saved under the real feed id — so a
-	// page can be composed immediately rather than after the poller's next cycle.
+	// page can be composed immediately rather than after the next fetch job.
 	for _, item := range parsed.Items {
 		item.FeedID = feed.ID
 	}
 	if _, err := s.store.SaveItems(r.Context(), parsed.Items); err != nil {
-		// The subscription is real either way; the poller will fetch again shortly.
+		// The subscription is real either way; it will be fetched again shortly.
 		s.log.Warn("could not save the articles from a newly added feed", "feed", feed.ID, "error", err)
 	}
 

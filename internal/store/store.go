@@ -8,7 +8,7 @@
 // shown. Losing it costs one fetch cycle.
 //
 // That asymmetry is the entire reason for the split — it is what makes "back this one up"
-// a sentence with an answer. Keeping them apart also keeps a write-heavy poller out of
+// a sentence with an answer. Keeping them apart also keeps write-heavy fetching out of
 // the file that matters.
 //
 // They are separate handles and are never ATTACHed to one another. SQLite's atomic
@@ -122,7 +122,7 @@ func (s *Store) Close() error {
 }
 
 func open(path string) (*sql.DB, error) {
-	// WAL so the poller's writes never block a read; busy_timeout so a concurrent
+	// WAL so a fetch's writes never block a read; busy_timeout so a concurrent
 	// statement waits rather than failing with SQLITE_BUSY; foreign_keys because SQLite
 	// leaves them off by default and a schema full of REFERENCES that enforces nothing is
 	// worse than no schema at all.
@@ -160,7 +160,7 @@ func open(path string) (*sql.DB, error) {
 // A pragma in a DSN is a request, not a guarantee: a driver that ignored one, or a build
 // compiled without WAL, leaves a database that looks fine and behaves differently. Both
 // of these are load-bearing — foreign_keys=OFF permits orphaned rows for the lifetime of
-// the connection, and journal_mode=DELETE means the poller blocks every read it overlaps.
+// the connection, and journal_mode=DELETE means a fetch blocks every read it overlaps.
 // Finding that out at startup is much cheaper than finding it out from the data.
 func verifyPragmas(db *sql.DB, path string) error {
 	var journal string

@@ -69,7 +69,7 @@ func TestAFeedRemembersHowOftenItIsWorthFetching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	// Nothing worked out yet, which the poller reads as "a day".
+	// Nothing worked out yet, which a fetch reads as "a day".
 	if feed.FetchInterval != 0 {
 		t.Errorf("a new feed already claims an interval of %s", feed.FetchInterval)
 	}

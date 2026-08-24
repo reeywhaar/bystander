@@ -218,7 +218,7 @@ function isFiltered(page: Page | undefined): boolean {
  * them is a problem and the other two are ordinary.
  *
  * With no feeds there is nothing to do but add one. With feeds but no page — the ordinary state
- * for the first minute or two, while the poller fetches — what they want is to stop waiting, so
+ * for the first minute or two, while the feeds are fetched — what they want is to stop waiting, so
  * the button belongs right here rather than in a footer that only appears once there is a page
  * to sit under. And a filtered page with nothing on it has feeds and is not waiting: its filter
  * matches nothing, which is a thing to go and widen rather than a thing to compose again.

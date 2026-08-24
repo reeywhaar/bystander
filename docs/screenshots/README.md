@@ -107,8 +107,8 @@ on a newspaper page does.
 
 **`capture.sh`** — everything around it. Two parts are worth knowing about:
 
-- **It waits for the poller.** Adding a feed saves the articles that discovery already
-  parsed, which is why there is a page to photograph at all — but it is the poller that
+- **It waits for a fetch.** Adding a feed saves the articles that discovery already
+  parsed, which is why there is a page to photograph at all — but it is the fetch job that
   records a *successful fetch*, and its first cycle is a minute after startup. Without the
   wait, every row on the feeds page says "not fetched yet" underneath a feed whose articles
   are on the front page.

@@ -66,42 +66,67 @@ func serve(parent context.Context) error {
 
 	sessions := session.New(st, cfg.Secure, log)
 	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
-	poller := feeds.NewPoller(st, fetcher, log)
 	generator := edition.NewGenerator(st, log)
 	scheduler := edition.NewScheduler(st, generator, log)
 
-	// Background work that is nobody's request: measuring the pictures a feed brought in, and
-	// whatever else grows to need the same treatment. Every handler is registered here so
-	// that one file lists everything this program does when nobody is looking at it.
-	// How many measurements to line up when the queue runs dry. Enough that the runner is not
-	// asking the database for more every few seconds, small enough that a first run against a
-	// full database does not write thousands of rows before doing any of them.
-	const queueBatch = 200
+	// Everything this program does when nobody is looking at it, registered in one place so
+	// that one file lists it.
+	//
+	// Both kinds are outbound requests to other people's servers and they want opposite things,
+	// which is why the pace is per kind rather than shared. Fetching feeds used to be a poller
+	// of its own — its own ticker, its own pool, its own tally, its own words for what happened
+	// — and folding it in here is not about fetching better but about there being one answer to
+	// how background work is retried, logged, and picked up after a restart.
+	const (
+		// How many pictures to line up when the queue runs dry. Enough that the runner is not
+		// asking the database for more every few seconds, small enough that a first run
+		// against a full database does not write thousands of rows before doing any of them.
+		imageBatch = 200
+
+		// A ceiling on the feeds one pass starts, not a limit on how many may exist:
+		// whatever is left is still due and is taken next time round.
+		feedBatch = 100
+
+		// How many fetches run at once. Most of the time in a fetch is spent waiting on
+		// somebody else's server, so this is about not appearing as a flood.
+		feedWorkers = 6
+
+		// How often to look for feeds that have come due. Due-ness itself is per feed and
+		// lives in the feeds table — see feeds.Cadence — so this only decides the
+		// granularity, which is what lets a newly added feed be fetched within the minute
+		// while a weekly comic waits days.
+		feedLook = time.Minute
+	)
 
 	runner := jobs.New(st, log)
-	runner.Handle(feeds.MeasureImage, feeds.Measure(st, fetcher.UserAgent()))
 
-	// What to do when the queue runs dry: look for pictures nothing has measured.
-	//
-	// Asked by the runner rather than announced by whoever created the work. Hooks were the
-	// first design — after a poll, after the sweep, at startup — and they still missed the
-	// commonest case, because adding a feed through the interface saves its articles without
-	// going near the poller. A question the runner asks cannot be forgotten by a code path
-	// that did not know it was supposed to answer.
-	refill := func(ctx context.Context) {
-		n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch)
-		switch {
-		case err != nil:
-			log.Error("could not queue picture measurements", "error", err)
-		case n > 0:
-			log.Info("queued picture measurements", "count", n)
-		default:
-			// Nothing left to measure. Debug, because at Info this would be a line every
-			// minute for the life of an instance that has caught up — which is most of them,
-			// most of the time.
-			log.Debug("every picture has been measured")
-		}
-	}
+	runner.Handle(feeds.MeasureImage, jobs.Work{
+		Handle: feeds.Measure(st, fetcher.UserAgent()),
+		// Pictures nothing has measured yet. Asked for by the runner rather than announced by
+		// whoever created the work: hooks were the first design — after a fetch, after the
+		// sweep, at startup — and they still missed the commonest case, because adding a feed
+		// through the interface saves its articles without going near any of them.
+		Refill: func(ctx context.Context) (int, error) {
+			return feeds.QueueImageMeasurements(ctx, st, runner, imageBatch)
+		},
+	})
+
+	runner.Handle(feeds.FetchFeed, jobs.Work{
+		Handle: feeds.Fetch(st, fetcher, log),
+		Refill: func(ctx context.Context) (int, error) {
+			return feeds.QueueDueFeeds(ctx, st, runner, feedBatch)
+		},
+		Policy: jobs.Policy{
+			Every:       feedLook,
+			RefillEvery: feedLook,
+			Batch:       feedBatch,
+			Concurrency: feedWorkers,
+			// One try, because a feed already has a schedule of its own. A fetch that fails
+			// backs the feed off in the feeds table and comes round again as ordinary due
+			// work; retrying the job as well would be two clocks disagreeing about one feed.
+			MaxAttempts: 1,
+		},
+	})
 
 	server := api.New(cfg, st, sessions, generator, fetcher, spa, log)
 
@@ -109,9 +134,8 @@ func serve(parent context.Context) error {
 	defer stop()
 
 	go sessions.Run(ctx)
-	go poller.Run(ctx)
 	go scheduler.Run(ctx)
-	go runner.Run(ctx, refill)
+	go runner.Run(ctx)
 
 	httpServer := &http.Server{
 		Addr:    app.ListenAddr,

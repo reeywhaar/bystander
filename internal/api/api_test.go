@@ -192,7 +192,7 @@ func TestTwoSubscribersOneFetch(t *testing.T) {
 	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
 
 	// The second subscriber still causes a discovery fetch — the URL has to be checked
-	// before it is accepted — but both share one feed row, so the poller will fetch once.
+	// before it is accepted — but both share one feed row, so it is fetched once.
 	feeds, err := h.store.FeedIDs(t.Context())
 	if err != nil {
 		t.Fatalf("FeedIDs(): %v", err)

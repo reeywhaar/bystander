@@ -299,7 +299,7 @@ type importFailure struct {
 // and "what happened" the same thing.
 //
 // No feed is fetched here. A hundred subscriptions would be a hundred outbound requests
-// and several minutes of somebody watching a spinner, and the poller is about to fetch
+// and several minutes of somebody watching a spinner, and they are about to be fetched
 // them all anyway; the title from the file stands in until it does.
 func (s *Server) importFeeds(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
