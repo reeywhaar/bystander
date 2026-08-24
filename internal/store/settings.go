@@ -52,6 +52,13 @@ func validInterval(d time.Duration) bool {
 	return false
 }
 
+// ValidArticleWindow reports whether a duration is one of the reaches this program offers.
+//
+// Exported because an import has to decide what to do with a number somebody else's file
+// named, and "not one of ours" is a different answer from "invalid" — it takes the default
+// rather than refusing the feed.
+func ValidArticleWindow(d time.Duration) bool { return validWindow(d) }
+
 func validWindow(d time.Duration) bool {
 	for _, valid := range ArticleWindows {
 		if d == valid {

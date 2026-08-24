@@ -138,6 +138,8 @@ export interface PlannedFeed {
   feed_url: string;
   site_url: string;
   priority: number;
+  /** How far back the list says this feed is worth reading, in seconds. */
+  reach: number;
   already_subscribed: boolean;
   tags: PlannedTag[];
 }
@@ -152,6 +154,8 @@ export interface ImportSelection {
   title: string;
   site_url: string;
   priority: number;
+  /** Seconds. Carried back so a list's reaches arrive with its feeds. */
+  reach: number;
   tag_paths: string[][];
 }
 

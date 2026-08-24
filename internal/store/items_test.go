@@ -100,7 +100,7 @@ func TestAnEditedArticleIsNotShownAgain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	if _, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil); err != nil {
+	if _, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil); err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
 
@@ -384,7 +384,7 @@ func TestUnfollowingAFeedForgetsWhatWasReadThere(t *testing.T) {
 
 	var subs []*Subscription
 	for _, feed := range []*Feed{kept, dropped} {
-		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil)
+		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil)
 		if err != nil {
 			t.Fatalf("Subscribe(): %v", err)
 		}
@@ -431,7 +431,7 @@ func TestUnfollowingLeavesEverybodyElsesReadingAlone(t *testing.T) {
 			t.Fatalf("CreatePrincipal(): %v", err)
 		}
 		people = append(people, p)
-		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil)
+		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil)
 		if err != nil {
 			t.Fatalf("Subscribe(): %v", err)
 		}

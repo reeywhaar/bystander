@@ -279,9 +279,15 @@ func (s *Store) FeedIDs(ctx context.Context) ([]string, error) {
 }
 
 // Subscribe attaches a principal to a feed.
-func (s *Store) Subscribe(ctx context.Context, principalID, feedID string, priority int, tagIDs []string) (*Subscription, error) {
+// window is how far back this feed is read. A list being imported carries one per feed, so it
+// is set here rather than patched afterwards: a subscription that exists for a moment with the
+// wrong reach is a subscription somebody's next page could be composed from.
+func (s *Store) Subscribe(ctx context.Context, principalID, feedID string, priority int, window time.Duration, tagIDs []string) (*Subscription, error) {
 	if err := validatePriority(priority); err != nil {
 		return nil, err
+	}
+	if !validWindow(window) {
+		return nil, Invalid("%s is not one of the windows an article can be picked from", window)
 	}
 
 	sub := &Subscription{
@@ -289,7 +295,7 @@ func (s *Store) Subscribe(ctx context.Context, principalID, feedID string, prior
 		PrincipalID:   principalID,
 		FeedID:        feedID,
 		Priority:      priority,
-		ArticleWindow: DefaultArticleWindow,
+		ArticleWindow: window,
 		CreatedAt:     s.Now(),
 	}
 

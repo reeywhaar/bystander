@@ -34,11 +34,11 @@ func TestRetentionFollowsTheLongestWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	first, err := s.Subscribe(ctx, p.ID, daily.ID, DefaultPriority, nil)
+	first, err := s.Subscribe(ctx, p.ID, daily.ID, DefaultPriority, DefaultArticleWindow, nil)
 	if err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
-	second, err := s.Subscribe(ctx, p.ID, slow.ID, DefaultPriority, nil)
+	second, err := s.Subscribe(ctx, p.ID, slow.ID, DefaultPriority, DefaultArticleWindow, nil)
 	if err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
@@ -81,7 +81,7 @@ func TestTheWindowIsValidated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil)
+	sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil)
 	if err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}

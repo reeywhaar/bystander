@@ -35,6 +35,21 @@ import (
 // and a name nobody else would pick is enough to make it unambiguous.
 const PriorityAttr = "bystanderPriority"
 
+// ReachAttr carries how far back a feed is read, in seconds, for the same reason.
+//
+// A list is somebody's judgement about a set of feeds, and how far back each is worth reading
+// is part of that judgement — a news wire worth a day and a blog worth a year are not the same
+// recommendation. OPML has no attribute for it, so this is ours, named so that nobody else's
+// reader will mistake it for one of theirs.
+//
+// Seconds, and one of the values in store.ArticleWindows. A file naming anything else is read
+// as not having said, which is what a list written by some other program amounts to.
+const ReachAttr = "bystanderReach"
+
+// MaxReach is the largest reach a file may name, in seconds — a year, which is the longest
+// this program keeps an article for. Anything past it is read as not having said.
+const MaxReach = 365 * 24 * 60 * 60
+
 // dateFormat is RFC 1123 with the zone spelled the way the spec's examples spell it.
 const dateFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
 
@@ -50,6 +65,10 @@ type Feed struct {
 
 	// Priority is 0..100, or -1 when the file did not say.
 	Priority int
+
+	// Reach is how far back this feed is read, in seconds, or -1 when the file did not say.
+	// Zero is a real value and means no limit, which is why "did not say" cannot be zero.
+	Reach int
 }
 
 // Document is a whole subscription list.
@@ -88,7 +107,10 @@ type outline struct {
 	Category string `xml:"category,attr,omitempty"`
 	// Named through a struct tag rather than a Go field name, so the attribute is exactly
 	// PriorityAttr and stays that way if the constant moves.
-	Priority string    `xml:"bystanderPriority,attr,omitempty"`
+	Priority string `xml:"bystanderPriority,attr,omitempty"`
+	// Same again for the reach. `omitempty` is why "did not say" is -1 rather than zero: zero
+	// is a reach of its own — no limit — and would otherwise be indistinguishable from absent.
+	Reach    string    `xml:"bystanderReach,attr,omitempty"`
 	Children []outline `xml:"outline"`
 }
 
@@ -126,6 +148,10 @@ func Encode(w io.Writer, doc Document) error {
 		}
 		if feed.Priority >= 0 {
 			entry.Priority = fmt.Sprint(feed.Priority)
+		}
+		// Zero is written, because zero is a reach — no limit — and only -1 means unsaid.
+		if feed.Reach >= 0 {
+			entry.Reach = fmt.Sprint(feed.Reach)
 		}
 		out.Body.Outlines = append(out.Body.Outlines, entry)
 	}
@@ -249,6 +275,7 @@ func collect(entry outline, folders []string, into *[]Feed) {
 			SiteURL:    strings.TrimSpace(entry.HTMLURL),
 			Categories: ParseCategories(entry.Category),
 			Priority:   -1,
+			Reach:      -1,
 		}
 		// The folders a feed sits in are only used when it names no category itself. A
 		// file that carries both is telling us the same thing twice, and the explicit
@@ -261,6 +288,16 @@ func collect(entry outline, folders []string, into *[]Feed) {
 			if _, err := fmt.Sscanf(entry.Priority, "%d", &priority); err == nil &&
 				priority >= 0 && priority <= 100 {
 				feed.Priority = priority
+			}
+		}
+		// Anything that is not one of the reaches this program offers is read as unsaid.
+		// Bounds rather than a list here, because the list lives in the store and this
+		// package knows nothing about it; the store refuses the rest.
+		if entry.Reach != "" {
+			var reach int
+			if _, err := fmt.Sscanf(entry.Reach, "%d", &reach); err == nil &&
+				reach >= 0 && reach <= MaxReach {
+				feed.Reach = reach
 			}
 		}
 		*into = append(*into, feed)

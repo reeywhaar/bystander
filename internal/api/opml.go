@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"bystander/internal/app"
 	"bystander/internal/opml"
@@ -108,6 +109,9 @@ func (s *Server) exportDocument(r *http.Request, ids []string) (opml.Document, e
 			FeedURL:  sub.Feed.CanonicalURL,
 			SiteURL:  sub.Feed.SiteURL,
 			Priority: sub.Priority,
+			// How far back this feed is worth reading is part of what a list recommends: a
+			// news wire worth a day and a blog worth a year are not the same suggestion.
+			Reach: int(sub.ArticleWindow.Seconds()),
 		}
 		for _, tagID := range sub.TagIDs {
 			if path := paths[tagID]; len(path) > 0 {
@@ -143,10 +147,13 @@ type previewTag struct {
 // the question is the same both times: which of them do I want, and filed under what. Two
 // shapes would have meant two selection screens that drift.
 type previewFeed struct {
-	Title             string       `json:"title"`
-	FeedURL           string       `json:"feed_url"`
-	SiteURL           string       `json:"site_url"`
-	Priority          int          `json:"priority"`
+	Title    string `json:"title"`
+	FeedURL  string `json:"feed_url"`
+	SiteURL  string `json:"site_url"`
+	Priority int    `json:"priority"`
+	// Reach is how far back the list says this feed is worth reading, in seconds, already
+	// settled to something this program offers.
+	Reach             int          `json:"reach"`
 	AlreadySubscribed bool         `json:"already_subscribed"`
 	Tags              []previewTag `json:"tags"`
 }
@@ -230,6 +237,7 @@ func (s *Server) plan(r *http.Request, feeds []opml.Feed, following map[string]b
 			FeedURL:           canonical,
 			SiteURL:           feed.SiteURL,
 			Priority:          feed.Priority,
+			Reach:             feed.Reach,
 			AlreadySubscribed: following[canonical],
 			Tags:              make([]previewTag, 0, len(feed.Categories)),
 		}
@@ -238,6 +246,11 @@ func (s *Server) plan(r *http.Request, feeds []opml.Feed, following map[string]b
 		}
 		if entry.Priority < 0 {
 			entry.Priority = store.DefaultPriority
+		}
+		// A file naming a reach this program does not offer is a file that did not say —
+		// the same answer as one written by some other program, which says nothing at all.
+		if !store.ValidArticleWindow(time.Duration(entry.Reach) * time.Second) {
+			entry.Reach = int(store.DefaultArticleWindow.Seconds())
 		}
 
 		for _, path := range feed.Categories {
@@ -257,10 +270,12 @@ func (s *Server) plan(r *http.Request, feeds []opml.Feed, following map[string]b
 }
 
 type importFeed struct {
-	FeedURL  string     `json:"feed_url"`
-	Title    string     `json:"title"`
-	SiteURL  string     `json:"site_url"`
-	Priority *int       `json:"priority"`
+	FeedURL  string `json:"feed_url"`
+	Title    string `json:"title"`
+	SiteURL  string `json:"site_url"`
+	Priority *int   `json:"priority"`
+	// Reach in seconds, absent when the caller did not choose one.
+	Reach    *int       `json:"reach"`
 	TagPaths [][]string `json:"tag_paths"`
 }
 
@@ -341,7 +356,18 @@ func (s *Server) importFeeds(w http.ResponseWriter, r *http.Request) {
 			priority = *wanted.Priority
 		}
 
-		if _, err := s.store.Subscribe(r.Context(), p.ID, feed.ID, priority, tagIDs); err != nil {
+		// The reach the list named, if it named one this program offers. Anything else takes
+		// the default rather than refusing the feed: an import is somebody else's file, and a
+		// number it cannot honour is not a reason to drop a subscription on the floor.
+		window := store.DefaultArticleWindow
+		if wanted.Reach != nil {
+			named := time.Duration(*wanted.Reach) * time.Second
+			if store.ValidArticleWindow(named) {
+				window = named
+			}
+		}
+
+		if _, err := s.store.Subscribe(r.Context(), p.ID, feed.ID, priority, window, tagIDs); err != nil {
 			// Already following it is the ordinary outcome of importing a list twice, and
 			// is not a failure worth reporting as one.
 			if errors.Is(err, store.ErrConflict) {

@@ -180,7 +180,7 @@ func TestAFeedsTagsComeBackInOneOrder(t *testing.T) {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
 	// Attached in yet another order.
-	sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, []string{ids[0], ids[2]})
+	sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, []string{ids[0], ids[2]})
 	if err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}

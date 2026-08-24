@@ -68,6 +68,7 @@ func DecodeList(text string) *Document {
 				Title:    title,
 				FeedURL:  line[at[0]:at[1]],
 				Priority: -1,
+				Reach:    -1,
 			}
 			pending = ""
 			continue

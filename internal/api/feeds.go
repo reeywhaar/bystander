@@ -144,7 +144,7 @@ func (s *Server) addFeed(w http.ResponseWriter, r *http.Request) {
 	if body.Priority != nil {
 		priority = *body.Priority
 	}
-	sub, err := s.store.Subscribe(r.Context(), p.ID, feed.ID, priority, body.TagIDs)
+	sub, err := s.store.Subscribe(r.Context(), p.ID, feed.ID, priority, store.DefaultArticleWindow, body.TagIDs)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -218,9 +218,10 @@ func (s *Server) discoverFeeds(w http.ResponseWriter, r *http.Request) {
 			Title:   candidate.Title,
 			FeedURL: candidate.URL,
 			SiteURL: found.PageURL,
-			// A feed found in a site's markup carries no tags and no priority; the
-			// defaults apply and the interface offers every tag this person has.
+			// A feed found in a site's markup carries no tags, no priority and no reach;
+			// the defaults apply and the interface offers every tag this person has.
 			Priority: -1,
+			Reach:    -1,
 		})
 	}
 

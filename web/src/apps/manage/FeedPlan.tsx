@@ -1,5 +1,6 @@
 import type { ImportSelection, PlannedFeed, Tag } from "@app/api/types";
 import { Button } from "@app/components/ui/Button";
+import { Reach } from "@app/components/ui/Reach";
 import { tagLabel, tagPath } from "@app/lib/tags";
 
 /** A tag chip is identified by the tag it names, whether or not that tag exists yet. */
@@ -78,6 +79,7 @@ export function toImport(
       title: feed.title,
       site_url: feed.site_url,
       priority: feed.priority,
+      reach: feed.reach,
       tag_paths: paths,
     };
   });
@@ -222,6 +224,12 @@ function PlanRow({
           <span className="block truncate text-ink">{feed.title}</span>
           <span className="block truncate text-xs text-ink-faint">
             {feed.feed_url}
+          </span>
+          {/* What the list says this feed is worth reading back, which arrives with it. A
+              setting somebody is about to accept should be visible before they accept it,
+              not discovered afterwards in the feed's own dialog. */}
+          <span className="mt-1 block">
+            <Reach seconds={feed.reach} />
           </span>
         </span>
       </label>

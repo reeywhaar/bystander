@@ -38,7 +38,7 @@ func newInstance(t *testing.T, articles int) *instance {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	if _, err := st.Subscribe(ctx, p.ID, feed.ID, store.DefaultPriority, nil); err != nil {
+	if _, err := st.Subscribe(ctx, p.ID, feed.ID, store.DefaultPriority, store.DefaultArticleWindow, nil); err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
 

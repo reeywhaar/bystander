@@ -25,7 +25,7 @@ func twoFeeds(t *testing.T, each int) (*instance, *store.Feed, *store.Tag) {
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	if _, err := in.store.Subscribe(ctx, in.principal.ID, feed.ID, store.DefaultPriority, []string{tag.ID}); err != nil {
+	if _, err := in.store.Subscribe(ctx, in.principal.ID, feed.ID, store.DefaultPriority, store.DefaultArticleWindow, []string{tag.ID}); err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
 

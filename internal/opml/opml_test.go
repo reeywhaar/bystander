@@ -211,3 +211,60 @@ func TestRejectsWhatIsNotOpml(t *testing.T) {
 		}
 	}
 }
+
+// How far back a feed is worth reading is part of what a list recommends, so it has to survive
+// being written and read back.
+func TestAReachSurvivesTheRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	err := Encode(&buf, Document{Feeds: []Feed{
+		{Title: "Daily", FeedURL: "https://a.example.com/rss", Priority: 60, Reach: 86400},
+		// Zero is a reach of its own — no limit — and must not read back as "did not say".
+		{Title: "Everything", FeedURL: "https://b.example.com/rss", Priority: 50, Reach: 0},
+		{Title: "Unsaid", FeedURL: "https://c.example.com/rss", Priority: -1, Reach: -1},
+	}})
+	if err != nil {
+		t.Fatalf("Encode(): %v", err)
+	}
+
+	doc, err := Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode(): %v", err)
+	}
+	if len(doc.Feeds) != 3 {
+		t.Fatalf("%d feeds back, want 3", len(doc.Feeds))
+	}
+	for i, want := range []int{86400, 0, -1} {
+		if doc.Feeds[i].Reach != want {
+			t.Errorf("%s came back with reach %d, want %d",
+				doc.Feeds[i].Title, doc.Feeds[i].Reach, want)
+		}
+	}
+}
+
+// Somebody else's file, or a number this program does not offer. Neither is a reason to refuse
+// the feed; both mean the list did not say, and the default applies.
+func TestAReachNobodyOffersReadsAsUnsaid(t *testing.T) {
+	const file = `<?xml version="1.0"?>
+<opml version="2.0"><body>
+  <outline text="Odd" xmlUrl="https://a.example.com/rss" bystanderReach="12345"/>
+  <outline text="Huge" xmlUrl="https://b.example.com/rss" bystanderReach="999999999"/>
+  <outline text="Words" xmlUrl="https://c.example.com/rss" bystanderReach="a week"/>
+  <outline text="Silent" xmlUrl="https://d.example.com/rss"/>
+</body></opml>`
+
+	doc, err := Decode(strings.NewReader(file))
+	if err != nil {
+		t.Fatalf("Decode(): %v", err)
+	}
+	// The first is a number in range and is kept as said — the store is what decides whether
+	// it is one of the reaches on offer, and it takes the default when it is not.
+	if doc.Feeds[0].Reach != 12345 {
+		t.Errorf("an in-range number came back as %d", doc.Feeds[0].Reach)
+	}
+	for _, i := range []int{1, 2, 3} {
+		if doc.Feeds[i].Reach != -1 {
+			t.Errorf("%s came back with reach %d, want it read as unsaid",
+				doc.Feeds[i].Title, doc.Feeds[i].Reach)
+		}
+	}
+}

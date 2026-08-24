@@ -13,6 +13,7 @@ function planned(overrides: Partial<PlannedFeed> = {}): PlannedFeed {
     feed_url: "https://example.com/rss",
     site_url: "https://example.com",
     priority: 50,
+    reach: 604800,
     already_subscribed: false,
     tags: [],
     ...overrides,

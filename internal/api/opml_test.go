@@ -380,3 +380,80 @@ func TestTheSharedListRoundTrips(t *testing.T) {
 		t.Error("alice's tag was matched to one of bob's, and bob has none")
 	}
 }
+
+// A list is somebody's judgement about a set of feeds, and how far back each is worth reading
+// is part of that judgement — a news wire worth a day and a blog worth a year are not the same
+// recommendation. So it travels with the list and arrives applied.
+func TestASharedListBringsItsReachesWithIt(t *testing.T) {
+	h := newHarness(t)
+	daily := newFeedServer(t, 2)
+	yearly := newFeedServer(t, 2)
+
+	h.signIn(store.RoleUser, "alice")
+
+	var quick, slow subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": daily.URL}),
+		http.StatusCreated, &quick)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": yearly.URL}),
+		http.StatusCreated, &slow)
+
+	const day, year = 86400, 31536000
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+quick.ID,
+		map[string]any{"article_window": day}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+slow.ID,
+		map[string]any{"article_window": year}), http.StatusOK, nil)
+
+	file := h.exportOPML()
+	if !strings.Contains(file, opml.ReachAttr) {
+		t.Fatalf("the exported list says nothing about reach:\n%s", file)
+	}
+
+	// Somebody else opens it. The preview says what each feed would arrive with, before
+	// anybody accepts anything.
+	elsewhere := h.signInAsSomebodyElse("bob")
+
+	var plan struct {
+		Feeds []struct {
+			Title   string `json:"title"`
+			FeedURL string `json:"feed_url"`
+			Reach   int    `json:"reach"`
+		} `json:"feeds"`
+	}
+	res := h.doAs(elsewhere, http.MethodPost, "/api/feeds/import/preview", map[string]string{"opml": file})
+	h.expect(res, http.StatusOK, &plan)
+	if len(plan.Feeds) != 2 {
+		t.Fatalf("%d feeds in the plan, want 2", len(plan.Feeds))
+	}
+
+	wanted := map[string]int{}
+	for _, feed := range plan.Feeds {
+		wanted[feed.FeedURL] = feed.Reach
+	}
+
+	selection := make([]map[string]any, 0, len(plan.Feeds))
+	for _, feed := range plan.Feeds {
+		selection = append(selection, map[string]any{
+			"feed_url": feed.FeedURL,
+			"title":    feed.Title,
+			"reach":    feed.Reach,
+		})
+	}
+	h.expect(h.doAs(elsewhere, http.MethodPost, "/api/feeds/import",
+		map[string]any{"feeds": selection}), http.StatusOK, nil)
+
+	var theirs []subscriptionBody
+	h.expect(h.doAs(elsewhere, http.MethodGet, "/api/feeds", nil), http.StatusOK, &theirs)
+	if len(theirs) != 2 {
+		t.Fatalf("%d feeds followed, want 2", len(theirs))
+	}
+	for _, sub := range theirs {
+		if want := wanted[sub.URL]; int(sub.ArticleWindow) != want {
+			t.Errorf("%s arrived reaching back %ds, want %ds", sub.Title, sub.ArticleWindow, want)
+		}
+	}
+
+	// And the two are different, so this is not passing by everything taking one default.
+	if theirs[0].ArticleWindow == theirs[1].ArticleWindow {
+		t.Errorf("both arrived at %ds; the list's own reaches were not carried", theirs[0].ArticleWindow)
+	}
+}
