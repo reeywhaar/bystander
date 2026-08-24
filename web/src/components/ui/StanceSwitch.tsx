@@ -10,25 +10,41 @@
  * take — and a control laid out along that order says which is which by position before anybody
  * reads a label. The knob is the whole of the state: left, middle, right.
  *
- * Colour carries none of the meaning on its own. The palette here has one accent and no green,
- * and a traffic light would be the only one in the product; more to the point, position already
- * says it and a second signal that only some people can see is not a second signal.
+ * Green right and red left, which is the one place this product spends a colour that means
+ * something on its own — see --positive and --negative in styles.css. A switch answering
+ * taken-or-dropped is answering a question people have been answering in those two colours for
+ * longer than they have been using this, and house style is not worth a legend.
+ *
+ * Position carries the same meaning independently, so nothing here depends on telling green
+ * from red: left is off, middle is nothing, right is on.
  */
 export type Stance = "exclude" | "neutral" | "include";
 
-/** Where the knob sits, in pixels, in a track 56 wide with a knob 20 across. */
-const AT: Record<Stance, number> = { exclude: 2, neutral: 18, include: 34 };
+/**
+ * Where the knob sits, measured inside the border rather than outside it.
+ *
+ * The track is 56 wide with a 1px border, so what the knob is positioned within is 54; a 20px
+ * knob then sits 1 from either end and 17 from the left when centred. Measuring from the outer
+ * width instead left it a pixel adrift at every position — near enough to look like a mistake
+ * and not near enough to be one you could name.
+ */
+const AT: Record<Stance, number> = { exclude: 1, neutral: 17, include: 33 };
 
 const TRACK: Record<Stance, string> = {
-  exclude: "bg-ink/10",
+  exclude: "bg-negative/15",
   neutral: "bg-paper-sunken",
-  include: "bg-accent/20",
+  include: "bg-positive/15",
 };
 
 const KNOB: Record<Stance, string> = {
-  exclude: "bg-ink-faint",
-  neutral: "bg-ink-faint/50",
-  include: "bg-accent",
+  exclude: "bg-negative",
+  // Not a faded version of the other two. The middle position means "no opinion", not "not
+  // really there", and a knob you have to look for is a switch whose state you have to look
+  // for. Half-strength ink-faint measured 1.69:1 against its own track in the dark palette,
+  // which is invisible; ink-muted is 5.0:1 light and 6.5:1 dark, comfortably past the 3:1 that
+  // a control's own shape is meant to clear.
+  neutral: "bg-ink-muted",
+  include: "bg-positive",
 };
 
 const ORDER: Stance[] = ["exclude", "neutral", "include"];
@@ -57,7 +73,9 @@ export function StanceSwitch({
     >
       <span
         aria-hidden
-        className={`pointer-events-none absolute top-0.5 h-5 w-5 rounded-full transition-[left,background-color] duration-150 ${KNOB[value]}`}
+        // Centred against the border box rather than offset from the top, so the knob cannot
+        // drift by the width of the border the way it did horizontally.
+        className={`pointer-events-none absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full transition-[left,background-color] duration-150 ${KNOB[value]}`}
         style={{ left: AT[value] }}
       />
       {ORDER.map((stance) => (

@@ -22,6 +22,25 @@
   --accent-quiet: #b8674f;
 
   /*
+   * On and off, and the only two colours here that mean something on their own.
+   *
+   * Everything else in this palette is paper, ink and one accent, and a green and a red are a
+   * real cost against that — the same cost the browser's own blue would be. They earn it in one
+   * place: a switch that says whether something is taken or dropped is answering a question
+   * people have been answering with green and red for longer than they have been using this,
+   * and house style is not worth making somebody read a legend to find out which end is which.
+   *
+   * Muted rather than signal colours, because they sit next to warm paper and a burnt-red
+   * accent. The red is deliberately cooler and flatter than --accent, so the two do not read as
+   * the same colour used for two unrelated things.
+   *
+   * Never the only signal. Position says it too — left is off, right is on — which is what
+   * carries the meaning for anybody who cannot tell these two apart.
+   */
+  --positive: #3f7d4f;
+  --negative: #b0392c;
+
+  /*
    * The two reading stacks. System faces, so nothing is fetched for the text somebody
    * actually reads and the page paints without waiting on a font. The headline faces are a
    * separate argument, made in fonts/fonts.css and in the voices below.
@@ -48,6 +67,8 @@
     --rule: #2e2c25;
     --accent: #d97a5c;
     --accent-quiet: #a85c45;
+    --positive: #74b183;
+    --negative: #e2796a;
   }
 }
 
@@ -61,6 +82,8 @@
   --color-rule: var(--rule);
   --color-accent: var(--accent);
   --color-accent-quiet: var(--accent-quiet);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
 
   --font-serif: var(--serif);
   --font-sans: var(--sans);
