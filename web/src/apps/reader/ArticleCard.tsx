@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
-import type { Style, Voice } from "@app/lib/voice";
+import { columnsFor, type Style, type Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -62,11 +62,25 @@ export function ArticleCard({
   const measured = article.image_width > 0 && article.image_height > 0;
   const showSummary = article.summary !== "" && article.slot !== "brief";
 
+  // The picture beside the story rather than above it.
+  //
+  // Only on boxed cards, and only where there is an edge for it to sit against — a picture
+  // half the width of a card needs the frame, or it reads as one that failed to be full width.
+  // Never the lead: that one runs the width of the page and its picture is the page's opening
+  // image, which is a different job from illustrating a column.
+  const aside =
+    showImage && frame !== null && style.aside && article.slot !== "lead";
+
+  // A picture beside the story has taken the width the columns would have been set in, so the
+  // body is a single column whatever it drew. Two things competing for one measure is how a
+  // card ends up with neither.
+  const columns = aside ? 1 : columnsFor(article.slot, style.columns);
+
   return (
     <article
-      className={`slot-${article.slot} flex flex-col ${frameClass} ${
-        read ? "is-read" : ""
-      }`}
+      className={`slot-${article.slot} ${
+        aside ? "card-aside" : "flex flex-col"
+      } ${frameClass} ${read ? "is-read" : ""}`}
     >
       {showImage ? (
         <a
@@ -99,7 +113,7 @@ export function ArticleCard({
             //
             // The fit still varies on pictures nothing has measured, where the box is a
             // guess and showing one whole is as good an answer as cropping it.
-            className={`mb-3 w-full rounded-sm border border-rule ${
+            className={`w-full rounded-sm border border-rule ${aside ? "" : "mb-3"} ${
               !measured && style.fit === "contain"
                 ? "object-contain"
                 : "object-cover"
@@ -136,67 +150,72 @@ export function ArticleCard({
         </a>
       ) : null}
 
-      <SourceLine article={article} />
+      {/* Everything that is not the picture, as one block — so a card is two children and
+          the layout is only a question of direction. `flex-1` and `min-w-0` are for the row
+          only: `flex-basis: 0` in a column would make the body's hypothetical height zero,
+          which is the shape a collapsing auto-height flex container is made of. */}
+      <div
+        className={`card-body flex flex-col ${aside ? "min-w-0 flex-1" : ""}`}
+      >
+        <SourceLine article={article} />
 
-      {/* No size utility here. Both the size and the leading come from the slot and the
+        {/* No size utility here. Both the size and the leading come from the slot and the
           voice together, in styles.css, because a face's own scale is part of what makes
           six of them look like one size — see the .headline block there. */}
-      <h2 className={`headline voice-${voice} text-ink`}>
-        <a
-          href={article.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          {...opening(() => onRead(article.id, true))}
-          className="hover:underline underline-offset-4"
-        >
-          {article.title}
-        </a>
-      </h2>
+        <h2 className={`headline voice-${voice} text-ink`}>
+          <a
+            href={article.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            {...opening(() => onRead(article.id, true))}
+            className="hover:underline underline-offset-4"
+          >
+            {article.title}
+          </a>
+        </h2>
 
-      {showSummary ? (
-        <div
-          // No size utility, for the same reason the headline has none: the size is this
-          // story's own, from a ladder in styles.css, and a `text-base` here would win the
-          // cascade and flatten it. Larger than it began, too — the standfirst is the only
-          // prose on the page; everything else here is scanned, this is read.
-          className={`prose-summary prose-step-${style.prose} mt-2 text-ink-muted ${
-            // Only the widths over half a page: below that the measure is already short
-            // enough, and two columns of it would be two narrow ribbons.
-            (article.slot === "lead" || article.slot === "wide") &&
-            style.columns
-              ? "prose-columns"
-              : ""
-          }`}
-          // Sanitized on the server, at ingest, once — an allowlist of a dozen tags with
-          // every script and every attribute but a resolved href removed. It is not
-          // sanitized again here on purpose: a second sanitizer is a second thing to be
-          // wrong, and the safe form is what is stored. See internal/feeds/sanitize.go.
-          dangerouslySetInnerHTML={{ __html: article.summary }}
-        />
-      ) : null}
+        {showSummary ? (
+          <div
+            // No size utility, for the same reason the headline has none: the size is this
+            // story's own, from a ladder in styles.css, and a `text-base` here would win the
+            // cascade and flatten it. Larger than it began, too — the standfirst is the only
+            // prose on the page; everything else here is scanned, this is read.
+            className={`prose-summary prose-step-${style.prose} mt-2 text-ink-muted ${
+              // The drawn number, held to what this slot is wide enough to carry — see
+              // columnsFor. One column is not a split, so it gets no class at all.
+              columns > 1 ? `prose-columns prose-columns-${columns}` : ""
+            }`}
+            // Sanitized on the server, at ingest, once — an allowlist of a dozen tags with
+            // every script and every attribute but a resolved href removed. It is not
+            // sanitized again here on purpose: a second sanitizer is a second thing to be
+            // wrong, and the safe form is what is stored. See internal/feeds/sanitize.go.
+            dangerouslySetInnerHTML={{ __html: article.summary }}
+          />
+        ) : null}
 
-      {/* Directly under the article, not `mt-auto`. A grid cell stretches to the height of
+        {/* Directly under the article, not `mt-auto`. A grid cell stretches to the height of
           the tallest card in its row, so pinning this to the bottom left it stranded an
           inch below a short summary with nothing in between — tidy in a mockup where every
           card is the same length, and a hunt for the control on a real page. */}
-      {/* Close to its own story, not floating between two.
+        {/* Close to its own story, not floating between two.
           
           Cards hug their content now, so the only thing under this control is the grid's
           gap and then the next card — and at twelve pixels above against twenty-eight
           below it read as belonging to neither. Six is unambiguous: it is nearer to the
           article it marks than that article is to anything else. */}
-      <div className="pt-1.5">
-        <button
-          type="button"
-          onClick={() => onRead(article.id, !read)}
-          // Always there, and dim. A control that exists only while the pointer is over it
-          // cannot be found by somebody who does not already know it is there, and cannot
-          // be reached by touch at all. Half weight keeps it out of the way of the reading
-          // without hiding it, and it does not brighten — nothing on this page moves.
-          className="text-xs text-ink-faint opacity-50"
-        >
-          {read ? "Mark unread" : "Mark read"}
-        </button>
+        <div className="pt-1.5">
+          <button
+            type="button"
+            onClick={() => onRead(article.id, !read)}
+            // Always there, and dim. A control that exists only while the pointer is over it
+            // cannot be found by somebody who does not already know it is there, and cannot
+            // be reached by touch at all. Half weight keeps it out of the way of the reading
+            // without hiding it, and it does not brighten — nothing on this page moves.
+            className="text-xs text-ink-faint opacity-50"
+          >
+            {read ? "Mark unread" : "Mark read"}
+          </button>
+        </div>
       </div>
     </article>
   );

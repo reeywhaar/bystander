@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignVoices,
+  columnsFor,
   FRAME_RANKS,
   LINES,
+  MAX_COLUMNS,
   PROSE_STEPS,
   styleFor,
   VOICES,
@@ -119,12 +121,63 @@ describe("styleFor", () => {
   it("needs enough text before it splits a body into columns", () => {
     // Three lines cut down the middle is one paragraph with a gap in it.
     const short = ids(400).map((id) => styleFor(EDITION, id, "Too little."));
-    expect(short.every((s) => !s.columns)).toBe(true);
+    expect(short.every((s) => s.columns === 1)).toBe(true);
 
     const long = ids(400).map((id) => styleFor(EDITION, id, "x".repeat(900)));
-    expect(long.some((s) => s.columns)).toBe(true);
+    expect(long.some((s) => s.columns > 1)).toBe(true);
     // And not all of them, or a page would have no single-column wide stories to contrast.
-    expect(long.some((s) => !s.columns)).toBe(true);
+    expect(long.some((s) => s.columns === 1)).toBe(true);
+  });
+
+  it("draws every column count, and none above the ceiling", () => {
+    const long = ids(3000).map((id) => styleFor(EDITION, id, "x".repeat(900)));
+    const counts = new Set(long.map((s) => s.columns));
+
+    for (let n = 1; n <= MAX_COLUMNS; n++) {
+      expect(counts.has(n)).toBe(true);
+    }
+    expect(Math.max(...counts)).toBe(MAX_COLUMNS);
+    expect(Math.min(...counts)).toBe(1);
+
+    // Half of them unsplit, so a split stays the exception. Loose bounds: this is here to
+    // catch a page of nothing but columns, not to hold a ratio.
+    const single = long.filter((s) => s.columns === 1).length;
+    expect(single / long.length).toBeGreaterThan(0.3);
+    expect(single / long.length).toBeLessThan(0.7);
+  });
+
+  it("sets a picture beside the story on some cards and not others", () => {
+    const drawn = styles(2000);
+    const beside = drawn.filter((s) => s.aside).length;
+
+    // A coin toss, and it only means anything on a boxed card — which is one in five, so
+    // this is about one card in ten on a real page.
+    expect(beside / drawn.length).toBeGreaterThan(0.4);
+    expect(beside / drawn.length).toBeLessThan(0.6);
+  });
+});
+
+describe("columnsFor", () => {
+  // The drawn number is a preference; the slot is the constraint. A quarter-page card set in
+  // four columns is four ribbons, whatever it drew.
+  it("holds a card to what its width can carry", () => {
+    expect(columnsFor("lead", 4)).toBe(4);
+    expect(columnsFor("wide", 4)).toBe(3);
+    expect(columnsFor("feature", 4)).toBe(2);
+    expect(columnsFor("standard", 4)).toBe(1);
+    expect(columnsFor("brief", 4)).toBe(1);
+  });
+
+  it("never widens a card that asked for less", () => {
+    expect(columnsFor("lead", 1)).toBe(1);
+    expect(columnsFor("lead", 2)).toBe(2);
+    expect(columnsFor("wide", 2)).toBe(2);
+  });
+
+  // A slot nobody has heard of is a slot this page cannot reason about, and one column is the
+  // answer that is never wrong.
+  it("gives an unknown slot a single column", () => {
+    expect(columnsFor("something-new", 4)).toBe(1);
   });
 });
 
@@ -166,10 +219,11 @@ describe("assignVoices", () => {
       voice,
       prose: 0,
       frame: null,
-      columns: false,
+      columns: 1,
       rule: false,
       shot: 2,
       fit: "cover",
+      aside: false,
     }));
     expect(assignVoices(drawn)).toEqual([...VOICES]);
   });

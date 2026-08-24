@@ -47,10 +47,11 @@ const plain = (over: Partial<Style> = {}): Style => ({
   voice: "didone",
   prose: 1,
   frame: null,
-  columns: false,
+  columns: 1,
   rule: false,
   shot: 2,
   fit: "cover",
+  aside: false,
   ...over,
 });
 
@@ -144,6 +145,74 @@ describe("ArticleCard pictures", () => {
     show(1000, 4000, "lead");
     const img = document.querySelector("img")!;
     expect(img.className).toContain("aspect-[21/9]");
+  });
+});
+
+describe("ArticleCard layout", () => {
+  const render1 = (style: Style, slot: Slot = "standard") =>
+    render(
+      <ArticleCard
+        article={article({ image_width: 800, image_height: 600, slot })}
+        style={style}
+        voice="didone"
+        onRead={vi.fn()}
+      />,
+    );
+
+  const boxed = { line: "solid" as const, width: 1, ink: 1, pad: 1 };
+
+  // A picture beside the story needs an edge to sit against, or it reads as one that failed
+  // to be full width. The frame is that edge.
+  it("sets a picture beside the story only on a boxed card", () => {
+    render1(plain({ frame: boxed, aside: true }));
+    expect(document.querySelector("article")!.className).toContain(
+      "card-aside",
+    );
+
+    document.body.innerHTML = "";
+    render1(plain({ frame: null, aside: true }));
+    expect(document.querySelector("article")!.className).not.toContain(
+      "card-aside",
+    );
+  });
+
+  // The lead runs the width of the page and its picture opens the page. That is a different
+  // job from illustrating a column.
+  it("never sets the lead's picture beside it", () => {
+    render1(plain({ frame: boxed, aside: true }), "lead");
+    expect(document.querySelector("article")!.className).not.toContain(
+      "card-aside",
+    );
+  });
+
+  // The drawn number is a preference; the slot is the constraint.
+  it("gives a card only as many columns as its width can carry", () => {
+    render1(plain({ columns: 4 }), "lead");
+    expect(document.querySelector(".prose-summary")!.className).toContain(
+      "prose-columns-4",
+    );
+
+    document.body.innerHTML = "";
+    render1(plain({ columns: 4 }), "feature");
+    const feature = document.querySelector(".prose-summary")!.className;
+    expect(feature).toContain("prose-columns-2");
+    expect(feature).not.toContain("prose-columns-4");
+
+    document.body.innerHTML = "";
+    render1(plain({ columns: 4 }), "standard");
+    expect(document.querySelector(".prose-summary")!.className).not.toContain(
+      "prose-columns",
+    );
+  });
+
+  // Two things competing for one measure is how a card ends up with neither.
+  it("does not set a body in columns beside a picture", () => {
+    render1(plain({ frame: boxed, aside: true, columns: 4 }), "wide");
+    const card = document.querySelector("article")!;
+    expect(card.className).toContain("card-aside");
+    expect(document.querySelector(".prose-summary")!.className).not.toContain(
+      "prose-columns",
+    );
   });
 });
 

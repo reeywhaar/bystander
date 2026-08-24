@@ -125,7 +125,40 @@ export const SHOT_STEPS = 5;
  */
 const FIT_BAG = ["cover", "cover", "cover", "contain"] as const;
 
+/**
+ * How often a boxed card sets its picture beside the story, as a chance per card.
+ *
+ * Half of the boxed ones, which is one card in ten overall — boxes are one in five. Often
+ * enough to be a shape a reader starts to recognise, rare enough that it stays a variation on
+ * the page rather than a second default.
+ */
+const ASIDE_CHANCE = 0.5;
+
 export type Fit = (typeof FIT_BAG)[number];
+
+/**
+ * The most columns a story's standfirst is ever set in.
+ *
+ * Four, and only a full-width card can actually take four — see [columnsFor], which is where
+ * the drawn number meets the width it has to live in. Beyond four the measure stops being a
+ * column and becomes a list of words down the side of a page.
+ */
+export const MAX_COLUMNS = 4;
+
+/**
+ * How many columns a body is set in, as a bag to draw one from.
+ *
+ * A bag rather than a number and a rate, for the same reason the frames use one: the ratio is
+ * something you can count here instead of work out. Half the cards are a single column, a
+ * quarter are two, and three and four are the rare ones — which is the order of how much width
+ * each needs and how loud each is.
+ *
+ * A first attempt drew one to seven and clamped to four, which reads as the same idea and is
+ * not: four of the seven land on four, so more than half of every long story on the page came
+ * out in the widest setting there is. A bag cannot go wrong that quietly — the ratio is the
+ * thing you are looking at.
+ */
+const COLUMN_BAG = [1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4];
 
 /**
  * How much text is worth splitting into two columns.
@@ -166,8 +199,21 @@ export interface Style {
   prose: number;
   /** Null for most cards: a box is punctuation, and the padding belongs to the box. */
   frame: Frame | null;
-  /** Whether a wide card runs its body in two columns. The caller checks the width. */
-  columns: boolean;
+  /**
+   * How many columns this card would like its body set in, from 1 to [MAX_COLUMNS].
+   *
+   * "Would like", because a number is not a width: a four-column standfirst in a quarter of a
+   * page is four ribbons. The caller passes it through [columnsFor] with the slot.
+   */
+  columns: number;
+  /**
+   * Whether a boxed card sets its picture beside the story rather than above it.
+   *
+   * Only boxed ones, which is not an arbitrary pairing. A picture beside a story needs an edge
+   * to sit against or it reads as a picture that failed to be full width — the frame is that
+   * edge, and it is already the mark that says this card was arranged rather than poured.
+   */
+  aside: boolean;
   /** Whether a rule runs across the page above this card. */
   rule: boolean;
   /** Which step of the crop ladder this card's picture is cut to. */
@@ -238,10 +284,15 @@ export function styleFor(
   const ink = Math.floor(next() * FRAME_RANKS);
   const pad = Math.floor(next() * FRAME_RANKS);
 
-  const columns = next() < 0.5 && summary.length >= COLUMNS_NEED;
+  const columns =
+    summary.length >= COLUMNS_NEED
+      ? (COLUMN_BAG[Math.floor(next() * COLUMN_BAG.length)] ?? 1)
+      : 1;
+
   const rule = next() < RULE_CHANCE;
   const shot = Math.floor(next() * SHOT_STEPS);
   const fit = FIT_BAG[Math.floor(next() * FIT_BAG.length)] as Fit;
+  const aside = next() < ASIDE_CHANCE;
 
   return {
     voice,
@@ -251,7 +302,31 @@ export function styleFor(
     rule,
     shot,
     fit,
+    aside,
   };
+}
+
+/**
+ * How many columns a card can actually carry, given the slot it was given.
+ *
+ * The drawn number is a preference and the slot is the constraint, and this is where they
+ * meet. A quarter-page card has one column whatever it drew: the whole argument for splitting
+ * a body is that a wide measure is hard to read, and a narrow one split four ways is four
+ * things that are hard to read instead.
+ *
+ * The ceilings are the widths in styles.css read back as prose: a lead runs all sixteen
+ * tracks, a wide twelve, a feature eight, and everything else four.
+ */
+export function columnsFor(slot: string, columns: number): number {
+  const most =
+    slot === "lead"
+      ? MAX_COLUMNS
+      : slot === "wide"
+        ? 3
+        : slot === "feature"
+          ? 2
+          : 1;
+  return Math.max(1, Math.min(columns, most));
 }
 
 /**

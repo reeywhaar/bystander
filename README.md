@@ -166,6 +166,20 @@ article's id, so the same article is in the same face on every load and in every
 long as it is on the page — the same reason its position is fixed. No two headlines in a row
 share a face, which is the one rule a newspaper's headline typography actually has.
 
+The face is not the only thing drawn per article. A card may be **boxed** — one in five,
+in a line, weight, ink and inset each drawn separately, so no two boxes on a page are quite
+the same object. A long body may be set in **two, three or four columns**, as many as its
+width can carry. A picture is cut to its own shape where anything has measured it, and to a
+drawn one where nothing has. A boxed card may set its picture **beside** the story rather
+than above it. And a **rule** runs across the page every fifty cards or so, which is what
+breaks a long page into bands.
+
+All of it comes off one seeded stream per card, keyed on the edition and the article
+together — so the page is identical on reload and different tomorrow. The point is not
+decoration: a page of fifty identical cards has one landmark on it, and "it was somewhere in
+the middle" is all anybody can recall. A card with an outstanding shape is a card that can be
+looked *for*.
+
 The faces are served from this instance and never from Google, so rendering a page makes no
 request to a third party. Latin, Latin Extended and Cyrillic; about 400 KB in the binary,
 of which a browser fetches only the subsets a page has glyphs in. A script they cannot draw

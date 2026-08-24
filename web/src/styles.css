@@ -590,6 +590,51 @@ body {
    * Chosen per article, so a page has some of each. Two wide stories set differently are two
    * things a reader can tell apart, which is the argument for all of this.
    */
+  /*
+   * The picture beside the story rather than above it, on boxed cards.
+   *
+   * Two fifths to the picture, which is the share that reads as an illustration rather than as
+   * a card that has been cut in half. The story keeps `min-width: 0` because a flex child will
+   * otherwise refuse to shrink below its longest unbreakable word and push the picture off the
+   * edge — a headline with a URL in it is enough to do it.
+   */
+  .card-aside {
+    display: flex;
+    /*
+     * `row`, so the picture takes the inline start — the left of an English page and the
+     * right of an Arabic one, because the picture comes first in the markup and a row follows
+     * the writing direction.
+     *
+     * `row-reverse` would pin it to the physical right in both, which is a decision about
+     * pixels rather than about reading, and wrong the moment this is translated. It is also
+     * the order a screen reader follows and the order the stack collapses to on a phone.
+     */
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .card-aside > a:first-child {
+    flex: 0 0 40%;
+  }
+  /*
+   * Back to a stack once a card is narrow enough that two fifths of it is a thumbnail.
+   *
+   * 560px is where the grid gives every slot all sixteen tracks, so below it a card is the
+   * width of the screen — and a picture beside a story on a phone is a picture nobody can see
+   * next to a measure nobody can read.
+   */
+  @media (max-width: 560px) {
+    .card-aside {
+      /* `column`, not `column-reverse`: stacked, the picture belongs above the story, and
+         the markup already has it first. */
+      flex-direction: column;
+    }
+    .card-aside > a:first-child {
+      flex: none;
+      margin-bottom: 0.75rem;
+    }
+  }
+
   .prose-columns {
     columns: 2;
     column-gap: 2rem;
@@ -602,6 +647,34 @@ body {
        look broken rather than set. */
     orphans: 2;
     widows: 2;
+  }
+
+  /*
+   * Three and four, for the cards wide enough to hold them — a lead runs all sixteen tracks,
+   * and a sixteen-track measure set in one column is the thing columns exist to avoid.
+   *
+   * The count is drawn per article and then held to the slot's width in columnsFor, so these
+   * classes only ever land on a card that can carry them.
+   */
+  .prose-columns-3 {
+    columns: 3;
+  }
+  .prose-columns-4 {
+    columns: 4;
+  }
+
+  /*
+   * Two at most on a phone, whatever was drawn.
+   *
+   * Not a width the grid changes at — the cards are already full width by here — but the width
+   * at which a third column stops being a column. Four columns of a screen this wide is four
+   * words a line, which is a shape, not prose.
+   */
+  @media (max-width: 639.98px) {
+    .prose-columns-3,
+    .prose-columns-4 {
+      columns: 2;
+    }
   }
 
   /* Wider cards, higher floors. A feature will not go below sixteen, a lead below
