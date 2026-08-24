@@ -261,3 +261,44 @@ func TestUnmarkingAFeedReadOffersItsArticlesAgain(t *testing.T) {
 		t.Errorf("forgot %d on a feed with nothing marked, want 0", again)
 	}
 }
+
+// A feed read through a subscription must say the same thing as the same feed read directly.
+//
+// It did not: the join carried its own copy of the column list, and the copy had drifted, so a
+// subscription's feed reported an interval of fifty-seven thousand hours and a next fetch in
+// 1970. Nothing read those two fields that way, which is the only reason nobody noticed.
+func TestAFeedReadsTheSameThroughASubscription(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, _ := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	feed, _ := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	if _, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil); err != nil {
+		t.Fatalf("Subscribe(): %v", err)
+	}
+
+	next := s.Now().Add(6 * time.Hour).Truncate(time.Second)
+	if err := s.RecordSuccess(ctx, feed.ID, "The Example", "https://example.com",
+		"etag", "modified", 200, 6*time.Hour, next); err != nil {
+		t.Fatalf("RecordSuccess(): %v", err)
+	}
+
+	direct, err := s.FeedByID(ctx, feed.ID)
+	if err != nil {
+		t.Fatalf("FeedByID(): %v", err)
+	}
+	subs, err := s.ListSubscriptions(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ListSubscriptions(): %v", err)
+	}
+	if len(subs) != 1 {
+		t.Fatalf("%d subscriptions, want 1", len(subs))
+	}
+	through := subs[0].Feed
+
+	// Every field, so the next column added is covered on the day it is added rather than
+	// after somebody notices something reading oddly.
+	if *through != *direct {
+		t.Errorf("through a subscription:\n  %+v\ndirectly:\n  %+v", *through, *direct)
+	}
+}

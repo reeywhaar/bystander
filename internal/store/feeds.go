@@ -391,10 +391,18 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 	return &sub, nil
 }
 
-const subscriptionSelect = `SELECT ` + subscriptionColumns + `,
-	f.id, f.url, f.canonical_url, f.title, f.site_url, f.etag, f.last_modified,
-	f.last_fetch_at, f.last_success_at, f.last_status, f.last_error, f.last_error_body, f.failure_count, f.fetch_interval,
-	f.next_fetch_at, f.created_at
+// The feed's own columns come from the one list rather than a copy, and scanSubscription reads
+// them in that order — so the two cannot disagree.
+//
+// A copy is what this was, and it had already drifted: it listed fetch_interval where the scan
+// expected next_fetch_at, so every subscription came back claiming to be next fetched in 1970
+// and to have an interval of fifty-seven thousand hours. Nothing read those two fields off a
+// subscription, which is the only reason it was invisible — and exactly why the same mistake in
+// the edition query went unnoticed until every picture on the front page was reported as
+// unmeasured.
+//
+// A var rather than a const because prefixed is a function. That is the whole cost.
+var subscriptionSelect = `SELECT ` + subscriptionColumns + `, ` + prefixed(feedColumns, "f") + `
 	FROM subscriptions s JOIN feeds f ON f.id = s.feed_id`
 
 // ListSubscriptions returns everything a principal follows, with each feed's state and
