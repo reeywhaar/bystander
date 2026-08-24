@@ -5,7 +5,7 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute, until } from "@app/lib/time";
-import { assignVoices } from "@app/lib/voice";
+import { assignVoices, bandLength, styleFor } from "@app/lib/voice";
 import {
   useEdition,
   useFeeds,
@@ -62,16 +62,38 @@ export function ReaderPage({ me }: { me: Me }) {
 
         {hasPage ? (
           <div className="page-grid">
-            {/* Voices are assigned over the whole page, not per card: the rule that no two
-                headlines in a row share a face needs the sequence. */}
-            {assignVoices(page.items).map(({ article, voice }) => (
-              <ArticleCard
-                key={article.id}
-                article={article}
-                voice={voice}
-                onRead={(id, read) => setRead.mutate({ id, read })}
-              />
-            ))}
+            {/* One seeded stream per card, keyed on the edition and the article together —
+                so the page is identical on reload and different tomorrow. The voices are
+                then settled over the whole page, because "no two headlines in a row share a
+                face" is a fact about the sequence and a card cannot see it. */}
+            {(() => {
+              const styles = page.items.map((article) =>
+                styleFor(page.id, article.id, article.summary),
+              );
+              const voices = assignVoices(styles);
+              const band = bandLength(page.id);
+
+              return page.items.flatMap((article, i) => {
+                const card = (
+                  <ArticleCard
+                    key={article.id}
+                    article={article}
+                    style={styles[i]!}
+                    voice={voices[i]!}
+                    onRead={(id, read) => setRead.mutate({ id, read })}
+                  />
+                );
+                // A rule before the card that starts each new band, so the page reads as
+                // bands rather than as one field. Never before the first: a page does not
+                // open with a rule above its lead.
+                return i > 0 && i % band === 0
+                  ? [
+                      <hr key={`rule-${article.id}`} className="page-rule" />,
+                      card,
+                    ]
+                  : [card];
+              });
+            })()}
           </div>
         ) : (
           <EmptyPage

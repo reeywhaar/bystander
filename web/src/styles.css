@@ -178,37 +178,94 @@ body {
   }
 
   /*
-   * A card's frame.
+   * A rule across the page, between bands of cards.
    *
-   * Every card carries one and only the paint changes, which is what keeps a boxed story on
-   * the same gridlines as the columns beside it — see lib/voice.ts. The padding is here
-   * rather than on the boxed ones alone for exactly that reason: give it only to the boxed
-   * cards and their text insets a few pixels relative to their neighbours, which reads as a
-   * wobble rather than as a box.
+   * It spans every track, so nothing sits beside it: it closes the band above and starts a
+   * new one. That is most of what it is for — a page of fifty cards is one undifferentiated
+   * field without them, however much the cards themselves differ — and it also bounds how far
+   * `dense` reaches when it backfills, so a hole near the top stops being filled from four
+   * screens down.
    *
-   * No negative margin to pull it back out, though that is the obvious trick: it would take
-   * the padding out of the gutter, and two boxes either side of a gap would end up almost
-   * touching. The gap between cards is the page's, not the box's, and boxing does not get to
-   * spend it.
+   * Drawn in the paper's own hairline, at the weight everything else here is separated by. A
+   * heavier rule would make the bands the subject of the page rather than the stories.
+   */
+  .page-rule {
+    grid-column: span 16;
+    border-top: 1px solid var(--rule);
+    /* The gap either side is the grid's, so this only needs to not add to it. */
+    margin: 0;
+    height: 0;
+  }
+
+  /*
+   * A card's frame, on the cards that have one.
    *
-   * `--rule` is the paper's hairline, the same line that separates everything else here. A
-   * box should be noticed on the second pass, not the first.
+   * The padding belongs to the box and only to the box. It used to be on every card, with a
+   * transparent border on the unboxed ones, so that a boxed story sat on exactly the same
+   * gridlines as its neighbours — but that gave every unboxed card an inset with nothing to
+   * justify it, which is a narrower column bought for nothing. A box insets its contents;
+   * that is most of what a box is.
+   *
+   * No negative margin to pull the border back out into the gutter, though that is the
+   * obvious trick: two boxes either side of a gap would end up almost touching. The gap
+   * between cards belongs to the page, and boxing does not get to spend it.
+   *
+   * `--rule` is the paper's hairline, the same line that separates everything else here, and
+   * it is mixed with the page rather than swapped for another colour — so the strength below
+   * reads as more or less ink rather than as a different pen.
    */
   .frame {
-    border: 1px solid transparent;
-    padding: 0.625rem;
+    --frame-ink: 55%;
+    --frame-pad: 0.75rem;
+    --frame-width: 1px;
+
+    border: var(--frame-width) solid
+      color-mix(in srgb, var(--rule) var(--frame-ink), transparent);
+    padding: var(--frame-pad);
   }
   .frame-solid {
     border-style: solid;
-    border-color: var(--rule);
   }
   .frame-dashed {
     border-style: dashed;
-    border-color: var(--rule);
   }
   .frame-dotted {
     border-style: dotted;
-    border-color: var(--rule);
+  }
+
+  /* How strongly the line is inked. The faint end is nearly the paper itself, which is what
+     makes the plain end read as deliberate rather than as the only option there was. */
+  .frame-ink-0 {
+    --frame-ink: 30%;
+  }
+  .frame-ink-1 {
+    --frame-ink: 55%;
+  }
+  .frame-ink-2 {
+    --frame-ink: 80%;
+  }
+
+  /* And how heavy it is. A hairline and a two-pixel rule are different marks, not the same
+     mark louder — which is the whole reason this is drawn separately from the ink. */
+  .frame-width-0 {
+    --frame-width: 1px;
+  }
+  .frame-width-1 {
+    --frame-width: 1.5px;
+  }
+  .frame-width-2 {
+    --frame-width: 2px;
+  }
+
+  /* And how far the story sits inside it. */
+  .frame-pad-0 {
+    --frame-pad: 0.5rem;
+  }
+  .frame-pad-1 {
+    --frame-pad: 0.75rem;
+  }
+  .frame-pad-2 {
+    --frame-pad: 1.125rem;
   }
 
   /*

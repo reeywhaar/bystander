@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
 import { exact, since } from "@app/lib/time";
-import { frameFor, proseStep, setsInColumns, type Voice } from "@app/lib/voice";
+import type { Style, Voice } from "@app/lib/voice";
 
 /**
  * Handlers that mark an article read however it was opened.
@@ -38,20 +38,30 @@ function opening(onOpen: () => void) {
  */
 export function ArticleCard({
   article,
+  style,
   voice,
   onRead,
 }: {
   article: Article;
+  /** Everything about how this card looks, drawn from the edition and the article. */
+  style: Style;
+  /** The face, which is the one thing the page decides rather than the card. */
   voice: Voice;
   onRead: (id: string, read: boolean) => void;
 }) {
   const read = article.read_at !== null;
+  // Null for most of them: a box is punctuation, and the padding belongs to the box rather
+  // than to every card that might have had one.
+  const frame = style.frame;
+  const frameClass = frame
+    ? `frame frame-${frame.line} frame-width-${frame.width} frame-ink-${frame.ink} frame-pad-${frame.pad}`
+    : "";
   const showImage = article.image_url !== "" && article.slot !== "brief";
   const showSummary = article.summary !== "" && article.slot !== "brief";
 
   return (
     <article
-      className={`slot-${article.slot} frame frame-${frameFor(article.id)} flex flex-col ${
+      className={`slot-${article.slot} flex flex-col ${frameClass} ${
         read ? "is-read" : ""
       }`}
     >
@@ -103,11 +113,11 @@ export function ArticleCard({
           // story's own, from a ladder in styles.css, and a `text-base` here would win the
           // cascade and flatten it. Larger than it began, too — the standfirst is the only
           // prose on the page; everything else here is scanned, this is read.
-          className={`prose-summary prose-step-${proseStep(article.id)} mt-2 text-ink-muted ${
+          className={`prose-summary prose-step-${style.prose} mt-2 text-ink-muted ${
             // Only the widths over half a page: below that the measure is already short
             // enough, and two columns of it would be two narrow ribbons.
             (article.slot === "lead" || article.slot === "wide") &&
-            setsInColumns(article.id, article.summary)
+            style.columns
               ? "prose-columns"
               : ""
           }`}

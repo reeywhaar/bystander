@@ -1,9 +1,9 @@
 /**
  * How one article is made to look unlike the ones around it.
  *
- * Four things vary per article and all of them are decided here or beside here: the face a
- * headline is set in, the size its standfirst is set at, whether the card is boxed, and — on
- * the server — how many columns it takes.
+ * Five things vary per card — the face its headline is set in, the size its standfirst is set
+ * at, whether it is boxed and how, and whether a wide one runs its body in two columns. A
+ * sixth, how many columns of the grid it takes, is the server's and lives in internal/edition.
  *
  * **This is about memory, not decoration.** The page is fixed: it is composed once and does
  * not move until the next one, and the whole point of that is that somebody can come back to
@@ -14,34 +14,24 @@
  * be looked *for* rather than scanned past. Where an article sits is half of finding it
  * again; what it looked like is the other half.
  *
- * That is also why every one of these is a pure function of the article's id rather than a
- * random draw at render time. A landmark that moves is not a landmark.
+ * Everything here is drawn from one seeded stream per card, and the seed is the edition and
+ * the article together. Two consequences, both wanted:
  *
- * And it is why the rules below care about neighbours. Four independent draws will now and
- * then hand two adjacent cards the same face, the same size and the same frame, which is the
- * blend again in the one place it is most confusing — two things side by side that are
- * telling the reader they are the same thing.
+ * - **Stable within a page.** Every draw is a pure function of two ids that do not change
+ *   while the page is up, so nothing moves on reload, in a second tab, or after something is
+ *   marked read. A landmark that moves is not a landmark.
+ * - **New on the next page.** An article that survives into tomorrow's edition is dealt a
+ *   different hand, because the edition id changed. Tomorrow is a different page and ought to
+ *   look like one — an article boxed in perpetuity would be a fact about the article rather
+ *   than about the page it is on.
+ *
+ * A stream rather than slices of one hash, which is what this was. Six values were cut out of
+ * one 32-bit number at hand-chosen offsets, which meant tracking which bits were spent and
+ * hoping two draws had not landed on overlapping ones. Successive draws from a generator are
+ * independent without anybody having to keep count.
  */
 
-/**
- * Which of the house display faces a headline is set in.
- *
- * A newspaper does not set every headline on a page in the same face, and this reader is
- * composing a newspaper page out of feeds that have nothing to do with each other. Six
- * voices, defined in styles.css, and an article gets one of them.
- *
- * **Random, but only once.** The face is a pure function of the article's id, so the same
- * article is in the same face on every load, in every tab, for as long as it is on the
- * page. That is not a detail — the reader's whole layout is fixed server-side precisely so
- * that where an article sits is how somebody remembers where they were, and typography that
- * reshuffled on reload would undo that more thoroughly than moving the cards would.
- *
- * Decided here rather than stored beside the slot, which is the other obvious place. A
- * slot has to be stored: it comes out of a weighted draw that cannot be repeated. A voice
- * is a hash of an id that is already on the page, so storing it would buy the same answer
- * at the price of a column, a migration and an API field.
- */
-
+/** The house display faces, defined in styles.css. */
 export const VOICES = [
   "didone",
   "antique",
@@ -54,12 +44,90 @@ export const VOICES = [
 export type Voice = (typeof VOICES)[number];
 
 /**
- * FNV-1a, 32 bits.
+ * A card's frame, when it has one.
+ *
+ * Four things vary and they are drawn separately, so a box is not one mark repeated. Nobody is
+ * going to catalogue the combinations; the point is that no two boxes on a page are quite the
+ * same object, which is what stops the boxed stories blending into each other the way the
+ * unboxed ones used to.
+ */
+export interface Frame {
+  /** The line it is drawn in. */
+  line: (typeof LINES)[number];
+  /** How thick that line is. */
+  width: number;
+  /** How strongly it is inked, faint to plain. */
+  ink: number;
+  /** How far the story sits inside it. */
+  pad: number;
+}
+
+/** The lines a box can be drawn in. */
+export const LINES = ["solid", "dashed", "dotted"] as const;
+
+/**
+ * What a card is boxed in, as a bag to draw one from — null for the ones that are not.
+ *
+ * A bag rather than a rate and then a separate draw for the line, because the ratio is
+ * something you can count here instead of something you have to work out: about half the
+ * cards are left alone, and of the ones that are boxed, dashed is the commonest line.
+ *
+ * Half is high for what is meant to be punctuation, and an earlier version of this was a
+ * fifth on exactly that reasoning. What makes it work at this rate is that a box is not one
+ * mark: the line, its weight, its ink and its inset are drawn separately, so most boxes on a
+ * page are visibly different objects rather than the same rule repeated. A page of identical
+ * boxes at this frequency would be a table; a page of these is a page with a lot of marks on
+ * it, which is the point — a card nobody can tell from its neighbours is a card nobody can
+ * find again.
+ */
+const LINE_BAG: (Frame["line"] | null)[] = [
+  ...Array<null>(10).fill(null),
+  "dashed",
+  "dashed",
+  "dashed",
+  "dashed",
+  "dotted",
+  "dotted",
+  "dotted",
+  "solid",
+  "solid",
+  "solid",
+];
+
+/** How many sizes a standfirst can be set in. The ladder itself is in styles.css. */
+export const PROSE_STEPS = 4;
+
+/** How many steps each of a frame's dimensions has. */
+export const FRAME_RANKS = 3;
+
+/**
+ * How much text is worth splitting into two columns.
+ *
+ * Three lines cut down the middle is not two columns, it is one paragraph with a gap in it —
+ * which was visible the first time this shipped, on a lead whose standfirst was a sentence and
+ * a half. Characters rather than lines, because how many lines that is depends on the width,
+ * the size drawn from the ladder and the face, none of which this can see.
+ */
+const COLUMNS_NEED = 600;
+
+/** Everything about how one card looks that is not the server's to decide. */
+export interface Style {
+  voice: Voice;
+  /** Which step of the size ladder the standfirst is set at. */
+  prose: number;
+  /** Null for most cards: a box is punctuation, and the padding belongs to the box. */
+  frame: Frame | null;
+  /** Whether a wide card runs its body in two columns. The caller checks the width. */
+  columns: boolean;
+}
+
+/**
+ * FNV-1a, 32 bits — used to turn two ids into one seed.
  *
  * Any spreading function would do, and this one is four lines. It matters that it is not
- * `id.length % 6` or the last character: ids are 26 characters of Crockford base32 over a
- * timestamp and ten random bytes, so anything reading a fixed position risks reading the
- * timestamp — and every article on one page was minted within the same second.
+ * `id.length` or the last character: ids are opaque strings that share a prefix, and within
+ * one edition they were minted in the same second, so anything reading a fixed position risks
+ * reading the part that does not vary.
  */
 function hash(text: string): number {
   let h = 0x811c9dc5;
@@ -67,149 +135,111 @@ function hash(text: string): number {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
-  // Unsigned: Math.imul returns a signed 32-bit result, and a negative operand to % would
-  // give a negative index.
+  // Unsigned: Math.imul returns a signed 32-bit result, and a negative seed would make the
+  // first draw negative too.
   return h >>> 0;
 }
 
-function voiceAt(index: number): Voice {
-  // The modulo has already put this in range; the assertion is only what tells TypeScript
-  // so, since noUncheckedIndexedAccess cannot know it.
-  return VOICES[index % VOICES.length] as Voice;
+/**
+ * mulberry32: a small, fast, well-distributed generator.
+ *
+ * Thirty-two bits of state is plenty for drawing seven small numbers. Written out rather than
+ * depended on — it is six lines, and a dependency here would be a dependency in the bundle
+ * that has to paint immediately.
+ */
+function generator(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /**
- * How many sizes a standfirst can be set in.
+ * How one card looks, on one page.
  *
- * The sizes themselves are in styles.css, as `.prose-step-0` upwards — a ladder from a shade
- * under a pixel-16 to a shade over eighteen.
+ * The draws happen in a fixed order and every card makes all of them, including the ones it
+ * will not use. A card that skipped its frame draws because it is not boxed would leave every
+ * draw after them reading a different number, and "does this one set its body in columns"
+ * would secretly depend on whether it happened to be boxed.
  */
-export const PROSE_STEPS = 4;
+export function styleFor(
+  editionID: string,
+  articleID: string,
+  summary = "",
+): Style {
+  // A separator that cannot appear in an id, so two different pairs cannot concatenate into
+  // the same string.
+  const next = generator(hash(editionID + " " + articleID));
 
-/**
- * Which step an article's standfirst is set at.
- *
- * **Not tied to how wide the card is**, which is the whole point. Size used to follow the
- * slot: wide cards got the large setting, narrow cards the small one, so every page had
- * exactly two sizes of prose on it arranged largest-first — which is a template, not a page.
- * A compositor does the opposite constantly, setting a single column large for emphasis and
- * a wide feature small and dense, and that mismatch between column width and type size is
- * most of what stops a page reading as a grid somebody filled in.
- *
- * A pure function of the id, exactly as the voice is, and for the same reason: the layout is
- * fixed server-side so that where an article sits is how somebody remembers where they were,
- * and type that resized on reload would undo that.
- *
- * Worked out by the card rather than handed down like the voice, because there is no rule
- * here about neighbours. Two faces in a row would read as the page failing to notice; two
- * standfirsts a step apart read as a page that was set.
- *
- * A different slice of the hash than the voice takes, so a face and a size are not quietly
- * locked together either — every Oswald headline over the same size of prose would be a
- * pattern, and the whole idea is that there is not one.
- */
-export function proseStep(id: string): number {
-  return (hash(id) >>> 16) % PROSE_STEPS;
+  const voice = VOICES[Math.floor(next() * VOICES.length)] as Voice;
+  const prose = Math.floor(next() * PROSE_STEPS);
+
+  // One draw decides both whether there is a box and what it is drawn in.
+  const line = LINE_BAG[Math.floor(next() * LINE_BAG.length)] ?? null;
+  const width = Math.floor(next() * FRAME_RANKS);
+  const ink = Math.floor(next() * FRAME_RANKS);
+  const pad = Math.floor(next() * FRAME_RANKS);
+
+  const columns = next() < 0.5 && summary.length >= COLUMNS_NEED;
+
+  return {
+    voice,
+    prose,
+    frame: line ? { line, width, ink, pad } : null,
+    columns,
+  };
 }
 
 /**
- * How a card is framed: boxed, or not.
+ * How many cards go between the rules that run across the page.
  *
- * Newspapers box a story to set it apart from the columns around it — a sidebar, a standalone
- * item, something that is not part of the flow. It is one of the few marks a page makes that
- * is not type, and a page with none of them is flatter for it.
+ * A newspaper breaks its page into bands with a rule, and the bands are what make a page
+ * scannable at arm's length — you find the band first and the story second. Without them a
+ * grid of fifty cards is one undifferentiated field, however much the cards differ.
  *
- * The transparent one is doing real work. Every card carries the same border and the same
- * padding, and only the *paint* changes — so a boxed story sits on exactly the same
- * gridlines as an unboxed one, and boxing costs nothing in alignment. Give the border only
- * to the boxed cards and their text insets by a couple of pixels relative to their
- * neighbours, which reads as a wobble rather than as a box.
+ * It also does something structural. A rule spans every track, so nothing can sit beside it:
+ * it closes the band above and starts a new one, which bounds how far `dense` can reach when
+ * it backfills. A hole near the top of the page stops being filled by a card from four
+ * screens down.
+ *
+ * Drawn once per page rather than fixed, so the bands are not the same size on every edition,
+ * and drawn from the edition alone because it is a fact about the page rather than about any
+ * article on it.
  */
-export const FRAMES = ["transparent", "solid", "dashed", "dotted"] as const;
-
-export type Frame = (typeof FRAMES)[number];
-
-/**
- * How often a card is boxed at all, as one in this many.
- *
- * Boxing is punctuation. A page where a sixth of the cards are boxed has texture; a page
- * where half of them are has a table.
- */
-const BOXED_IN = 6;
-
-/**
- * Which frame a card takes.
- *
- * A pure function of the id, as the voice and the type ladder are, and for the same reason:
- * the layout is fixed so that where an article sits is how somebody remembers where they
- * were, and a box that came and went on reload would undo that.
- *
- * Its own slice of the hash again, so being boxed is not secretly the same fact as being
- * set in Oswald.
- */
-export function frameFor(id: string): Frame {
-  const h = hash(id) >>> 24;
-  if (h % BOXED_IN !== 0) return "transparent";
-  // Of the boxed ones, which line. Taken from a different part of the same byte so the
-  // three styles are evenly spread among them rather than one being far rarer.
-  return FRAMES[1 + (((h / BOXED_IN) | 0) % (FRAMES.length - 1))] as Frame;
+export function bandLength(editionID: string): number {
+  const next = generator(hash(editionID));
+  // Five to nine. Fewer and the rules are the loudest thing on the page; more and a band is
+  // long enough that the rule at the top of it has been forgotten by the bottom.
+  return 5 + Math.floor(next() * 5);
 }
 
 /**
- * Whether a wide story's body is set in two columns.
+ * The voices for a page, with no two in a row the same.
  *
- * Only asked about the widths over half a page — see the caller. That is where the problem
- * is: a standfirst running the whole sixteen tracks is a line of prose seven hundred pixels
- * long, and the eye loses its place coming back to the start of the next one. Two columns is
- * the answer newspapers have always used, and it spends the width rather than throwing it
- * away with a measure cap.
+ * That is the one rule a newspaper's headline typography actually has, and an independent draw
+ * breaks it about one time in six — which does not read as chance, it reads as the page having
+ * failed to notice. It cannot be decided per card, because it is a fact about the sequence;
+ * everything else in [Style] can be, and is.
  *
- * Not every wide story, so a page has some of each. Two wide stories set differently are two
- * things a reader can tell apart, which is the argument for all of this.
+ * Reading order is the server's rank order, which is not exactly what "adjacent" means once a
+ * dense grid has filled its holes, but it is what stops a run of three.
  */
-export function setsInColumns(id: string, summary: string): boolean {
-  // Enough text to be worth splitting. Three lines cut down the middle is not two columns,
-  // it is one paragraph with a gap in it — which was visible the first time this shipped, on
-  // a lead whose standfirst was a sentence and a half.
-  //
-  // Characters rather than lines, because the number of lines depends on the width, the size
-  // drawn from the ladder and the face — none of which this can see. Six hundred is about
-  // eight lines across half a wide card, which is the point where two columns start reading
-  // as a decision.
-  if (summary.length < 600) return false;
-  // Its own bit again, so this is not secretly the same fact as the frame or the face.
-  return ((hash(id) >>> 12) & 1) === 1;
-}
+export function assignVoices(styles: readonly Style[]): Voice[] {
+  let previous: Voice | null = null;
 
-/**
- * Assign a voice to each article, in the order the server put them in.
- *
- * Returns the articles paired with their voices rather than a bare list, so a caller cannot
- * pair them up wrongly and does not have to index into a second array to render one.
- *
- * **No two in a row share a face.** That is the one rule a newspaper's headline typography
- * actually has, and a plain hash breaks it about one time in six — which does not read as
- * chance, it reads as the page having failed to notice. Reading order is the server's rank
- * order, which is not exactly what "adjacent" means once a dense grid has filled its holes,
- * but it is what stops a run of three.
- */
-export function assignVoices<T extends { id: string }>(
-  articles: readonly T[],
-): { article: T; voice: Voice }[] {
-  let previous = -1;
-
-  return articles.map((article) => {
-    const h = hash(article.id);
-    let index = h % VOICES.length;
-
-    if (index === previous) {
-      // Stepped by a second slice of the same hash rather than to the next face along. A
-      // fixed +1 would turn every collision into the same pair — didone always followed by
-      // antique — which is a pattern a reader notices well before they could name it.
-      index = (index + 1 + ((h >>> 8) % (VOICES.length - 1))) % VOICES.length;
+  return styles.map((style) => {
+    let voice = style.voice;
+    if (voice === previous) {
+      // Stepped by the card's own prose draw rather than to the next face along. A fixed +1
+      // would turn every collision into the same pair — didone always followed by antique —
+      // which is a pattern a reader notices well before they could name it.
+      const at = VOICES.indexOf(voice);
+      voice = VOICES[(at + 1 + style.prose) % VOICES.length] as Voice;
     }
-
-    previous = index;
-    return { article, voice: voiceAt(index) };
+    previous = voice;
+    return voice;
   });
 }

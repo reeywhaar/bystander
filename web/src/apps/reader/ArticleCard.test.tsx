@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Article, Slot } from "@app/api/types";
 
+import type { Style } from "@app/lib/voice";
+
 import { ArticleCard } from "@app/apps/reader/ArticleCard";
 
 function article(overrides: Partial<Article> = {}): Article {
@@ -38,12 +40,26 @@ function auxClick(element: Element, button: number) {
   );
 }
 
+/** A plain style, so a test that is not about presentation need not describe one. */
+const plain = (over: Partial<Style> = {}): Style => ({
+  voice: "didone",
+  prose: 1,
+  frame: null,
+  columns: false,
+  ...over,
+});
+
 describe("ArticleCard", () => {
   // The size is the story's, from a ladder in styles.css, and the slot only sets a floor
   // under it. A utility here would win the cascade and flatten both.
   it("sets its standfirst from the ladder, not from a size utility", () => {
     const { container } = render(
-      <ArticleCard article={article()} voice="gothic" onRead={() => {}} />,
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="gothic"
+        onRead={() => {}}
+      />,
     );
     const summary = container.querySelector(".prose-summary");
     expect(summary?.className).toMatch(/\bprose-step-[0-3]\b/);
@@ -52,7 +68,12 @@ describe("ArticleCard", () => {
 
   it("carries the voice the page gave it, and no size of its own", () => {
     const { container } = render(
-      <ArticleCard article={article()} voice="gothic" onRead={() => {}} />,
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="gothic"
+        onRead={() => {}}
+      />,
     );
     const headline = container.querySelector("h2");
     expect(headline).toHaveClass("headline");
@@ -67,6 +88,7 @@ describe("ArticleCard", () => {
       const { container, unmount } = render(
         <ArticleCard
           article={article({ slot })}
+          style={plain()}
           voice="didone"
           onRead={() => {}}
         />,
@@ -78,7 +100,14 @@ describe("ArticleCard", () => {
 
   it("marks read when the headline is opened", async () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
+    render(
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={onRead}
+      />,
+    );
 
     await userEvent.click(screen.getByRole("link", { name: "A headline" }));
     expect(onRead).toHaveBeenCalledWith("a_1", true);
@@ -89,7 +118,14 @@ describe("ArticleCard", () => {
   // maps only to `click`, so it silently did not count as opening anything.
   it("marks read when the headline is opened with the middle button", () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
+    render(
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={onRead}
+      />,
+    );
 
     auxClick(screen.getByRole("link", { name: "A headline" }), 1);
     expect(onRead).toHaveBeenCalledWith("a_1", true);
@@ -98,7 +134,12 @@ describe("ArticleCard", () => {
   it("marks read when the picture is opened with the middle button", () => {
     const onRead = vi.fn();
     const { container } = render(
-      <ArticleCard article={article()} voice="didone" onRead={onRead} />,
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={onRead}
+      />,
     );
 
     // The picture is a second link to the same article, hidden from the accessibility
@@ -113,7 +154,14 @@ describe("ArticleCard", () => {
   // auxclick fires for the right button too, and raising a context menu is not reading.
   it("does not mark read when the context menu is raised", () => {
     const onRead = vi.fn();
-    render(<ArticleCard article={article()} voice="didone" onRead={onRead} />);
+    render(
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={onRead}
+      />,
+    );
 
     auxClick(screen.getByRole("link", { name: "A headline" }), 2);
     expect(onRead).not.toHaveBeenCalled();
@@ -124,6 +172,7 @@ describe("ArticleCard", () => {
     render(
       <ArticleCard
         article={article({ read_at: 1_787_000_100 })}
+        style={plain()}
         voice="didone"
         onRead={onRead}
       />,
@@ -139,6 +188,7 @@ describe("ArticleCard", () => {
     const { container } = render(
       <ArticleCard
         article={article({ read_at: 1_787_000_100 })}
+        style={plain()}
         voice="didone"
         onRead={() => {}}
       />,
@@ -155,6 +205,7 @@ describe("ArticleCard", () => {
         article={article({
           summary: '<p>Read <a href="https://example.com/x">this</a></p>',
         })}
+        style={plain()}
         voice="didone"
         onRead={() => {}}
       />,
@@ -172,6 +223,7 @@ describe("ArticleCard", () => {
     const { container } = render(
       <ArticleCard
         article={article({ slot: "brief" })}
+        style={plain()}
         voice="didone"
         onRead={() => {}}
       />,
@@ -188,6 +240,7 @@ describe("ArticleCard", () => {
         article={article({
           feed: { id: "f_1", title: "The Go Blog", site_url: "" },
         })}
+        style={plain()}
         voice="didone"
         onRead={() => {}}
       />,
@@ -200,7 +253,12 @@ describe("ArticleCard", () => {
 
   it("opens articles in a new tab, without handing the opener over", () => {
     render(
-      <ArticleCard article={article()} voice="didone" onRead={() => {}} />,
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={() => {}}
+      />,
     );
     const link = screen.getByRole("link", { name: "A headline" });
     expect(link).toHaveAttribute("target", "_blank");
