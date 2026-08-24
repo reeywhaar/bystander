@@ -69,28 +69,21 @@ export const LINES = ["solid", "dashed", "dotted"] as const;
  * What a card is boxed in, as a bag to draw one from — null for the ones that are not.
  *
  * A bag rather than a rate and then a separate draw for the line, because the ratio is
- * something you can count here instead of something you have to work out: about half the
- * cards are left alone, and of the ones that are boxed, dashed is the commonest line.
+ * something you can count here instead of something you have to work out: four cards in every
+ * twenty are boxed, and of those four, half are dashed.
  *
- * Half is high for what is meant to be punctuation, and an earlier version of this was a
- * fifth on exactly that reasoning. What makes it work at this rate is that a box is not one
- * mark: the line, its weight, its ink and its inset are drawn separately, so most boxes on a
- * page are visibly different objects rather than the same rule repeated. A page of identical
- * boxes at this frequency would be a table; a page of these is a page with a lot of marks on
- * it, which is the point — a card nobody can tell from its neighbours is a card nobody can
- * find again.
+ * One in five, settled by looking at the page rather than by argument. It ran at half for a
+ * while — the reasoning being that a box is not one mark, since the line, its weight, its ink
+ * and its inset are all drawn separately, so most boxes are visibly different objects. That is
+ * true, and it still was not the right number: at half, a box stops being the thing that
+ * distinguishes a card, because being boxed is as ordinary as not being boxed. Punctuation
+ * only works while most of the page is not punctuated.
  */
 const LINE_BAG: (Frame["line"] | null)[] = [
-  ...Array<null>(10).fill(null),
-  "dashed",
-  "dashed",
+  ...Array<null>(16).fill(null),
   "dashed",
   "dashed",
   "dotted",
-  "dotted",
-  "dotted",
-  "solid",
-  "solid",
   "solid",
 ];
 

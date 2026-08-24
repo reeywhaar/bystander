@@ -57,11 +57,11 @@ describe("styleFor", () => {
     const drawn = styles(3000);
     const boxed = drawn.filter((s) => s.frame !== null);
 
-    // About half, which is what the bag says. Loose bounds on purpose: this is here to
-    // catch the bag being edited into a page of boxes or a page of none, not to hold a
-    // ratio to the third decimal — sampling noise around a half is not a bug.
-    expect(boxed.length / drawn.length).toBeGreaterThan(0.35);
-    expect(boxed.length / drawn.length).toBeLessThan(0.65);
+    // One in five, which is what the bag says. Loose bounds on purpose: this is here to
+    // catch the bag being edited into a page of boxes or a page of none, not to hold a ratio
+    // to the third decimal.
+    expect(boxed.length / drawn.length).toBeGreaterThan(0.1);
+    expect(boxed.length / drawn.length).toBeLessThan(0.3);
 
     // Dashed is the commonest line, by the same bag.
     const dashed = boxed.filter((s) => s.frame!.line === "dashed").length;
