@@ -105,14 +105,21 @@ export function useMasonry(
     // measures the same heights and writes the same spans, but a loop that relies on
     // converging is a loop, and the browser says so in the console. A card's height does not
     // depend on the grid's, so there is nothing to recompute when only that changed.
+    //
+    // Guarded, because jsdom has no ResizeObserver and a test rendering this page should see
+    // the page rather than a crash. Packing has already run by this point, so what a test
+    // loses is only the response to a resize — and nothing resizes in jsdom.
     let width = node.getBoundingClientRect().width;
-    const observer = new ResizeObserver(() => {
-      const now = node.getBoundingClientRect().width;
-      if (now === width) return;
-      width = now;
-      pack();
-    });
-    observer.observe(node);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            const now = node.getBoundingClientRect().width;
+            if (now === width) return;
+            width = now;
+            pack();
+          });
+    observer?.observe(node);
 
     // The headline faces are downloaded, and a headline set in the fallback is a different
     // number of lines from the same headline set in Oswald.
@@ -123,7 +130,7 @@ export function useMasonry(
 
     return () => {
       live = false;
-      observer.disconnect();
+      observer?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
