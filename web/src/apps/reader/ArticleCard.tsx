@@ -64,12 +64,22 @@ export function ArticleCard({
 
   // The picture beside the story rather than above it.
   //
-  // Only on boxed cards, and only where there is an edge for it to sit against — a picture
-  // half the width of a card needs the frame, or it reads as one that failed to be full width.
-  // Never the lead: that one runs the width of the page and its picture is the page's opening
-  // image, which is a different job from illustrating a column.
+  // Boxed cards only: a picture two fifths the width of a card needs an edge to sit against, or
+  // it reads as one that failed to be full width. The frame is that edge.
+  //
+  // And only on the widths that have room for it, which was measured rather than assumed. On a
+  // quarter-page card — 277px on a 1240px page — two fifths is a 96px picture, and no minimum
+  // height rescues that: making it taller only crops a landscape photograph into a vertical
+  // sliver. A half-page card gives the picture 228px and the story 320px, which is a picture
+  // and a story rather than a thumbnail and a caption.
+  //
+  // Never the lead either. That one runs the width of the page and its picture opens the page,
+  // which is a different job from illustrating a column.
   const aside =
-    showImage && frame !== null && style.aside && article.slot !== "lead";
+    showImage &&
+    frame !== null &&
+    style.aside &&
+    (article.slot === "feature" || article.slot === "wide");
 
   // A picture beside the story has taken the width the columns would have been set in, so the
   // body is a single column whatever it drew. Two things competing for one measure is how a
@@ -114,7 +124,10 @@ export function ArticleCard({
             // The fit still varies on pictures nothing has measured, where the box is a
             // guess and showing one whole is as good an answer as cropping it.
             className={`w-full rounded-sm border border-rule ${aside ? "" : "mb-3"} ${
-              !measured && style.fit === "contain"
+              // Never fitted beside a story. The box there has a floor under its height, so it
+              // is a crop rather than the picture's own shape — and `contain` would answer that
+              // by letterboxing the picture inside white bars it did not ask for.
+              !aside && !measured && style.fit === "contain"
                 ? "object-contain"
                 : "object-cover"
             } ${

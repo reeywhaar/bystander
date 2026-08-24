@@ -164,16 +164,29 @@ describe("ArticleCard layout", () => {
   // A picture beside the story needs an edge to sit against, or it reads as one that failed
   // to be full width. The frame is that edge.
   it("sets a picture beside the story only on a boxed card", () => {
-    render1(plain({ frame: boxed, aside: true }));
+    render1(plain({ frame: boxed, aside: true }), "feature");
     expect(document.querySelector("article")!.className).toContain(
       "card-aside",
     );
 
     document.body.innerHTML = "";
-    render1(plain({ frame: null, aside: true }));
+    render1(plain({ frame: null, aside: true }), "feature");
     expect(document.querySelector("article")!.className).not.toContain(
       "card-aside",
     );
+  });
+
+  // Measured, not guessed: on a quarter-page card two fifths is a 96px picture, and no
+  // minimum height rescues that — cropping a landscape photograph taller only makes a sliver
+  // of it. A card that narrow has no room for a picture beside a story.
+  it("never sets a picture beside a story on a card too narrow to hold one", () => {
+    for (const slot of ["standard", "brief"] as const) {
+      document.body.innerHTML = "";
+      render1(plain({ frame: boxed, aside: true }), slot);
+      expect(document.querySelector("article")!.className).not.toContain(
+        "card-aside",
+      );
+    }
   });
 
   // The lead runs the width of the page and its picture opens the page. That is a different

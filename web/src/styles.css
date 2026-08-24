@@ -616,6 +616,38 @@ body {
   .card-aside > a:first-child {
     flex: 0 0 40%;
   }
+
+  /*
+   * A floor under a picture set beside a story.
+   *
+   * Stacked, a picture is the width of the card and its height follows from its own shape. Set
+   * beside a story it is two fifths of that, so the same picture comes out at two fifths of the
+   * height — which is fine for anything near square and not for a panorama. A 21:9 banner two
+   * fifths of a half-page card is ninety pixels tall against three hundred of story beside it,
+   * and reads as a rule with a picture in it.
+   *
+   * So the ratio is a preference here rather than a rule: the picture keeps its own shape until
+   * that would make it shorter than this, and is cropped to this instead. Nine rem is about
+   * four lines of the standfirst beside it, which is where a picture stops being an
+   * illustration and starts being an icon.
+   *
+   * A floor is all this can do. It does not rescue a picture that is too *narrow* — cropping a
+   * landscape photograph taller only makes a sliver of it — which is why the cards too narrow
+   * to carry one do not use this layout at all. See ArticleCard.
+   */
+  .card-aside > a:first-child img {
+    min-height: 9rem;
+  }
+
+  /*
+   * Below the collapse the picture is full width again, so it has its own shape back and needs
+   * no floor — and forcing one there would crop a picture that had all the room it wanted.
+   */
+  @media (max-width: 560px) {
+    .card-aside > a:first-child img {
+      min-height: 0;
+    }
+  }
   /*
    * Back to a stack once a card is narrow enough that two fifths of it is a thumbnail.
    *
