@@ -381,3 +381,54 @@ func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
 		t.Errorf("%d of 10 had already been read; unread repeats should come first", wasRead)
 	}
 }
+
+// Everything the page needs about an article has to survive the trip out of the table.
+//
+// This is here because it did not. The edition query had its own copy of the item column list,
+// and when a picture's measured size was added to the table it was added to the shared list and
+// not to that copy — so every article on every front page arrived with `image_width: 0`, which
+// the reader reads as "nothing has measured this" and draws a guessed shape for. Nothing failed:
+// the query ran, the rows came back, and the zeroes were the column default. Measuring worked
+// perfectly and the page never saw a single result.
+//
+// A whole-row assertion rather than one about pictures, so the next column added to items is
+// covered by this test on the day it is added rather than after somebody notices.
+func TestThePageGetsTheWholeArticle(t *testing.T) {
+	ctx := context.Background()
+	in := newInstance(t, 3)
+
+	if err := in.store.SetImageSize(ctx, "https://example.com/pic.png", 1600, 900); err != nil {
+		t.Fatalf("SetImageSize(): %v", err)
+	}
+	if _, err := in.gen.Generate(ctx, in.principal.ID); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+
+	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("the page is empty")
+	}
+
+	for _, entry := range items {
+		item := entry.Item
+		// The measurement, which is the field that was lost.
+		if item.ImageWidth != 1600 || item.ImageHeight != 900 {
+			t.Errorf("%s came back %dx%d, want 1600x900 — the page will draw a guessed shape",
+				item.ID, item.ImageWidth, item.ImageHeight)
+		}
+
+		// And its neighbours, since the failure was a column list and not a column.
+		if item.ID == "" || item.FeedID == "" || item.GUID == "" {
+			t.Errorf("%+v lost an identifier", item)
+		}
+		if item.Title == "" || item.Link == "" || item.Summary == "" || item.ImageURL == "" {
+			t.Errorf("%+v lost something it is displayed with", item)
+		}
+		if item.PublishedAt.IsZero() || item.FetchedAt.IsZero() {
+			t.Errorf("%s lost a timestamp", item.ID)
+		}
+	}
+}

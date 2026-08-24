@@ -153,9 +153,10 @@ func (s *Store) CurrentEdition(ctx context.Context, principalID string) (*Editio
 	}
 	ed.GeneratedAt = time.Unix(generated, 0).UTC()
 
+	// The item's own columns come from the one list in items.go rather than a copy here. A
+	// copy is what this was, and it silently went stale — see [itemColumnsFrom].
 	rows, err := s.derived.QueryContext(ctx,
-		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.author, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, e.rank, e.slot, e.read_at
+		`SELECT `+itemColumnsFrom("i")+`, e.rank, e.slot, e.read_at
 		   FROM edition_items e JOIN items i ON i.id = e.item_id
 		  WHERE e.edition_id = ?
 		  ORDER BY e.rank`, ed.ID)
@@ -167,20 +168,15 @@ func (s *Store) CurrentEdition(ctx context.Context, principalID string) (*Editio
 	var out []*EditionItem
 	for rows.Next() {
 		var (
-			item      Item
-			published int64
-			fetched   int64
-			slot      string
-			read      sql.NullInt64
-			entry     EditionItem
+			slot  string
+			read  sql.NullInt64
+			entry EditionItem
 		)
-		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link, &item.Author,
-			&item.Summary, &item.ImageURL, &published, &fetched, &entry.Rank, &slot, &read); err != nil {
+		item, err := scanItem(rows, &entry.Rank, &slot, &read)
+		if err != nil {
 			return nil, nil, err
 		}
-		item.PublishedAt = time.Unix(published, 0).UTC()
-		item.FetchedAt = time.Unix(fetched, 0).UTC()
-		entry.Item = &item
+		entry.Item = item
 		entry.Slot = Slot(slot)
 		entry.ReadAt = timeFrom(read)
 		out = append(out, &entry)

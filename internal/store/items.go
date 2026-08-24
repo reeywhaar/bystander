@@ -238,15 +238,38 @@ func renameByLink(ctx context.Context, tx *sql.Tx, item *Item, unshared map[stri
 
 const itemColumns = `id, feed_id, guid, title, link, author, summary, image_url, image_width, image_height, published_at, fetched_at`
 
-func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
+// itemColumnsFrom is [itemColumns] qualified with a table alias, for a query that joins items
+// to something else.
+//
+// Derived rather than written out a second time. A second copy is a second thing to remember,
+// and forgetting it is silent: the edition query had its own list, so when image_width and
+// image_height were added here they were not added there, and every article on the front page
+// arrived with a measured picture reported as unmeasured. Nothing failed — the rows were read,
+// the zeroes were the column default, and the page simply drew the shape it draws when it
+// knows nothing.
+func itemColumnsFrom(alias string) string {
+	parts := strings.Split(itemColumns, ", ")
+	for i, part := range parts {
+		parts[i] = alias + "." + part
+	}
+	return strings.Join(parts, ", ")
+}
+
+// scanItem reads one item from a row.
+//
+// rest is scanned after the item's own columns, for a query that selects more than an item —
+// so a join can still use [itemColumnsFrom] and this, and the column list and the order it is
+// read in stay one thing rather than two that have to agree.
+func scanItem(row interface{ Scan(...any) error }, rest ...any) (*Item, error) {
 	var (
 		item      Item
 		published int64
 		fetched   int64
 	)
-	if err := row.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link, &item.Author,
+	into := append([]any{&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link, &item.Author,
 		&item.Summary, &item.ImageURL, &item.ImageWidth, &item.ImageHeight,
-		&published, &fetched); err != nil {
+		&published, &fetched}, rest...)
+	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
 	item.PublishedAt = time.Unix(published, 0).UTC()
