@@ -11,10 +11,10 @@ import (
 )
 
 // twoFeeds is an instance with a second feed, tagged, so a filter has something to choose
-// between.
-func twoFeeds(t *testing.T) (*instance, *store.Feed, *store.Tag) {
+// between. Each feed gets `each` articles.
+func twoFeeds(t *testing.T, each int) (*instance, *store.Feed, *store.Tag) {
 	t.Helper()
-	in := newInstance(t, 6)
+	in := newInstance(t, each)
 	ctx := context.Background()
 
 	tag, err := in.store.CreateTag(ctx, in.principal.ID, "Finance", "", store.DefaultPriority)
@@ -29,8 +29,8 @@ func twoFeeds(t *testing.T) (*instance, *store.Feed, *store.Tag) {
 		t.Fatalf("Subscribe(): %v", err)
 	}
 
-	base := time.Now().Add(-7 * time.Hour)
-	items := make([]*store.Item, 6)
+	base := time.Now().Add(-time.Duration(each+1) * time.Hour)
+	items := make([]*store.Item, each)
 	for i := range items {
 		items[i] = &store.Item{
 			ID:          ids.New(ids.Article),
@@ -82,7 +82,7 @@ func titlesOf(t *testing.T, st *store.Store, pageID string) []string {
 }
 
 func TestAPageIncludingATagDrawsOnlyFromIt(t *testing.T) {
-	in, _, tag := twoFeeds(t)
+	in, _, tag := twoFeeds(t, 6)
 	including := store.TagsIncluding
 	page := in.page(t, "finances", store.PagePatch{TagFilter: &including, TagIDs: []string{tag.ID}})
 
@@ -102,7 +102,7 @@ func TestAPageIncludingATagDrawsOnlyFromIt(t *testing.T) {
 }
 
 func TestAPageExcludingATagLeavesItOut(t *testing.T) {
-	in, _, tag := twoFeeds(t)
+	in, _, tag := twoFeeds(t, 6)
 	excluding := store.TagsExcluding
 	page := in.page(t, "everything-else", store.PagePatch{TagFilter: &excluding, TagIDs: []string{tag.ID}})
 
@@ -122,7 +122,7 @@ func TestAPageExcludingATagLeavesItOut(t *testing.T) {
 }
 
 func TestAPageCanBeHeldToOneFeed(t *testing.T) {
-	in, money, _ := twoFeeds(t)
+	in, money, _ := twoFeeds(t, 6)
 	only := store.FeedsIncluding
 	page := in.page(t, "money-only", store.PagePatch{FeedFilter: &only, FeedIDs: []string{money.ID}})
 
@@ -139,7 +139,7 @@ func TestAPageCanBeHeldToOneFeed(t *testing.T) {
 // A filter that matches nothing composes nothing rather than erroring, which is the same answer
 // a new account gets and for the same reason.
 func TestAPageThatMatchesNothingIsSimplyEmpty(t *testing.T) {
-	in, _, _ := twoFeeds(t)
+	in, _, _ := twoFeeds(t, 6)
 	unused, err := in.store.CreateTag(context.Background(), in.principal.ID, "Nobody", "", store.DefaultPriority)
 	if err != nil {
 		t.Fatalf("CreateTag(): %v", err)
@@ -165,7 +165,7 @@ func TestAPageThatMatchesNothingIsSimplyEmpty(t *testing.T) {
 // test rather than something the sampler has to be coaxed into producing. What is being checked
 // is SetRead's reach, not how an article comes to be on two pages.
 func TestReadingAnArticleReadsItOnEveryPageItIsOn(t *testing.T) {
-	in, _, _ := twoFeeds(t)
+	in, _, _ := twoFeeds(t, 6)
 	ctx := context.Background()
 
 	// SaveItems names an article from its feed and guid, so this is the first of the ones
@@ -227,7 +227,7 @@ func TestReadingAnArticleReadsItOnEveryPageItIsOn(t *testing.T) {
 // whichever page composed first took the article and the rest could never see it. Measured on
 // real feeds, a main page composed after an art page held zero art articles — not a few.
 func TestOneArticleReachesEveryPageItBelongsOn(t *testing.T) {
-	in, _, tag := twoFeeds(t)
+	in, _, tag := twoFeeds(t, 6)
 	ctx := context.Background()
 
 	including := store.TagsIncluding
@@ -264,7 +264,7 @@ func TestOneArticleReachesEveryPageItBelongsOn(t *testing.T) {
 
 // Each page keeps its own memory, so composing one twice still spends what it showed.
 func TestAPageDoesNotShowItsOwnArticlesTwice(t *testing.T) {
-	in, _, _ := twoFeeds(t)
+	in, _, _ := twoFeeds(t, 6)
 	ctx := context.Background()
 
 	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
@@ -293,5 +293,63 @@ func TestAPageDoesNotShowItsOwnArticlesTwice(t *testing.T) {
 	}
 	if len(second) == 0 {
 		t.Error("the second turn produced nothing at all")
+	}
+}
+
+// Reading something on one page must not put it, greyed, on the next page another one composes.
+//
+// "Shown" is per page and "read" is per person. With one front page the second was a subset of
+// the first — you could only read what that page had shown you — so this never came up. With
+// several it is not: an article read on a page of comics has never been shown on the page of
+// everything, so it arrived there as a fresh candidate and landed already greyed, because the
+// read mark follows the person. Nineteen of forty-six articles on one real page were like that.
+func TestAPageDoesNotDrawWhatYouHaveAlreadyRead(t *testing.T) {
+	in, _, tag := twoFeeds(t, 30)
+	ctx := context.Background()
+
+	including := store.TagsIncluding
+	money := in.page(t, "money", store.PagePatch{TagFilter: &including, TagIDs: []string{tag.ID}})
+
+	if _, err := in.gen.Generate(ctx, money.ID); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+	_, onMoney, err := in.store.CurrentEdition(ctx, money.ID)
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if len(onMoney) == 0 {
+		t.Fatal("the filtered page is empty")
+	}
+
+	read := map[string]string{}
+	for _, entry := range onMoney {
+		if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
+			t.Fatalf("SetRead(): %v", err)
+		}
+		read[entry.Item.ID] = entry.Item.Title
+	}
+
+	// Small enough that the page of everything is filled by things nobody has read — so
+	// anything read that turns up was drawn as fresh rather than used as backfill, which is
+	// a different thing and stays allowed.
+	in.size(t, 10)
+	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+
+	_, onMain, err := in.store.CurrentEdition(ctx, in.pageID())
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if len(onMain) == 0 {
+		t.Fatal("the page of everything is empty")
+	}
+	for _, entry := range onMain {
+		if title, ok := read[entry.Item.ID]; ok {
+			t.Errorf("%q was read on another page and is on this freshly composed one", title)
+		}
+		if entry.Read() {
+			t.Errorf("%q arrived on a freshly composed page already greyed", entry.Item.Title)
+		}
 	}
 }

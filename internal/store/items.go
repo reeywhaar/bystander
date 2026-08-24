@@ -269,7 +269,8 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 	return item, err
 }
 
-// Candidates returns, per feed, the newest articles this page has not shown.
+// Candidates returns, per feed, the newest articles this page has not shown and this person has
+// not read.
 //
 // The exclusion is done in Go rather than in SQL because the shown table stores a digest
 // of the guid and SQLite has no sha256: there is nothing to join on. Reading one feed's
@@ -277,7 +278,7 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 // that holds at most a few thousand entries per person.
 // notOlderThan bounds how far back a candidate may be published, per feed — the window is
 // the feed's, not the reader's. A missing or zero entry is no bound.
-func (s *Store) Candidates(ctx context.Context, pageID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
+func (s *Store) Candidates(ctx context.Context, pageID, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 	for _, feedID := range feedIDs {
 		seen, err := s.shownHashes(ctx, pageID, feedID)
@@ -296,11 +297,24 @@ func (s *Store) Candidates(ctx context.Context, pageID string, feedIDs []string,
 		if cutoff, ok := notOlderThan[feedID]; ok && !cutoff.IsZero() {
 			since = unix(cutoff)
 		}
+		// Nothing this person has already read, on any of their pages.
+		//
+		// "Shown" is per page and "read" is per person, and with one front page the second
+		// was a subset of the first — you could only have read what that page had shown you.
+		// With several it is not: an article read on a page of comics has never been shown on
+		// the page of everything, so it arrives there as a candidate, is drawn as though it
+		// were new, and lands greyed because the read mark follows the person. A freshly
+		// composed page half full of things somebody has already finished with is the exact
+		// opposite of what composing one is for.
+		//
+		// It can still come back through Backfill, which is where a repeat belongs: greyed,
+		// last in the order, and only when there is nothing fresher to show.
 		rows, err := s.derived.QueryContext(ctx,
 			`SELECT `+itemColumns+` FROM items
 			  WHERE feed_id = ? AND published_at >= ?
+			    AND id NOT IN (SELECT item_id FROM read_articles WHERE principal_id = ?)
 			  ORDER BY published_at DESC LIMIT ?`,
-			feedID, since, perFeed*4)
+			feedID, since, principalID, perFeed*4)
 		if err != nil {
 			return nil, err
 		}

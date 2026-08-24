@@ -71,7 +71,7 @@ type Pick struct {
 const currentEditions = `
 WITH ranked AS (
     SELECT id, page_id, principal_id,
-           row_number() OVER (PARTITION BY page_id ORDER BY generated_at DESC, id DESC) AS rn
+           row_number() OVER (PARTITION BY page_id ORDER BY generated_at DESC, rowid DESC) AS rn
       FROM editions
 ), current AS (
     SELECT id, page_id, principal_id FROM ranked WHERE rn = 1
@@ -159,9 +159,15 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 
 // CurrentEdition returns one page's live edition, or ErrNotFound before its first generation.
 //
-// The newest, because that is what "live" means now that editions accumulate. Ties are broken by
-// id so that two composes inside one second still have an order — unlikely, and an arbitrary
-// answer is still better than a different arbitrary answer on each query.
+// The newest, because that is what "live" means now that editions accumulate.
+//
+// Ties are broken by rowid, which is insertion order — and the tie is not the rare curiosity it
+// looks like. generated_at is Unix *seconds*, so two composes in the same second tie, and
+// pressing "compose a page" twice or saving a filter just after composing does exactly that.
+// Breaking the tie on the id instead looks equivalent and is not: ids carry a millisecond
+// timestamp and a random tail, so two minted in the same millisecond order at random — which
+// meant the reader was shown the *older* of the two editions about one time in ten. It was a
+// test failing intermittently that said so.
 func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []*EditionItem, error) {
 	var (
 		ed        Edition
@@ -170,7 +176,7 @@ func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []
 	err := s.derived.QueryRowContext(ctx,
 		`SELECT id, page_id, principal_id, generated_at, seed, size
 		   FROM editions WHERE page_id = ?
-		  ORDER BY generated_at DESC, id DESC LIMIT 1`,
+		  ORDER BY generated_at DESC, rowid DESC LIMIT 1`,
 		pageID).Scan(&ed.ID, &ed.PageID, &ed.PrincipalID, &generated, &ed.Seed, &ed.Size)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, NotFound("no page has been generated yet")

@@ -85,7 +85,7 @@ func TestMeasuringReadsTheHeaderAndNotThePicture(t *testing.T) {
 		t.Fatalf("Measure(): %v", err)
 	}
 
-	got, err := st.Candidates(t.Context(), "", []string{feed.ID}, 10, nil)
+	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestOneMeasurementAnswersForEveryArticleSharingThePicture(t *testing.T) {
 	if err := st.SetImageSize(t.Context(), shared, 800, 600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.Candidates(t.Context(), "", []string{feed.ID}, 10, nil)
+	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

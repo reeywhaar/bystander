@@ -46,7 +46,7 @@ func TestAnArticleWhoseGuidMovedIsStillTheSameArticle(t *testing.T) {
 		t.Fatalf("SaveItems() = %d, %v", added, err)
 	}
 
-	before, err := s.Candidates(ctx, "", []string{feed.ID}, 10, nil)
+	before, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatalf("Candidates(): %v", err)
 	}
@@ -66,7 +66,7 @@ func TestAnArticleWhoseGuidMovedIsStillTheSameArticle(t *testing.T) {
 		t.Errorf("an edited article counted as %d new ones", added)
 	}
 
-	after, err := s.Candidates(ctx, "", []string{feed.ID}, 10, nil)
+	after, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatalf("Candidates(): %v", err)
 	}
@@ -194,7 +194,7 @@ func TestArticlesSharingOneLinkAreLeftAlone(t *testing.T) {
 		t.Fatalf("added = %d, want all three kept", added)
 	}
 
-	got, err := s.Candidates(ctx, "", []string{feed.ID}, 10, nil)
+	got, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatalf("Candidates(): %v", err)
 	}
@@ -310,7 +310,7 @@ func TestTwoFeedsWithTheSameArticleKeepBoth(t *testing.T) {
 		t.Fatalf("the second feed's copy was dropped: added = %d", added)
 	}
 
-	got, err := s.Candidates(ctx, "", []string{one.ID, two.ID}, 10, nil)
+	got, err := s.Candidates(ctx, "", "", []string{one.ID, two.ID}, 10, nil)
 	if err != nil {
 		t.Fatalf("Candidates(): %v", err)
 	}

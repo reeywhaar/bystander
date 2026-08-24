@@ -81,7 +81,7 @@ func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition
 			notOlderThan[sub.FeedID] = now.Add(-window)
 		}
 	}
-	candidates, err := g.store.Candidates(ctx, page.ID, feedIDs, candidateDepth, notOlderThan)
+	candidates, err := g.store.Candidates(ctx, page.ID, principalID, feedIDs, candidateDepth, notOlderThan)
 	if err != nil {
 		return nil, err
 	}

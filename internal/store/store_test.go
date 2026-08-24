@@ -171,6 +171,44 @@ func TestThePageIsTheNewestEdition(t *testing.T) {
 	}
 }
 
+// Two composes inside one second, which is not the curiosity it looks like: generated_at is
+// Unix seconds, and pressing "compose a page" twice does exactly this — as does saving a filter
+// just after composing, since that recomposes.
+//
+// The live edition is the one written second. Ordering by id instead looks equivalent and is
+// not: an id carries a millisecond timestamp and a random tail, so two minted in the same
+// millisecond order at random, and the reader was shown the older edition about one time in
+// ten. It surfaced as a scheduled-turn test that failed intermittently and passed on rerun.
+func TestTwoEditionsInOneSecondKeepTheirOrder(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	const insert = `INSERT INTO editions (id, page_id, principal_id, generated_at, seed, size)
+	                VALUES (?, 'pg_p_1', 'p_1', 500, 0, 10)`
+	// Ids deliberately in the wrong order, which is what a random tail produces half the time.
+	for _, id := range []string{"e_zzz_written_first", "e_aaa_written_second"} {
+		if _, err := s.derived.ExecContext(ctx, insert, id); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+
+	ed, _, err := s.CurrentEdition(ctx, "pg_p_1")
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	if ed.ID != "e_aaa_written_second" {
+		t.Errorf("live edition = %s, want the one written second", ed.ID)
+	}
+
+	// And the sweep agrees with the reader, or it would collect the one being displayed.
+	if n, err := s.PruneOldEditions(ctx); err != nil || n != 1 {
+		t.Fatalf("PruneOldEditions() = %d, %v — want the first one collected", n, err)
+	}
+	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1"); err != nil || ed.ID != "e_aaa_written_second" {
+		t.Errorf("after collecting: %v, %v — the live edition should have survived", ed, err)
+	}
+}
+
 // A person has one edition per page, and pruning must not treat another page's as superseded.
 func TestEachPageKeepsItsOwnEdition(t *testing.T) {
 	s := testStore(t)
