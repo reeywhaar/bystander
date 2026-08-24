@@ -23,7 +23,9 @@ export function App() {
                 <Alert>That is an administrator's to do.</Alert>
               ) : (
                 <BrowserRouter>
-                  <nav className="mb-8 flex gap-1 border-b border-rule">
+                  {/* Wraps, like the manage island's — three shorter labels fit today, and
+                      the first translation of "Invitations" is the one that would not. */}
+                  <nav className="mb-8 flex flex-wrap gap-x-1 gap-y-0.5 border-b border-rule">
                     {[
                       { to: "/admin", label: "People", end: true },
                       {
@@ -38,7 +40,7 @@ export function App() {
                         to={tab.to}
                         end={tab.end}
                         className={({ isActive }) =>
-                          `-mb-px border-b-2 px-3 py-2 text-sm ${
+                          `-mb-px border-b-2 px-2 py-2 text-sm whitespace-nowrap sm:px-3 ${
                             isActive
                               ? "border-accent text-ink"
                               : "border-transparent text-ink-muted hover:text-ink"
