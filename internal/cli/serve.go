@@ -81,6 +81,26 @@ func serve(parent context.Context) error {
 	runner := jobs.New(st, log)
 	runner.Handle(feeds.MeasureImage, feeds.Measure(st, fetcher.UserAgent()))
 
+	// Two ways work reaches the queue, and they answer two different questions.
+	//
+	// A fetch that brought articles in queues their pictures: that is the moment work
+	// appears, and asking then rather than on a timer keeps an idle instance idle.
+	//
+	// The sweep is the safety net, once an hour. It catches everything the first path cannot
+	// know about — articles that were already here when this feature shipped, a queue lost to
+	// a restore, a hook that failed. Enqueueing is idempotent on the URL, so the two paths
+	// asking for the same picture is one row.
+	queuePictures := func(ctx context.Context) {
+		n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch)
+		if err != nil {
+			log.Error("could not queue picture measurements", "error", err)
+		} else if n > 0 {
+			log.Debug("queued picture measurements", "count", n)
+		}
+	}
+	poller.AfterNewArticles(queuePictures)
+	scheduler.AfterSweep(queuePictures)
+
 	server := api.New(cfg, st, sessions, generator, fetcher, spa, log)
 
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
@@ -93,13 +113,7 @@ func serve(parent context.Context) error {
 	// work. A picture arrives through a poll, through somebody adding a feed, or through a
 	// database restored from a backup, and asking each of those to remember to enqueue is
 	// three places for the answer to be no.
-	go runner.Run(ctx, func(ctx context.Context) {
-		if n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch); err != nil {
-			log.Error("could not queue picture measurements", "error", err)
-		} else if n > 0 {
-			log.Debug("queued picture measurements", "count", n)
-		}
-	})
+	go runner.Run(ctx)
 
 	httpServer := &http.Server{
 		Addr:    app.ListenAddr,

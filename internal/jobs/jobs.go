@@ -165,10 +165,10 @@ const Interval = 3 * time.Second
 
 // Run works the queue until ctx is cancelled.
 //
-// before, when set, runs at the start of each pass — for topping the queue up from whatever
-// state the rest of the program has got into, so that work is never lost merely because
-// nothing thought to enqueue it.
-func (r *Runner) Run(ctx context.Context, before func(context.Context)) {
+// It only drains. Filling is somebody else's business — whoever created the work knows about
+// it sooner than a scan would, and a runner that went looking for work every few seconds would
+// keep an idle instance querying for the life of the process.
+func (r *Runner) Run(ctx context.Context) {
 	ticker := time.NewTicker(Interval)
 	defer ticker.Stop()
 
@@ -183,16 +183,12 @@ func (r *Runner) Run(ctx context.Context, before func(context.Context)) {
 				worked++
 				continue
 			}
-			// Nothing was due. That is the moment to look for more work, rather than every
-			// three seconds regardless — an idle queue should not mean a database query per
-			// tick for the life of the process.
+			// Nothing due. Said once when the queue goes quiet rather than on every job,
+			// so a run of a hundred pictures is one line and not a hundred.
 			if worked > 0 {
 				depth, _ := r.store.QueueDepth(ctx)
 				r.log.Debug("worked the queue", "done", worked, "waiting", depth)
 				worked = 0
-			}
-			if before != nil {
-				before(ctx)
 			}
 		}
 	}

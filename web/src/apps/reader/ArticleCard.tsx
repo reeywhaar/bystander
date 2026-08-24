@@ -89,8 +89,20 @@ export function ArticleCard({
             // only if it can find the whole name in the source, so `object-${fit}` produced
             // neither — the images had no object-fit at all and were stretching to their
             // box. A template literal is invisible to it.
+            // A measured picture is always filled, never fitted.
+            //
+            // Its box is its own ratio, so where the two agree `contain` and `cover` draw the
+            // same thing — and where they do not, the box has been clamped, which means the
+            // picture is wider or taller than this page has room for. Fitting one of those
+            // inside its box is a letterboxed banner in a column of stories. Filling it
+            // crops to the shape the page can carry, which is what the clamp was for.
+            //
+            // The fit still varies on pictures nothing has measured, where the box is a
+            // guess and showing one whole is as good an answer as cropping it.
             className={`mb-3 w-full rounded-sm border border-rule ${
-              style.fit === "contain" ? "object-contain" : "object-cover"
+              !measured && style.fit === "contain"
+                ? "object-contain"
+                : "object-cover"
             } ${
               article.slot === "lead"
                 ? "aspect-[21/9]"
