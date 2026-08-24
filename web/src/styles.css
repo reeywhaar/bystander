@@ -264,6 +264,45 @@ body {
     margin-bottom: 2.75rem;
   }
 
+  /*
+   * The section tabs, which scroll sideways when they do not fit.
+   *
+   * The scrollbar is hidden because a persistent one under a row of tabs is a horizontal bar
+   * across the page that is not a rule and is not a tab. What replaces it as the affordance is
+   * the fade below, which only appears when there is in fact more strip.
+   */
+  .tab-strip {
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  /*
+   * A strip with more in it looks cut off rather than finished.
+   *
+   * Applied only when the content overflows — a fade on a strip that fits would say there is
+   * more when there is not, which is worse than saying nothing. The class is set from
+   * TabStrip, which measures.
+   *
+   * Logical, not physical: it fades whichever edge the reading runs towards, so a
+   * right-to-left page fades on the left.
+   */
+  .tab-strip-more {
+    mask-image: linear-gradient(
+      to right,
+      black calc(100% - 2rem),
+      transparent 100%
+    );
+  }
+  [dir="rtl"] .tab-strip-more {
+    mask-image: linear-gradient(
+      to left,
+      black calc(100% - 2rem),
+      transparent 100%
+    );
+  }
+
   .page-rule {
     grid-column: span 16;
     border-top: 1px solid var(--rule);
