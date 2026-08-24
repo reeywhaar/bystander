@@ -249,6 +249,16 @@ func (r *Runner) Run(ctx context.Context, refill func(context.Context)) {
 	ticker := time.NewTicker(Interval)
 	defer ticker.Stop()
 
+	// One line to say the runner exists, beside "databases open" and "listening".
+	//
+	// Without it a restart with nothing to do prints nothing at all, and an idle queue is
+	// indistinguishable from a queue that never started — which is exactly the question
+	// somebody restarting a server is asking. The depth is what answers it: nothing waiting
+	// is an empty queue, and something waiting that never falls is a stuck one.
+	if depth, err := r.store.QueueDepth(ctx); err == nil {
+		r.log.Info("job queue open", "waiting", depth, "every", Interval)
+	}
+
 	var run tally
 	// Both zero, so the first tick refills rather than waiting a minute to find work that was
 	// already in the table when this started, and so a long drain reports a minute in rather

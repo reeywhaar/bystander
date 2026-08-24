@@ -90,10 +90,16 @@ func serve(parent context.Context) error {
 	// that did not know it was supposed to answer.
 	refill := func(ctx context.Context) {
 		n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch)
-		if err != nil {
+		switch {
+		case err != nil:
 			log.Error("could not queue picture measurements", "error", err)
-		} else if n > 0 {
+		case n > 0:
 			log.Info("queued picture measurements", "count", n)
+		default:
+			// Nothing left to measure. Debug, because at Info this would be a line every
+			// minute for the life of an instance that has caught up — which is most of them,
+			// most of the time.
+			log.Debug("every picture has been measured")
 		}
 	}
 
