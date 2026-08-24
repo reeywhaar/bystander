@@ -47,27 +47,62 @@ export function PagesPage() {
 
   return (
     <div className="flex flex-col gap-10">
-      {/* One page is not a set of tabs. Somebody who has never made a second page should not
-          have to look at a control for choosing between one thing. */}
-      {all.length > 1 ? (
-        <nav className="flex flex-wrap items-center gap-2 border-b border-rule pb-3">
-          {all.map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              onClick={() => setSelected(page.id)}
-              aria-current={page.id === current.id ? "page" : undefined}
-              className={`rounded-md px-3 py-1.5 text-sm ${
-                page.id === current.id
-                  ? "bg-accent/10 text-accent"
-                  : "text-ink-muted hover:text-ink"
-              }`}
-            >
-              {page.name}
-            </button>
-          ))}
-        </nav>
-      ) : null}
+      {/*
+        The list of pages, and the one control that acts on the list rather than on a page.
+        
+        Making a page belongs here, at the end of the pages, and not in the row of buttons
+        below — those all act on whichever page is selected, and a New page sitting between
+        Edit and Remove reads as another thing you are about to do to this one.
+        
+        The row is here even when there are no tabs in it, because that is the case where
+        somebody most needs the control: one page, and the only thing to do is make a second.
+      */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-rule pb-3">
+        {/* One page is not a set of tabs. Somebody who has never made a second page should
+            not have to look at a control for choosing between one thing — the button beside
+            this is not a chooser, so it stays. */}
+        {all.length > 1 ? (
+          <nav
+            aria-label="Your front pages"
+            className="flex flex-wrap items-center gap-2"
+          >
+            {all.map((page) => (
+              <button
+                key={page.id}
+                type="button"
+                onClick={() => setSelected(page.id)}
+                aria-current={page.id === current.id ? "page" : undefined}
+                className={`rounded-md px-3 py-1.5 text-sm ${
+                  page.id === current.id
+                    ? "bg-accent/10 text-accent"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                {page.name}
+              </button>
+            ))}
+          </nav>
+        ) : null}
+
+        {/*
+          Ghost, which is the weight of an unselected tab: a bordered button here would be the
+          heaviest thing in a row of quiet ones and would read as the page to be on.
+          
+          And a plus, because at that weight it is otherwise indistinguishable from a tab —
+          every other name in this row is a page you can switch to, and this one is not. The
+          mark is the only thing separating "go here" from "make one", and it is cheaper than
+          finding out by pressing it.
+        */}
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setEditing(null);
+            setDialog(true);
+          }}
+        >
+          + New page
+        </Button>
+      </div>
 
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -93,14 +128,6 @@ export function PagesPage() {
             }}
           >
             Edit
-          </Button>
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setDialog(true);
-            }}
-          >
-            New page
           </Button>
           {/* The main page has no Remove, rather than one that refuses. */}
           {current.is_main ? null : (
