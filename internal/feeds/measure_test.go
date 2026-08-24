@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -256,5 +257,98 @@ func TestAPictureThatCannotBeMeasuredIsNotAskedAboutForever(t *testing.T) {
 	}
 	if len(urls) != 0 {
 		t.Errorf("a picture that was given up on is queued again: %v", urls)
+	}
+}
+
+// Widening how far back a feed reaches must not turn up articles with unmeasured pictures.
+//
+// The two things are decided in different places and it is not obvious they agree. A feed's
+// window is applied when a page is composed — Candidates and Backfill bound what they will
+// offer — and nowhere else. Nothing filters by it on the way in, so an article older than the
+// window is saved like any other, and it is kept for the retention counted from when it was
+// *fetched* rather than when it was published.
+//
+// So the pool a widened window reaches into is already in the database, and the question is
+// whether the measuring worker has been looking at it. It has, because UnmeasuredImages asks
+// only whether a picture has been probed and never how old its article is. This is the test
+// that says so: widen the window afterwards and every article that appears is one whose
+// picture was measured long before anybody asked for it.
+func TestWideningAFeedsReachFindsPicturesAlreadyMeasured(t *testing.T) {
+	st := testStore(t)
+	feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A feed carrying a year of articles, all fetched now — a first fetch of an archive, or a
+	// feed that publishes its whole back catalogue.
+	now := time.Now()
+	ages := []time.Duration{
+		time.Hour,
+		3 * 24 * time.Hour,
+		20 * 24 * time.Hour,
+		90 * 24 * time.Hour,
+		300 * 24 * time.Hour,
+	}
+	items := make([]*store.Item, len(ages))
+	for i, age := range ages {
+		items[i] = &store.Item{
+			FeedID:      feed.ID,
+			GUID:        fmt.Sprintf("g%d", i),
+			Title:       fmt.Sprintf("Story %d", i),
+			Link:        fmt.Sprintf("https://example.com/%d", i),
+			ImageURL:    fmt.Sprintf("https://example.com/%d.png", i),
+			PublishedAt: now.Add(-age),
+			FetchedAt:   now,
+		}
+	}
+	if _, err := st.SaveItems(t.Context(), items); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every picture is asked about, including the ones on articles no window would offer yet.
+	urls, err := st.UnmeasuredImages(t.Context(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(urls) != len(ages) {
+		t.Fatalf("%d pictures to measure, want all %d — the worker only looks at recent ones",
+			len(urls), len(ages))
+	}
+	for _, url := range urls {
+		if err := st.SetImageSize(t.Context(), url, 800, 600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A week's reach offers the recent ones.
+	week := map[string]time.Time{feed.ID: now.Add(-7 * 24 * time.Hour)}
+	narrow, err := st.Candidates(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, week)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(narrow[feed.ID]) != 2 {
+		t.Fatalf("a week's reach offers %d articles, want 2", len(narrow[feed.ID]))
+	}
+
+	// Widened to a year it offers all of them, and every one arrives measured.
+	year := map[string]time.Time{feed.ID: now.Add(-365 * 24 * time.Hour)}
+	wide, err := st.Candidates(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, year)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wide[feed.ID]) != len(ages) {
+		t.Fatalf("a year's reach offers %d articles, want %d", len(wide[feed.ID]), len(ages))
+	}
+	for _, item := range wide[feed.ID] {
+		if item.ImageWidth == 0 || item.ImageHeight == 0 {
+			t.Errorf("%q was published %s ago and its picture is still unmeasured",
+				item.Title, now.Sub(item.PublishedAt).Round(24*time.Hour))
+		}
+	}
+
+	// And nothing is left over, so widening again asks for nothing.
+	if left, err := st.UnmeasuredImages(t.Context(), 50); err != nil || len(left) != 0 {
+		t.Errorf("still unmeasured: %v (%v)", left, err)
 	}
 }
