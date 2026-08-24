@@ -17,13 +17,17 @@ func TestCreatePrincipalMakesSettings(t *testing.T) {
 		t.Fatalf("CreatePrincipal(): %v", err)
 	}
 
-	// The scheduler must never meet a principal whose settings row is missing.
-	set, err := s.Settings(ctx, p.ID)
+	// The scheduler must never meet a person without a main page, and nothing creates one
+	// lazily — it is made with the account or not at all.
+	page, err := s.PageByID(ctx, MainPageID(p.ID))
 	if err != nil {
-		t.Fatalf("Settings(): %v", err)
+		t.Fatalf("PageByID(): %v", err)
 	}
-	if set.EditionSize != 60 || set.EditionInterval != 24*time.Hour {
-		t.Errorf("settings = %+v, want the daily defaults", set)
+	if !page.IsMain || page.Slug != "" {
+		t.Errorf("page = %+v, want the main page at the root", page)
+	}
+	if page.EditionSize != 60 || page.EditionInterval != 24*time.Hour {
+		t.Errorf("page = %+v, want the daily defaults", page)
 	}
 }
 

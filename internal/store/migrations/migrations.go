@@ -71,6 +71,7 @@ var Main = []Migration{
 	mainProvedRecoveryEmail,
 	mainShares,
 	mainJobs,
+	mainPages,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db
@@ -82,6 +83,7 @@ var Derived = []Migration{
 	derivedWideSlot,
 	derivedImageSize,
 	derivedImageProbed,
+	derivedEditionPages,
 }
 
 // exec is the shape almost every migration takes: some SQL, in its own transaction.

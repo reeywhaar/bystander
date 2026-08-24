@@ -235,12 +235,13 @@ func TestTheArticleWindowMovedOntoFeeds(t *testing.T) {
 		t.Error("settings still carries max_article_age")
 	}
 
-	// And everything else about the settings row came through the table rebuild.
-	set, err := s.Settings(ctx, "p_1")
+	// And everything else about the settings row came through the table rebuild — and then
+	// through becoming this person's main page, which is where those columns live now.
+	page, err := s.PageByID(ctx, MainPageID("p_1"))
 	if err != nil {
-		t.Fatalf("Settings(): %v", err)
+		t.Fatalf("PageByID(): %v", err)
 	}
-	if set.EditionSize != 60 || set.EditionInterval != 24*time.Hour {
-		t.Errorf("settings = %+v, want what was there before", set)
+	if page.EditionSize != 60 || page.EditionInterval != 24*time.Hour {
+		t.Errorf("page = %+v, want what was there before", page)
 	}
 }

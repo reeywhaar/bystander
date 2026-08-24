@@ -13,16 +13,21 @@ type settingsBody struct {
 	NextEditionAt   int64 `json:"next_edition_at"`
 }
 
+// getSettings answers with the main page's cadence and size.
+//
+// These are a page's settings rather than a person's, and have been since pages became a list.
+// This endpoint stays pointed at the main page so that everything which knew about one page
+// keeps working while the interface catches up; the per-page controls will address a page by id.
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.store.Settings(r.Context(), principalOf(r).ID)
+	page, err := s.store.PageByID(r.Context(), store.MainPageID(principalOf(r).ID))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, settingsBody{
-		EditionInterval: int64(settings.EditionInterval.Seconds()),
-		EditionSize:     settings.EditionSize,
-		NextEditionAt:   settings.NextEditionAt.Unix(),
+		EditionInterval: int64(page.EditionInterval.Seconds()),
+		EditionSize:     page.EditionSize,
+		NextEditionAt:   page.NextEditionAt.Unix(),
 	})
 }
 
@@ -39,12 +44,12 @@ func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patch := store.SettingsPatch{EditionSize: body.EditionSize}
+	patch := store.PagePatch{EditionSize: body.EditionSize}
 	if body.EditionInterval != nil {
 		d := time.Duration(*body.EditionInterval) * time.Second
 		patch.EditionInterval = &d
 	}
-	if err := s.store.UpdateSettings(r.Context(), p.ID, patch); err != nil {
+	if err := s.store.UpdatePage(r.Context(), store.MainPageID(p.ID), patch); err != nil {
 		s.fail(w, r, err)
 		return
 	}

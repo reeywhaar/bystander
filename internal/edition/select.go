@@ -64,7 +64,7 @@ type Bucket struct {
 // somebody said they cared about.
 //
 // Nothing is invented: an article that was actually read comes back with its read mark
-// intact (see store.ReplaceEdition), so it arrives greyed rather than pretending to be new.
+// intact (see store.AddEdition), so it arrives greyed rather than pretending to be new.
 // One that was merely shown and never read comes back plain, which is fair — it was never
 // read. And when both pools are dry the page really is short, which is still the honest
 // answer.

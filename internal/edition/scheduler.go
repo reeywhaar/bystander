@@ -52,22 +52,24 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) generateDue(ctx context.Context) {
-	due, err := s.store.DueSettings(ctx)
+	due, err := s.store.DuePages(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
-			s.log.Error("could not find out whose page is due", "error", err)
+			s.log.Error("could not find out which pages are due", "error", err)
 		}
 		return
 	}
 	now := s.store.Now()
-	for _, settings := range due {
+	for _, page := range due {
 		if ctx.Err() != nil {
 			return
 		}
-		// One principal's failure is not the others'. A feed that produced something
-		// unparseable should not stop everybody else's page being composed.
-		if err := s.gen.GenerateAndSchedule(ctx, settings, now); err != nil {
-			s.log.Error("could not compose a page", "principal", settings.PrincipalID, "error", err)
+		// One page's failure is not the others'. A feed that produced something unparseable
+		// should not stop anybody else's page being composed — nor this person's other pages,
+		// which is newly true and worth the same care.
+		if err := s.gen.GenerateAndSchedule(ctx, page, now); err != nil {
+			s.log.Error("could not compose a page",
+				"page", page.ID, "principal", page.PrincipalID, "error", err)
 		}
 	}
 }
@@ -75,19 +77,35 @@ func (s *Scheduler) generateDue(ctx context.Context) {
 // sweep collects what has expired. Everything it touches is in derived.db, and everything
 // it touches is reconstructible — which is why it can afford to be this blunt.
 func (s *Scheduler) sweep(ctx context.Context) {
+	// Pages rather than accounts, which covers both: a deleted account takes its pages with
+	// it by cascade, and a page deleted on its own leaves an edition behind that nothing else
+	// would collect.
+	live, err := s.store.LivePageIDs(ctx)
+	if err != nil {
+		s.log.Error("could not list pages for the sweep", "error", err)
+		return
+	}
 	principals, err := s.store.ListPrincipals(ctx)
 	if err != nil {
 		s.log.Error("could not list accounts for the sweep", "error", err)
 		return
 	}
-	ids := make([]string, 0, len(principals))
+	people := make([]string, 0, len(principals))
 	for _, p := range principals {
-		ids = append(ids, p.ID)
+		people = append(people, p.ID)
 	}
-	if n, err := s.store.DeleteEditionsExcept(ctx, ids); err != nil {
-		s.log.Error("could not collect the pages of deleted accounts", "error", err)
+	// Editions a page has moved on from. They pile up because composing does not delete, so
+	// something has to, and this is the something.
+	if n, err := s.store.PruneOldEditions(ctx); err != nil {
+		s.log.Error("could not collect superseded editions", "error", err)
 	} else if n > 0 {
-		s.log.Info("collected pages belonging to deleted accounts", "count", n)
+		s.log.Debug("collected superseded editions", "count", n)
+	}
+
+	if n, err := s.store.DeleteEditionsExcept(ctx, live, people); err != nil {
+		s.log.Error("could not collect the editions of pages that are gone", "error", err)
+	} else if n > 0 {
+		s.log.Info("collected editions of pages that are gone", "count", n)
 	}
 
 	// Feeds nobody follows go first, so the item sweep below sees the shorter list and

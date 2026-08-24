@@ -122,14 +122,18 @@ func insertPrincipal(ctx context.Context, tx *sql.Tx, p *Principal, now time.Tim
 		return nil, fmt.Errorf("create principal: %w", err)
 	}
 
+	// Everybody has a main page, and it is made here rather than on first use, so that
+	// "a person's pages are a list with at least one member" is true from the moment the
+	// account exists. In the same transaction, so it cannot half-happen.
+	//
 	// next_edition_at is now, not now+interval. A brand new account has no feeds, and the
-	// generator skips a principal with nothing to draw from without moving the clock — so
-	// the first real edition arrives on the tick after they add a feed, rather than a day
-	// later.
+	// generator skips a page with nothing to draw from without moving the clock — so the
+	// first real edition arrives on the tick after they add a feed, rather than a day later.
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO settings (principal_id, next_edition_at) VALUES (?, ?)`,
-		p.ID, unix(now)); err != nil {
-		return nil, fmt.Errorf("create settings: %w", err)
+		`INSERT INTO pages (id, principal_id, name, slug, is_main, next_edition_at, created_at)
+		 VALUES (?, ?, ?, '', 1, ?, ?)`,
+		MainPageID(p.ID), p.ID, MainPageName, unix(now), unix(now)); err != nil {
+		return nil, fmt.Errorf("create main page: %w", err)
 	}
 	return p, nil
 }

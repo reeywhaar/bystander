@@ -36,6 +36,7 @@ const (
 	Subscription = "s_"
 	Article      = "a_"
 	Edition      = "e_"
+	Page         = "pg_"
 	SMTP         = "m_"
 	Job          = "j_"
 )

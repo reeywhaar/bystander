@@ -132,16 +132,72 @@ func TestRootTagNamesAreUnique(t *testing.T) {
 
 // Exactly one live edition per principal, enforced by the schema rather than by
 // remembering to delete.
-func TestOneEditionPerPrincipal(t *testing.T) {
+// Editions pile up and the newest is the page. This used to be one row per person, enforced by
+// a unique index and maintained by deleting the old edition on the way in; the delete bought
+// nothing and sat on the path of every compose.
+func TestThePageIsTheNewestEdition(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	const insert = `INSERT INTO editions (id, principal_id, generated_at, seed, size) VALUES (?, 'p_1', 0, 0, 10)`
-	if _, err := s.derived.ExecContext(ctx, insert, "e_1"); err != nil {
-		t.Fatalf("insert first edition: %v", err)
+	const insert = `INSERT INTO editions (id, page_id, principal_id, generated_at, seed, size)
+	                VALUES (?, 'pg_p_1', 'p_1', ?, 0, 10)`
+	for _, ed := range []struct {
+		id string
+		at int64
+	}{{"e_1", 100}, {"e_2", 200}, {"e_3", 150}} {
+		if _, err := s.derived.ExecContext(ctx, insert, ed.id, ed.at); err != nil {
+			t.Fatalf("insert %s: %v", ed.id, err)
+		}
 	}
-	if _, err := s.derived.ExecContext(ctx, insert, "e_2"); err == nil {
-		t.Fatal("a second live edition was accepted for one principal")
+
+	ed, _, err := s.CurrentEdition(ctx, "pg_p_1")
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	// Newest by when it was composed, not by when it was written.
+	if ed.ID != "e_2" {
+		t.Errorf("live edition = %s, want e_2", ed.ID)
+	}
+
+	n, err := s.PruneOldEditions(ctx)
+	if err != nil {
+		t.Fatalf("PruneOldEditions(): %v", err)
+	}
+	if n != 2 {
+		t.Errorf("collected %d editions, want the 2 behind the newest", n)
+	}
+	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1"); err != nil || ed.ID != "e_2" {
+		t.Errorf("after collecting: %v, %v — the live edition should be untouched", ed, err)
+	}
+}
+
+// A person has one edition per page, and pruning must not treat another page's as superseded.
+func TestEachPageKeepsItsOwnEdition(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	const insert = `INSERT INTO editions (id, page_id, principal_id, generated_at, seed, size)
+	                VALUES (?, ?, 'p_1', ?, 0, 10)`
+	for _, ed := range []struct {
+		id, page string
+		at       int64
+	}{{"e_1", "pg_p_1", 100}, {"e_2", "pg_p_1", 200}, {"e_3", "art", 50}} {
+		if _, err := s.derived.ExecContext(ctx, insert, ed.id, ed.page, ed.at); err != nil {
+			t.Fatalf("insert %s: %v", ed.id, err)
+		}
+	}
+
+	if n, err := s.PruneOldEditions(ctx); err != nil || n != 1 {
+		t.Fatalf("PruneOldEditions() = %d, %v — want only e_1 collected", n, err)
+	}
+	for page, want := range map[string]string{"pg_p_1": "e_2", "art": "e_3"} {
+		ed, _, err := s.CurrentEdition(ctx, page)
+		if err != nil {
+			t.Fatalf("CurrentEdition(%s): %v", page, err)
+		}
+		if ed.ID != want {
+			t.Errorf("%s shows %s, want %s", page, ed.ID, want)
+		}
 	}
 }
 

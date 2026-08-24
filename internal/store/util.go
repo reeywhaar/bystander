@@ -68,3 +68,27 @@ func Conflict(format string, a ...any) error {
 func Invalid(format string, a ...any) error {
 	return classified{ErrInvalid, fmt.Sprintf(format, a...)}
 }
+
+// expectSome turns "nothing matched" into a not-found, and lets any number above that through.
+//
+// The sibling of expectOne, for a statement that legitimately touches more than one row — an
+// article marked read across every page it happens to be on, for instance.
+func expectSome(res sql.Result, notFound error) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound
+	}
+	return nil
+}
+
+// inList turns a slice of ids into arguments and the matching placeholders for an IN clause.
+func inList(ids []string) ([]any, string) {
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	return args, strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+}

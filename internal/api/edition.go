@@ -49,13 +49,13 @@ type feedStub struct {
 func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 
-	settings, err := s.store.Settings(r.Context(), p.ID)
+	page, err := s.store.PageByID(r.Context(), store.MainPageID(p.ID))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 
-	ed, items, err := s.store.CurrentEdition(r.Context(), p.ID)
+	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Not a 404. "Your page has not been generated yet" is a state the reader
@@ -63,8 +63,8 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 			// page calls would send the interface into its failure path on a new
 			// account's very first visit.
 			writeJSON(w, http.StatusOK, editionBody{
-				NextEditionAt: settings.NextEditionAt.Unix(),
-				Size:          settings.EditionSize,
+				NextEditionAt: page.NextEditionAt.Unix(),
+				Size:          page.EditionSize,
 				Items:         []articleBody{},
 			})
 			return
@@ -88,7 +88,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 	body := editionBody{
 		ID:            ed.ID,
 		GeneratedAt:   ed.GeneratedAt.Unix(),
-		NextEditionAt: settings.NextEditionAt.Unix(),
+		NextEditionAt: page.NextEditionAt.Unix(),
 		Size:          ed.Size,
 		Items:         make([]articleBody, 0, len(items)),
 	}
@@ -126,7 +126,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 // regeneration does not leave a stale timer about to fire.
 func (s *Server) regenerate(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
-	if _, err := s.gen.Regenerate(r.Context(), p.ID, s.store.Now()); err != nil {
+	if _, err := s.gen.Regenerate(r.Context(), store.MainPageID(p.ID), s.store.Now()); err != nil {
 		s.fail(w, r, err)
 		return
 	}

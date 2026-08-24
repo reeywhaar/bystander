@@ -111,9 +111,13 @@ func TestAnEditedArticleIsNotShownAgain(t *testing.T) {
 	}
 
 	// It goes on a page, which is what records having been shown.
-	if _, err := s.ReplaceEdition(ctx, p.ID, 1, 1,
+	page, err := s.PageByID(ctx, MainPageID(p.ID))
+	if err != nil {
+		t.Fatalf("PageByID(): %v", err)
+	}
+	if _, err := s.AddEdition(ctx, page, 1,
 		[]Pick{{Item: first, Rank: 0, Slot: SlotLead}}); err != nil {
-		t.Fatalf("ReplaceEdition(): %v", err)
+		t.Fatalf("AddEdition(): %v", err)
 	}
 
 	seen, err := s.shownHashes(ctx, p.ID, feed.ID)

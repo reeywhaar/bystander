@@ -72,16 +72,19 @@ func newInstance(t *testing.T, articles int) *instance {
 
 func (in *instance) size(t *testing.T, articles int) {
 	t.Helper()
-	if err := in.store.UpdateSettings(context.Background(), in.principal.ID,
-		store.SettingsPatch{EditionSize: &articles}); err != nil {
-		t.Fatalf("UpdateSettings(): %v", err)
+	if err := in.store.UpdatePage(context.Background(), in.pageID(),
+		store.PagePatch{EditionSize: &articles}); err != nil {
+		t.Fatalf("UpdatePage(): %v", err)
 	}
 }
+
+// pageID is this instance's main page, which is the page every test here works on.
+func (in *instance) pageID() string { return store.MainPageID(in.principal.ID) }
 
 // titles is what is on the live page, by title, so a failure names the articles.
 func (in *instance) titles(t *testing.T) []string {
 	t.Helper()
-	_, items, err := in.store.CurrentEdition(context.Background(), in.principal.ID)
+	_, items, err := in.store.CurrentEdition(context.Background(), in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -94,11 +97,11 @@ func (in *instance) titles(t *testing.T) []string {
 
 func (in *instance) scheduledTurn(t *testing.T, at time.Time) {
 	t.Helper()
-	settings, err := in.store.Settings(context.Background(), in.principal.ID)
+	page, err := in.store.PageByID(context.Background(), in.pageID())
 	if err != nil {
-		t.Fatalf("Settings(): %v", err)
+		t.Fatalf("PageByID(): %v", err)
 	}
-	if err := in.gen.GenerateAndSchedule(context.Background(), settings, at); err != nil {
+	if err := in.gen.GenerateAndSchedule(context.Background(), page, at); err != nil {
 		t.Fatalf("GenerateAndSchedule(): %v", err)
 	}
 }
@@ -143,7 +146,7 @@ func TestRegenerateReturnsUnreadArticles(t *testing.T) {
 	in.scheduledTurn(t, now)
 	first := in.titles(t)
 
-	if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+	if _, err := in.gen.Regenerate(ctx, in.pageID(), now); err != nil {
 		t.Fatalf("Regenerate(): %v", err)
 	}
 	second := in.titles(t)
@@ -177,7 +180,7 @@ func TestRegenerateKeepsReadArticlesSpent(t *testing.T) {
 
 	in.scheduledTurn(t, now)
 
-	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -186,7 +189,7 @@ func TestRegenerateKeepsReadArticlesSpent(t *testing.T) {
 		t.Fatalf("SetRead(): %v", err)
 	}
 
-	if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+	if _, err := in.gen.Regenerate(ctx, in.pageID(), now); err != nil {
 		t.Fatalf("Regenerate(): %v", err)
 	}
 	for _, title := range in.titles(t) {
@@ -206,7 +209,7 @@ func TestRegenerateSurvivesRepeatedPresses(t *testing.T) {
 
 	in.scheduledTurn(t, now)
 	for press := range 5 {
-		if _, err := in.gen.Regenerate(ctx, in.principal.ID, now); err != nil {
+		if _, err := in.gen.Regenerate(ctx, in.pageID(), now); err != nil {
 			t.Fatalf("press %d: %v", press+1, err)
 		}
 		if got := len(in.titles(t)); got != 10 {
@@ -225,7 +228,7 @@ func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
 
 	in.scheduledTurn(t, now)
 
-	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -235,7 +238,7 @@ func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
 		}
 	}
 
-	_, err = in.gen.Regenerate(ctx, in.principal.ID, now)
+	_, err = in.gen.Regenerate(ctx, in.pageID(), now)
 	if err == nil {
 		t.Fatal("Regenerate() composed a page out of nothing")
 	}
@@ -299,7 +302,7 @@ func TestARepeatKeepsItsReadMark(t *testing.T) {
 	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 
 	in.scheduledTurn(t, now)
-	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -311,7 +314,7 @@ func TestARepeatKeepsItsReadMark(t *testing.T) {
 	// Nothing fresh at all, so the whole next page is repeats.
 	in.scheduledTurn(t, now.Add(24*time.Hour))
 
-	_, next, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, next, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -351,7 +354,7 @@ func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
 
 	// Show everything across two pages, reading the first page through.
 	in.scheduledTurn(t, now)
-	_, first, _ := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, first, _ := in.store.CurrentEdition(ctx, in.pageID())
 	for _, entry := range first {
 		if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
 			t.Fatalf("SetRead(): %v", err)
@@ -363,7 +366,7 @@ func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
 	// be the ten nobody read.
 	in.scheduledTurn(t, now.Add(48*time.Hour))
 
-	_, third, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, third, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -400,11 +403,11 @@ func TestThePageGetsTheWholeArticle(t *testing.T) {
 	if err := in.store.SetImageSize(ctx, "https://example.com/pic.png", 1600, 900); err != nil {
 		t.Fatalf("SetImageSize(): %v", err)
 	}
-	if _, err := in.gen.Generate(ctx, in.principal.ID); err != nil {
+	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
 		t.Fatalf("Generate(): %v", err)
 	}
 
-	_, items, err := in.store.CurrentEdition(ctx, in.principal.ID)
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"bystander/internal/ids"
@@ -35,7 +34,10 @@ const (
 
 // Edition is one person's live front page.
 type Edition struct {
-	ID          string
+	ID     string
+	PageID string
+	// PrincipalID is whose page this is, kept beside PageID because derived.db cannot join to
+	// main.db to work it out. See AddEdition.
 	PrincipalID string
 	GeneratedAt time.Time
 	Seed        int64
@@ -60,25 +62,47 @@ type Pick struct {
 	Slot Slot
 }
 
-// ReplaceEdition swaps a principal's page for a new one.
+// currentEditions is every page's newest edition, as a CTE the queries below build on.
 //
-// One transaction, in this order: delete the old edition, insert the new one and its
-// items, record what was shown. Delete-before-insert is forced by the unique index on
-// editions.principal_id — exactly one live edition per person — and is safe because it is
-// one transaction: the previous edition stays visible to readers until this commits, so a
-// crash half way through leaves somebody with yesterday's page rather than with nothing.
+// Written once because three different questions need it and they must agree: which edition a
+// page is showing, which editions an article should be marked read across, and which editions
+// still count as displaying an article. A second spelling of "the live one" that drifted from
+// this would show up as read marks landing on a page nobody is looking at.
+const currentEditions = `
+WITH ranked AS (
+    SELECT id, page_id, principal_id,
+           row_number() OVER (PARTITION BY page_id ORDER BY generated_at DESC, id DESC) AS rn
+      FROM editions
+), current AS (
+    SELECT id, page_id, principal_id FROM ranked WHERE rn = 1
+)`
+
+// AddEdition writes a new edition for a page. It becomes the live one by being the newest.
 //
-// Discarding the old edition takes its read marks with it, by cascade. That is the whole
-// design: a mark belongs to the edition it was made in.
-func (s *Store) ReplaceEdition(ctx context.Context, principalID string, seed int64, size int, picks []Pick) (*Edition, error) {
+// Nothing is deleted here, and the old edition is left where it is. That used to be the other
+// way round — one edition per page, enforced by a unique index, with the previous one deleted
+// inside this transaction — and the deleting bought nothing. The live edition is a question
+// with an obvious answer ("the newest") and answering it by keeping the table to one row put a
+// delete on the path of every compose, where it could fail and take the compose with it.
+//
+// So editions accumulate and the sweep collects them. Between sweeps a page has a short history
+// behind it, which costs some rows and is otherwise invisible: everything that reads a page
+// reads the newest.
+//
+// The principal is written beside the page, denormalised on purpose. derived.db cannot join to
+// main.db to find out whose page this is, and marking an article read has to reach every one of
+// a person's live editions at once. Both columns are set here, together, from one Page.
+func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []Pick) (*Edition, error) {
 	now := s.Now()
 	ed := &Edition{
 		ID:          ids.New(ids.Edition),
-		PrincipalID: principalID,
+		PageID:      page.ID,
+		PrincipalID: page.PrincipalID,
 		GeneratedAt: now,
 		Seed:        seed,
-		Size:        size,
+		Size:        page.EditionSize,
 	}
+	principalID := page.PrincipalID
 
 	tx, err := s.derived.BeginTx(ctx, nil)
 	if err != nil {
@@ -86,12 +110,10 @@ func (s *Store) ReplaceEdition(ctx context.Context, principalID string, seed int
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM editions WHERE principal_id = ?`, principalID); err != nil {
-		return nil, err
-	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO editions (id, principal_id, generated_at, seed, size) VALUES (?, ?, ?, ?, ?)`,
-		ed.ID, principalID, unix(now), seed, size); err != nil {
+		`INSERT INTO editions (id, page_id, principal_id, generated_at, seed, size)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		ed.ID, page.ID, principalID, unix(now), seed, ed.Size); err != nil {
 		return nil, fmt.Errorf("create edition: %w", err)
 	}
 
@@ -135,16 +157,21 @@ func (s *Store) ReplaceEdition(ctx context.Context, principalID string, seed int
 	return ed, nil
 }
 
-// CurrentEdition returns a principal's live page, or ErrNotFound before their first
-// generation.
-func (s *Store) CurrentEdition(ctx context.Context, principalID string) (*Edition, []*EditionItem, error) {
+// CurrentEdition returns one page's live edition, or ErrNotFound before its first generation.
+//
+// The newest, because that is what "live" means now that editions accumulate. Ties are broken by
+// id so that two composes inside one second still have an order — unlikely, and an arbitrary
+// answer is still better than a different arbitrary answer on each query.
+func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []*EditionItem, error) {
 	var (
 		ed        Edition
 		generated int64
 	)
 	err := s.derived.QueryRowContext(ctx,
-		`SELECT id, principal_id, generated_at, seed, size FROM editions WHERE principal_id = ?`,
-		principalID).Scan(&ed.ID, &ed.PrincipalID, &generated, &ed.Seed, &ed.Size)
+		`SELECT id, page_id, principal_id, generated_at, seed, size
+		   FROM editions WHERE page_id = ?
+		  ORDER BY generated_at DESC, id DESC LIMIT 1`,
+		pageID).Scan(&ed.ID, &ed.PageID, &ed.PrincipalID, &generated, &ed.Seed, &ed.Size)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, NotFound("no page has been generated yet")
 	}
@@ -217,15 +244,22 @@ func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bo
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx,
-		`UPDATE edition_items SET read_at = ?
-		  WHERE item_id = ?
-		    AND edition_id = (SELECT id FROM editions WHERE principal_id = ?)`,
+	// Every one of this person's live editions, not just the page they were looking at.
+	//
+	// Reading is a fact about a person and an article. The same article can sit on a page of
+	// everything and on a page filtered to one tag at the same time, and seeing it unread on the
+	// next tab having just read it reads as a bug rather than as a distinction anybody wanted.
+	res, err := tx.ExecContext(ctx, currentEditions+`
+		UPDATE edition_items SET read_at = ?
+		 WHERE item_id = ?
+		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)`,
 		nullTime(readAt(now, read)), itemID, principalID)
 	if err != nil {
 		return err
 	}
-	if err := expectOne(res, NotFound("that article is not on your page")); err != nil {
+	// At least one, rather than exactly one: an article on two pages updates two rows, and
+	// that is the point of the query above.
+	if err := expectSome(res, NotFound("that article is not on any of your pages")); err != nil {
 		return err
 	}
 
@@ -318,23 +352,33 @@ func readAt(now time.Time, read bool) time.Time {
 // no sha256, so there is nothing to join on. The live page is at most `edition_size` rows,
 // so reading them and deleting by computed hash is a couple of hundred statements at the
 // very worst.
-func (s *Store) ReleaseUnread(ctx context.Context, principalID string) (int64, error) {
-	rows, err := s.derived.QueryContext(ctx,
-		`SELECT i.feed_id, i.guid
-		   FROM edition_items e
-		   JOIN items i ON i.id = e.item_id
-		  WHERE e.read_at IS NULL
-		    AND e.edition_id = (SELECT id FROM editions WHERE principal_id = ?)`,
-		principalID)
+func (s *Store) ReleaseUnread(ctx context.Context, pageID string) (int64, error) {
+	// Not an article that is also sitting on another of this person's pages.
+	//
+	// The record of having been shown is one per person, so releasing it here would make the
+	// article eligible everywhere — including on the page that is still displaying it, which
+	// would then be free to draw it a second time. Still on a page means still shown.
+	rows, err := s.derived.QueryContext(ctx, currentEditions+`
+		SELECT ed.principal_id, i.feed_id, i.guid
+		  FROM current ed
+		  JOIN edition_items e ON e.edition_id = ed.id
+		  JOIN items i         ON i.id = e.item_id
+		 WHERE ed.page_id = ?
+		   AND e.read_at IS NULL
+		   AND NOT EXISTS (
+		         SELECT 1 FROM edition_items o
+		           JOIN current oe ON oe.id = o.edition_id
+		          WHERE o.item_id = e.item_id AND oe.page_id <> ed.page_id)`,
+		pageID)
 	if err != nil {
 		return 0, err
 	}
 
-	type article struct{ feedID, guid string }
+	type article struct{ principalID, feedID, guid string }
 	var unread []article
 	for rows.Next() {
 		var a article
-		if err := rows.Scan(&a.feedID, &a.guid); err != nil {
+		if err := rows.Scan(&a.principalID, &a.feedID, &a.guid); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -363,7 +407,7 @@ func (s *Store) ReleaseUnread(ctx context.Context, principalID string) (int64, e
 
 	var released int64
 	for _, a := range unread {
-		res, err := stmt.ExecContext(ctx, principalID, a.feedID, GUIDHash(a.guid))
+		res, err := stmt.ExecContext(ctx, a.principalID, a.feedID, GUIDHash(a.guid))
 		if err != nil {
 			return 0, err
 		}
@@ -376,12 +420,15 @@ func (s *Store) ReleaseUnread(ctx context.Context, principalID string) (int64, e
 	return released, nil
 }
 
-// DeleteEditionsExcept collects the pages of accounts that no longer exist.
+// DeleteEditionsExcept collects the editions of pages that no longer exist.
 //
-// Principals live in the other database, so this cannot be a foreign key: the list of who
-// is still here has to be passed in, and the sweep runs it periodically.
-func (s *Store) DeleteEditionsExcept(ctx context.Context, livePrincipalIDs []string) (int64, error) {
-	if len(livePrincipalIDs) == 0 {
+// Two lists, because two different things are being collected. Editions belong to pages, and a
+// page can be deleted while its owner stays; shown and read_articles belong to a person and
+// outlive any one of their pages. Both tables live in the other database from the rows that
+// would be their foreign keys, so the lists have to be passed in and the sweep runs this
+// periodically.
+func (s *Store) DeleteEditionsExcept(ctx context.Context, livePageIDs, livePrincipalIDs []string) (int64, error) {
+	if len(livePageIDs) == 0 || len(livePrincipalIDs) == 0 {
 		res, err := s.derived.ExecContext(ctx, `DELETE FROM editions`)
 		if err != nil {
 			return 0, err
@@ -394,19 +441,15 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePrincipalIDs []str
 		return res.RowsAffected()
 	}
 
-	args := make([]any, 0, len(livePrincipalIDs))
-	for _, id := range livePrincipalIDs {
-		args = append(args, id)
-	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(livePrincipalIDs)), ",")
-
+	pageArgs, pagePlaceholders := inList(livePageIDs)
 	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM editions WHERE principal_id NOT IN (`+placeholders+`)`, args...)
+		`DELETE FROM editions WHERE page_id NOT IN (`+pagePlaceholders+`)`, pageArgs...)
 	if err != nil {
 		return 0, err
 	}
 	removed, _ := res.RowsAffected()
 
+	args, placeholders := inList(livePrincipalIDs)
 	for _, table := range []string{"shown", "read_articles"} {
 		if _, err := s.derived.ExecContext(ctx,
 			`DELETE FROM `+table+` WHERE principal_id NOT IN (`+placeholders+`)`, args...); err != nil {
@@ -414,4 +457,19 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePrincipalIDs []str
 		}
 	}
 	return removed, nil
+}
+
+// PruneOldEditions removes every edition a page has moved on from.
+//
+// Editions accumulate because nothing deletes one on the way in — see [AddEdition] — so this is
+// the other half of that: the newest edition of each page is the page, and the ones behind it
+// are history nobody reads. Their items and read marks go with them by cascade, and the durable
+// record of what somebody read is read_articles, which this does not touch.
+func (s *Store) PruneOldEditions(ctx context.Context) (int64, error) {
+	res, err := s.derived.ExecContext(ctx, currentEditions+`
+		DELETE FROM editions WHERE id NOT IN (SELECT id FROM current)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

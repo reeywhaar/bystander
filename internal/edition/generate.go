@@ -27,22 +27,29 @@ func NewGenerator(st *store.Store, log *slog.Logger) *Generator {
 	return &Generator{store: st, log: log}
 }
 
-// Generate composes and commits one person's page.
+// Generate composes and commits one page.
 //
-// Returns the new edition, or nil when there was nothing to draw from. A principal with no
-// feeds — or none that has produced an unshown article — is not an error and does not get
-// an empty page: nothing is written, and the caller leaves their clock alone so the first
-// real page arrives on the tick after they add a feed rather than a day later.
-func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Edition, error) {
-	settings, err := g.store.Settings(ctx, principalID)
+// Returns the new edition, or nil when there was nothing to draw from. A page with no feeds —
+// or none that has produced an unshown article — is not an error and does not get an empty
+// page: nothing is written, and the caller leaves its clock alone so the first real page
+// arrives on the tick after a feed is added rather than a day later.
+//
+// A page with a filter that matches nothing behaves the same way. That is worth knowing about
+// rather than treating as a bug: a page filtered to a tag nobody has used is empty for exactly
+// the same reason a new account's is, and telling those two apart is the interface's job.
+func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition, error) {
+	page, err := g.store.PageByID(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
+	principalID := page.PrincipalID
 
 	subs, err := g.store.ListSubscriptions(ctx, principalID)
 	if err != nil {
 		return nil, err
 	}
+	// What this page is allowed to draw from, which for the main page is usually everything.
+	subs = eligible(page, subs)
 	if len(subs) == 0 {
 		return nil, nil
 	}
@@ -59,11 +66,19 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	// Nothing older than each feed's own window. A news feed worth a day and a blog worth
 	// a year are exactly the pair one number could not serve, which is why this is per
 	// feed rather than per reader.
+	//
+	// A page may hold a shorter window over the top of it — a finances page wanting only
+	// today's news out of feeds that are otherwise worth a week. The tighter of the two wins,
+	// because both were asked for and only one of them can be honoured by showing more.
 	now := g.store.Now()
 	notOlderThan := make(map[string]time.Time, len(subs))
 	for _, sub := range subs {
-		if sub.ArticleWindow > 0 {
-			notOlderThan[sub.FeedID] = now.Add(-sub.ArticleWindow)
+		window := sub.ArticleWindow
+		if page.ArticleWindow > 0 && (window == 0 || page.ArticleWindow < window) {
+			window = page.ArticleWindow
+		}
+		if window > 0 {
+			notOlderThan[sub.FeedID] = now.Add(-window)
 		}
 	}
 	candidates, err := g.store.Candidates(ctx, principalID, feedIDs, candidateDepth, notOlderThan)
@@ -88,18 +103,73 @@ func (g *Generator) Generate(ctx context.Context, principalID string) (*store.Ed
 	s := seed()
 	buckets, sources := plan(subs, tags, candidates)
 	_, repeats := plan(subs, tags, seenBefore)
-	picks := Select(buckets, sources, repeats, settings.EditionSize, s)
+	picks := Select(buckets, sources, repeats, page.EditionSize, s)
 	if len(picks) == 0 {
 		return nil, nil
 	}
 
-	ed, err := g.store.ReplaceEdition(ctx, principalID, s, settings.EditionSize, picks)
+	ed, err := g.store.AddEdition(ctx, page, s, picks)
 	if err != nil {
 		return nil, err
 	}
-	g.log.Info("composed a page",
-		"principal", principalID, "articles", len(picks), "feeds", len(candidates), "asked_for", settings.EditionSize)
+	g.log.Info("composed a page", "page", page.ID, "principal", principalID,
+		"articles", len(picks), "feeds", len(candidates), "asked_for", page.EditionSize)
 	return ed, nil
+}
+
+// eligible is the subscriptions one page may draw from.
+//
+// Both filters are applied, and they compose rather than override: a page including the tag
+// "finance" and excluding one particular feed means both. The interface narrows what the second
+// control can offer once the first is set, which keeps a person from building a combination
+// that selects nothing — but it is the interface that does that, and this applies whatever it
+// was given.
+func eligible(page *store.Page, subs []*store.Subscription) []*store.Subscription {
+	tagged := set(page.TagIDs)
+	feeds := set(page.FeedIDs)
+
+	out := make([]*store.Subscription, 0, len(subs))
+	for _, sub := range subs {
+		switch page.TagFilter {
+		case store.TagsIncluding:
+			if !anyOf(sub.TagIDs, tagged) {
+				continue
+			}
+		case store.TagsExcluding:
+			if anyOf(sub.TagIDs, tagged) {
+				continue
+			}
+		}
+		switch page.FeedFilter {
+		case store.FeedsIncluding:
+			if !feeds[sub.FeedID] {
+				continue
+			}
+		case store.FeedsExcluding:
+			if feeds[sub.FeedID] {
+				continue
+			}
+		}
+		out = append(out, sub)
+	}
+	return out
+}
+
+func set(ids []string) map[string]bool {
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+func anyOf(ids []string, wanted map[string]bool) bool {
+	for _, id := range ids {
+		if wanted[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // plan turns subscriptions and tags into the buckets and sources the sampler works on.
@@ -164,19 +234,19 @@ func seed() int64 {
 	return int64(binary.LittleEndian.Uint64(b[:]))
 }
 
-// GenerateAndSchedule composes a page and moves the clock on.
+// GenerateAndSchedule composes a page and moves its clock on.
 //
-// The clock moves only when a page was actually produced. A principal with no feeds stays
-// due, which is what makes their first page arrive on the tick after they add one.
-func (g *Generator) GenerateAndSchedule(ctx context.Context, settings *store.Settings, now time.Time) error {
-	ed, err := g.Generate(ctx, settings.PrincipalID)
+// The clock moves only when a page was actually produced. A page with nothing to draw from
+// stays due, which is what makes its first edition arrive on the tick after a feed is added.
+func (g *Generator) GenerateAndSchedule(ctx context.Context, page *store.Page, now time.Time) error {
+	ed, err := g.Generate(ctx, page.ID)
 	if err != nil {
 		return err
 	}
 	if ed == nil {
 		return nil
 	}
-	return g.store.ScheduleNextEdition(ctx, settings.PrincipalID, now.Add(settings.EditionInterval))
+	return g.store.ScheduleNextEdition(ctx, page.ID, now.Add(page.EditionInterval))
 }
 
 // Regenerate composes a page now, on request, and rebases the clock from this moment so a
@@ -186,24 +256,24 @@ func (g *Generator) GenerateAndSchedule(ctx context.Context, settings *store.Set
 // pool — see store.ReleaseUnread for why. The practical effect is that pressing the button
 // twice gives two different arrangements of what your feeds have published, rather than one
 // page and then an apology.
-func (g *Generator) Regenerate(ctx context.Context, principalID string, now time.Time) (*store.Edition, error) {
-	settings, err := g.store.Settings(ctx, principalID)
+func (g *Generator) Regenerate(ctx context.Context, pageID string, now time.Time) (*store.Edition, error) {
+	page, err := g.store.PageByID(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
-	released, err := g.store.ReleaseUnread(ctx, principalID)
+	released, err := g.store.ReleaseUnread(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
-	ed, err := g.Generate(ctx, principalID)
+	ed, err := g.Generate(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 	if ed != nil && released > 0 {
 		g.log.Debug("returned unread articles to the pool before recomposing",
-			"principal", principalID, "released", released)
+			"page", pageID, "released", released)
 	}
 	if ed == nil {
 		// Two different answers, and they deserve different words. Somebody with a page on
@@ -213,12 +283,12 @@ func (g *Generator) Regenerate(ctx context.Context, principalID string, now time
 		// Everything on the page has been read and the feeds have published nothing
 		// since. Unread articles were already returned to the pool above, so there is
 		// genuinely nothing left to arrange.
-		if _, _, err := g.store.CurrentEdition(ctx, principalID); err == nil {
+		if _, _, err := g.store.CurrentEdition(ctx, pageID); err == nil {
 			return nil, store.Conflict("everything here has been read, and nothing new has been published yet")
 		}
 		return nil, store.NotFound("there is nothing to put on a page yet — add a feed, and give it a moment to fetch")
 	}
-	if err := g.store.ScheduleNextEdition(ctx, principalID, now.Add(settings.EditionInterval)); err != nil {
+	if err := g.store.ScheduleNextEdition(ctx, pageID, now.Add(page.EditionInterval)); err != nil {
 		return nil, err
 	}
 	return ed, nil
