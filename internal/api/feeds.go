@@ -38,7 +38,14 @@ type subscriptionBody struct {
 	ArticleWindow int64 `json:"article_window"`
 
 	LastSuccessAt *int64 `json:"last_success_at"`
-	LastError     string `json:"last_error"`
+	// LastStatus is what the server answered with, or zero when the request never reached one.
+	// That distinction is the first thing somebody asking "why is this not answering" needs,
+	// and it cannot be read off the message.
+	LastStatus int    `json:"last_status"`
+	LastError  string `json:"last_error"`
+	// LastErrorBody is what the server said when it refused, so a reader can be shown the
+	// thing itself rather than a summary of it. Empty when nothing answered.
+	LastErrorBody string `json:"last_error_body"`
 	FailureCount  int    `json:"failure_count"`
 }
 
@@ -55,7 +62,9 @@ func subscriptionOf(sub *store.Subscription) subscriptionBody {
 		TagIDs:        sub.TagIDs,
 		ArticleWindow: int64(sub.ArticleWindow.Seconds()),
 		CreatedAt:     sub.CreatedAt.Unix(),
+		LastStatus:    sub.Feed.LastStatus,
 		LastError:     sub.Feed.LastError,
+		LastErrorBody: sub.Feed.LastErrorBody,
 		FailureCount:  sub.Feed.FailureCount,
 	}
 	// An empty slice rather than null, so the client never has to guard a map over it.

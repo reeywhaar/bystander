@@ -31,6 +31,13 @@ const (
 	// rather than an outage.
 	maxBody = 8 << 20
 
+	// maxErrorBody is how much of a refusal is kept to show somebody.
+	//
+	// Two kilobytes: a JSON error, an HTML title, or the top of a stack trace. Past that it is
+	// somebody else's error page, and it would be stored once per feed for as long as the feed
+	// keeps failing.
+	maxErrorBody = 2 << 10
+
 	// maxRedirects is how far a feed may move. Enough for http→https plus a hostname
 	// change; not enough to be walked around a redirect loop.
 	maxRedirects = 5
@@ -78,6 +85,10 @@ type Result struct {
 	LastModified string
 	FinalURL     string
 	Parsed       *Parsed
+	// ErrorBody is what the server said when it refused, trimmed and bounded by
+	// [maxErrorBody]. Empty when the request never reached a server, which Status being zero
+	// says on its own.
+	ErrorBody string
 }
 
 // Fetch retrieves a feed, sending back whatever validators it gave us last time.
@@ -124,6 +135,16 @@ func (f *Fetcher) Fetch(ctx context.Context, feed *store.Feed, now time.Time) (*
 		return result, nil
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		// What it said, not just that it said no.
+		//
+		// "The server answered 503" is a fact nobody can act on. The body underneath is
+		// where the rate-limit note, the "this feed has moved" and the login page live, and
+		// it was being read far enough to be thrown away.
+		//
+		// Read from a limited reader, so a server answering an error with a megabyte of HTML
+		// costs a couple of kilobytes here.
+		body, _ := io.ReadAll(io.LimitReader(res.Body, maxErrorBody))
+		result.ErrorBody = strings.TrimSpace(string(body))
 		return result, fmt.Errorf("the server answered %s", res.Status)
 	}
 

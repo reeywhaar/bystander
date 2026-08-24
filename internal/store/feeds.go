@@ -29,6 +29,9 @@ type Feed struct {
 	LastSuccessAt time.Time
 	LastStatus    int
 	LastError     string
+	// LastErrorBody is what the server said when it refused, bounded. Empty when the request
+	// never reached one — LastStatus being zero is what says that.
+	LastErrorBody string
 	FailureCount  int
 	NextFetchAt   time.Time
 
@@ -157,7 +160,7 @@ func (s *Store) UpsertFeed(ctx context.Context, rawURL, title, siteURL string) (
 }
 
 const feedColumns = `id, url, canonical_url, title, site_url, etag, last_modified,
-	last_fetch_at, last_success_at, last_status, last_error, failure_count, next_fetch_at, created_at`
+	last_fetch_at, last_success_at, last_status, last_error, last_error_body, failure_count, next_fetch_at, created_at`
 
 func scanFeed(row interface{ Scan(...any) error }) (*Feed, error) {
 	var (
@@ -169,7 +172,7 @@ func scanFeed(row interface{ Scan(...any) error }) (*Feed, error) {
 		created   int64
 	)
 	if err := row.Scan(&f.ID, &f.URL, &f.CanonicalURL, &f.Title, &f.SiteURL, &f.ETag, &f.LastModified,
-		&lastFetch, &lastOK, &status, &f.LastError, &f.FailureCount, &next, &created); err != nil {
+		&lastFetch, &lastOK, &status, &f.LastError, &f.LastErrorBody, &f.FailureCount, &next, &created); err != nil {
 		return nil, err
 	}
 	f.LastFetchAt = timeFrom(lastFetch)
@@ -223,7 +226,7 @@ func (s *Store) RecordSuccess(ctx context.Context, feedID, title, siteURL, etag,
 		   site_url = CASE WHEN ? <> '' THEN ? ELSE site_url END,
 		   etag = ?, last_modified = ?,
 		   last_fetch_at = ?, last_success_at = ?, last_status = ?,
-		   last_error = '', failure_count = 0, next_fetch_at = ?
+		   last_error = '', last_error_body = '', failure_count = 0, next_fetch_at = ?
 		 WHERE id = ?`,
 		title, title, siteURL, siteURL, etag, lastModified, now, now, status, unix(next), feedID)
 	return err
@@ -235,12 +238,12 @@ func (s *Store) RecordSuccess(ctx context.Context, feedID, title, siteURL, etag,
 // The title and the last successful fetch are left alone: a feed that broke this morning
 // should still show its name and when it last worked, which is the pair of facts somebody
 // looking at the manage page actually needs.
-func (s *Store) RecordFailure(ctx context.Context, feedID string, status int, message string, next time.Time) error {
+func (s *Store) RecordFailure(ctx context.Context, feedID string, status int, message, body string, next time.Time) error {
 	_, err := s.main.ExecContext(ctx,
-		`UPDATE feeds SET last_fetch_at = ?, last_status = ?, last_error = ?,
+		`UPDATE feeds SET last_fetch_at = ?, last_status = ?, last_error = ?, last_error_body = ?,
 		   failure_count = failure_count + 1, next_fetch_at = ?
 		 WHERE id = ?`,
-		unix(s.Now()), status, message, unix(next), feedID)
+		unix(s.Now()), status, message, body, unix(next), feedID)
 	return err
 }
 
@@ -357,7 +360,7 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Priority,
 		&window, &created,
 		&feed.ID, &feed.URL, &feed.CanonicalURL, &feed.Title, &feed.SiteURL, &feed.ETag, &feed.LastModified,
-		&lastFetch, &lastOK, &status, &feed.LastError, &feed.FailureCount, &next, &feedMade); err != nil {
+		&lastFetch, &lastOK, &status, &feed.LastError, &feed.LastErrorBody, &feed.FailureCount, &next, &feedMade); err != nil {
 		return nil, err
 	}
 	sub.ArticleWindow = time.Duration(window) * time.Second
@@ -373,7 +376,7 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 
 const subscriptionSelect = `SELECT ` + subscriptionColumns + `,
 	f.id, f.url, f.canonical_url, f.title, f.site_url, f.etag, f.last_modified,
-	f.last_fetch_at, f.last_success_at, f.last_status, f.last_error, f.failure_count,
+	f.last_fetch_at, f.last_success_at, f.last_status, f.last_error, f.last_error_body, f.failure_count,
 	f.next_fetch_at, f.created_at
 	FROM subscriptions s JOIN feeds f ON f.id = s.feed_id`
 

@@ -45,7 +45,9 @@ function subscription(overrides: Partial<Subscription> = {}): Subscription {
     article_window: 604800,
     created_at: now - 3 * 86400,
     last_success_at: now - 600,
+    last_status: 0,
     last_error: "",
+    last_error_body: "",
     failure_count: 0,
     ...overrides,
   };

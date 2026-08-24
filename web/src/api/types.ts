@@ -195,7 +195,11 @@ export interface Subscription {
   article_window: number;
   created_at: number;
   last_success_at: number | null;
+  /** What the server answered with, or 0 when the request never reached one. */
+  last_status: number;
   last_error: string;
+  /** What the server said when it refused, bounded. Empty when nothing answered. */
+  last_error_body: string;
   failure_count: number;
 }
 

@@ -73,6 +73,7 @@ var Main = []Migration{
 	mainJobs,
 	mainPages,
 	mainFrontPageName,
+	mainFeedErrorBody,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db

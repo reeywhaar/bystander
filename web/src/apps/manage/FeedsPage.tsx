@@ -15,6 +15,7 @@ import {
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
 import { FeedDialog } from "@app/apps/manage/FeedDialog";
+import { FeedErrorDialog } from "@app/apps/manage/FeedErrorDialog";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
@@ -241,6 +242,7 @@ function FeedRow({
   onOpen: (feed: Subscription) => void;
 }) {
   const update = useUpdateFeed();
+  const [explaining, setExplaining] = useState(false);
 
   const failing = feed.failure_count > 0;
   // Full paths, so a nested tag reads as "News / World" rather than losing where it sits.
@@ -285,9 +287,16 @@ function FeedRow({
           {failing ? (
             <>
               {" · "}
-              <span className="text-accent" title={feed.last_error}>
+              {/* A button, because this was a `title` tooltip: it needed a pointer to
+                  hover, so on a phone the answer to "why is this not answering" could not
+                  be reached at all. */}
+              <button
+                type="button"
+                onClick={() => setExplaining(true)}
+                className="text-accent underline decoration-dotted underline-offset-2"
+              >
                 not answering ({feed.failure_count})
-              </span>
+              </button>
             </>
           ) : feed.last_success_at ? (
             <> · fetched {since(feed.last_success_at)}</>
@@ -308,6 +317,15 @@ function FeedRow({
           />
         </div>
       </div>
+
+      {/* Mounted only while it is open, so a page of thirty feeds is not thirty dialogs. */}
+      {explaining ? (
+        <FeedErrorDialog
+          feed={feed}
+          open={explaining}
+          onClose={() => setExplaining(false)}
+        />
+      ) : null}
     </div>
   );
 }

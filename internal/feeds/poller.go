@@ -103,12 +103,14 @@ func (p *Poller) fetchOne(ctx context.Context, feed *store.Feed) {
 		if ctx.Err() != nil {
 			return
 		}
-		status := 0
+		// The status and what the server said, when there was a server. A request that never
+		// reached one leaves both empty, and a zero status is what says so.
+		status, body := 0, ""
 		if result != nil {
-			status = result.Status
+			status, body = result.Status, result.ErrorBody
 		}
 		next := now.Add(p.backoff(feed.FailureCount))
-		if err := p.store.RecordFailure(ctx, feed.ID, status, err.Error(), next); err != nil {
+		if err := p.store.RecordFailure(ctx, feed.ID, status, err.Error(), body, next); err != nil {
 			p.log.Error("could not record a failed fetch", "feed", feed.ID, "error", err)
 		}
 		// Info, not Error: a feed being unreachable is ordinary and outside our control.
