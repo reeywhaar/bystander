@@ -124,7 +124,7 @@ func TestRegeneratingWorksRepeatedly(t *testing.T) {
 
 	h.signIn(store.RoleUser, "alice")
 	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
-	h.expect(h.do(http.MethodPatch, "/api/settings", map[string]int{"edition_size": 10}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+h.mainPage(), map[string]int{"edition_size": 10}), http.StatusOK, nil)
 
 	var first editionBody
 	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &first)
@@ -153,7 +153,7 @@ func TestRegeneratingKeepsWhatWasNotRead(t *testing.T) {
 
 	h.signIn(store.RoleUser, "alice")
 	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
-	h.expect(h.do(http.MethodPatch, "/api/settings", map[string]int{"edition_size": 10}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+h.mainPage(), map[string]int{"edition_size": 10}), http.StatusOK, nil)
 
 	var first editionBody
 	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &first)

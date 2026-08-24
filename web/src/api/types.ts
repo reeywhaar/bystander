@@ -180,6 +180,8 @@ export interface ReadArticle {
 
 export interface Subscription {
   id: string;
+  /** The feed itself, which is what a page's feed filter names. */
+  feed_id: string;
   url: string;
   site_url: string;
   /** What to call it here: the override if there is one, the publisher's otherwise. */
@@ -205,11 +207,37 @@ export interface Tag {
   created_at: number;
 }
 
-export interface Settings {
+/** How a page reads its list of tags. */
+export type TagFilter = "no" | "including" | "excluding";
+
+/** How a page reads its list of feeds. */
+export type FeedFilter = "all" | "including" | "excluding";
+
+/**
+ * One front page: what it is called, where it lives, and what it draws from.
+ *
+ * Everybody has at least one — the main page, served at `/`, whose name and address are fixed
+ * and which cannot be removed. The rest live at `/f/:slug`.
+ */
+export interface Page {
+  id: string;
+  name: string;
+  /** Empty for the main page, which is at `/` rather than at `/f/:slug`. */
+  slug: string;
+  is_main: boolean;
+
   /** Seconds. One of the four in `EDITION_INTERVALS`. */
   edition_interval: number;
   edition_size: number;
   next_edition_at: number;
+  /** Seconds; zero is no limit. One of `ARTICLE_WINDOWS`. */
+  max_article_age: number;
+
+  tag_filter: TagFilter;
+  feed_filter: FeedFilter;
+  /** Always present, even when the mode above says nothing reads them. */
+  tag_ids: string[];
+  feed_ids: string[];
 }
 
 export interface User {

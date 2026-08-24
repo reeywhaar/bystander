@@ -133,9 +133,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/tags/{id}", s.requireSession(s.patchTag))
 	mux.Handle("DELETE /api/tags/{id}", s.requireSession(s.deleteTag))
 
-	mux.Handle("GET /api/settings", s.requireSession(s.getSettings))
-	mux.Handle("PATCH /api/settings", s.requireSession(s.patchSettings))
-
 	mux.Handle("GET /api/admin/users", s.requireAdmin(s.listUsers))
 	mux.Handle("PATCH /api/admin/users/{id}", s.requireAdmin(s.patchUser))
 	mux.Handle("DELETE /api/admin/users/{id}", s.requireAdmin(s.deleteUser))

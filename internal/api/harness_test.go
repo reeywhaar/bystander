@@ -247,6 +247,20 @@ func (h *harness) signInElsewhere(username, password string) *http.Client {
 	return client
 }
 
+// mainPage is the signed-in account's main page id, for the tests that address a page.
+func (h *harness) mainPage() string {
+	h.t.Helper()
+	var pages []pageBody
+	h.expect(h.do(http.MethodGet, "/api/pages", nil), http.StatusOK, &pages)
+	for _, page := range pages {
+		if page.IsMain {
+			return page.ID
+		}
+	}
+	h.t.Fatal("this account has no main page")
+	return ""
+}
+
 // signInAsSomebodyElse creates a second account and hands back a client holding its session.
 //
 // A different person, not a second device — for the tests that are about one account not being

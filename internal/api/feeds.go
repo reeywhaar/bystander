@@ -16,7 +16,10 @@ import (
 // last_error is here because "this feed has gone quiet" without "and here is why" sends
 // somebody to logs they do not have.
 type subscriptionBody struct {
-	ID      string `json:"id"`
+	ID string `json:"id"`
+	// FeedID is the feed itself, which is a different thing from following it. A page's feed
+	// filter names feeds, because two people following one feed are following one feed.
+	FeedID  string `json:"feed_id"`
 	URL     string `json:"url"`
 	SiteURL string `json:"site_url"`
 	// Title is what to call this feed here: the override if there is one, the publisher's
@@ -42,6 +45,7 @@ type subscriptionBody struct {
 func subscriptionOf(sub *store.Subscription) subscriptionBody {
 	body := subscriptionBody{
 		ID:            sub.ID,
+		FeedID:        sub.FeedID,
 		URL:           sub.Feed.CanonicalURL,
 		SiteURL:       sub.Feed.SiteURL,
 		Title:         sub.Title(),

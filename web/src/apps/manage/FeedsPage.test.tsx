@@ -34,6 +34,7 @@ const art: Tag = {
 function subscription(overrides: Partial<Subscription> = {}): Subscription {
   return {
     id: "s_1",
+    feed_id: "f_1",
     url: "https://example.com/rss",
     site_url: "https://example.com",
     title: "The Example",

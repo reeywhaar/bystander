@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -45,15 +46,20 @@ function edition(items: Article[]): Edition {
 
 describe("ReaderPage", () => {
   it("lays out the page it was given", async () => {
-    renderWith(<ReaderPage me={me} />, {
-      "GET /api/edition": {
-        body: edition([
-          article("a_1", { slot: "lead", title: "The lead" }),
-          article("a_2", { rank: 1 }),
-        ]),
+    renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": {
+          body: edition([
+            article("a_1", { slot: "lead", title: "The lead" }),
+            article("a_2", { rank: 1 }),
+          ]),
+        },
+        "GET /api/feeds": { body: [] },
       },
-      "GET /api/feeds": { body: [] },
-    });
+    );
 
     expect(
       await screen.findByRole("link", { name: "The lead" }),
@@ -63,10 +69,15 @@ describe("ReaderPage", () => {
 
   // A new account should be told what to do, not shown a broken page.
   it("sends somebody with no feeds to add one", async () => {
-    renderWith(<ReaderPage me={me} />, {
-      "GET /api/edition": { body: edition([]) },
-      "GET /api/feeds": { body: [] },
-    });
+    renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([]) },
+        "GET /api/feeds": { body: [] },
+      },
+    );
 
     expect(
       await screen.findByText("Nothing on the page yet"),
@@ -79,11 +90,16 @@ describe("ReaderPage", () => {
   // Feeds added but no page yet is the ordinary state for the first minute or two of a
   // fresh instance, and the thing somebody wants there is to stop waiting.
   it("offers to compose the first page once there are feeds", async () => {
-    const { transport } = renderWith(<ReaderPage me={me} />, {
-      "GET /api/edition": { body: edition([]) },
-      "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
-      "POST /api/edition/regenerate": { body: edition([article("a_1")]) },
-    });
+    const { transport } = renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([]) },
+        "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
+        "POST /api/edition/regenerate": { body: edition([article("a_1")]) },
+      },
+    );
 
     await userEvent.click(
       await screen.findByRole("button", { name: "Make my first page" }),
@@ -101,10 +117,15 @@ describe("ReaderPage", () => {
   });
 
   it("marks an article read without waiting for the server", async () => {
-    const { transport } = renderWith(<ReaderPage me={me} />, {
-      "GET /api/edition": { body: edition([article("a_1")]) },
-      "PUT /api/edition/items/a_1/read": { status: 204 },
-    });
+    const { transport } = renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "PUT /api/edition/items/a_1/read": { status: 204 },
+      },
+    );
 
     await screen.findByRole("link", { name: "Story a_1" });
     await userEvent.click(screen.getByRole("button", { name: "Mark read" }));
@@ -126,15 +147,20 @@ describe("ReaderPage", () => {
   // A refusal that says "nothing new" is a note about the world, not a fault, and the page
   // it declined to replace has to still be there.
   it("keeps the page when there is nothing new to replace it with", async () => {
-    renderWith(<ReaderPage me={me} />, {
-      "GET /api/edition": { body: edition([article("a_1")]) },
-      "POST /api/edition/regenerate": {
-        status: 409,
-        body: {
-          error: "nothing new has been published since this page was made",
+    renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "POST /api/edition/regenerate": {
+          status: 409,
+          body: {
+            error: "nothing new has been published since this page was made",
+          },
         },
       },
-    });
+    );
 
     await screen.findByRole("link", { name: "Story a_1" });
     await userEvent.click(

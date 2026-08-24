@@ -40,7 +40,6 @@ import {
   postFeedsImportPreview,
 } from "@app/api/actions/opml";
 import { getRead } from "@app/api/actions/read";
-import { getSettings, patchSettings } from "@app/api/actions/settings";
 import {
   deleteTagsById,
   getTags,
@@ -55,6 +54,13 @@ import type {
   Role,
   SmtpForm,
 } from "@app/api/types";
+import {
+  deletePage,
+  getPages,
+  patchPage,
+  postPage,
+  type PageChanges,
+} from "@app/api/actions/pages";
 import { qk } from "@app/queries/keys";
 
 /**
@@ -79,23 +85,32 @@ export function useMe() {
   });
 }
 
-export function useEdition() {
+/**
+ * One page's live edition. Empty names the main page.
+ *
+ * Cached per page, so moving between tabs does not throw away the one being left — a reader
+ * comes back to a front page expecting to find it where they left it, and re-fetching would
+ * also mean re-drawing the seeded layout from scratch.
+ */
+export function useEdition(page = "") {
   const callApi = useApiCall();
   return useQuery({
-    queryKey: qk.edition,
-    queryFn: ({ signal }) => callApi(getEdition(), signal),
+    queryKey: qk.editionOf(page),
+    queryFn: ({ signal }) => callApi(getEdition(page), signal),
   });
 }
 
-export function useRegenerate() {
+export function useRegenerate(page = "") {
   const callApi = useApiCall();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => callApi(postEditionRegenerate()),
-    onSuccess: (page) => {
+    mutationFn: () => callApi(postEditionRegenerate(page)),
+    onSuccess: (edition) => {
       // The response *is* the new page, so write it straight into the cache rather than
       // invalidating and asking for what we are already holding.
-      client.setQueryData(qk.edition, page);
+      client.setQueryData(qk.editionOf(page), edition);
+      // Composing moves that page's clock, and the strip shows when each is next due.
+      void client.invalidateQueries({ queryKey: qk.pages });
     },
   });
 }
@@ -121,9 +136,15 @@ export function useSetRead() {
     onMutate: async ({ id, read }) => {
       // Stop an in-flight refetch from landing on top of the optimistic write.
       await client.cancelQueries({ queryKey: qk.edition });
-      const previous = client.getQueryData<Edition>(qk.edition);
+      // Every page held, not just the one being looked at.
+      //
+      // Reading is a fact about a person and an article, and the server marks it on every page
+      // the article is on. An optimistic update that touched only the visible page would
+      // disagree with the server the moment somebody switched tabs — and would then be
+      // silently corrected on the next fetch, which is the confusing way round.
+      const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
 
-      client.setQueryData<Edition>(qk.edition, (current) =>
+      client.setQueriesData<Edition>({ queryKey: qk.edition }, (current) =>
         current
           ? {
               ...current,
@@ -142,7 +163,9 @@ export function useSetRead() {
     },
 
     onError: (_error, _variables, context) => {
-      if (context?.previous) client.setQueryData(qk.edition, context.previous);
+      for (const [key, edition] of context?.previous ?? []) {
+        client.setQueryData(key, edition);
+      }
     },
 
     // The page is written optimistically above; the month-long record behind it is not,
@@ -334,24 +357,57 @@ export function useRemoveTag() {
   });
 }
 
-export function useSettings() {
+/** Every page this person has, main first — the tab strip. */
+export function usePages() {
   const callApi = useApiCall();
   return useQuery({
-    queryKey: qk.settings,
-    queryFn: ({ signal }) => callApi(getSettings(), signal),
+    queryKey: qk.pages,
+    queryFn: ({ signal }) => callApi(getPages(), signal),
   });
 }
 
-export function useUpdateSettings() {
+export function useCreatePage() {
   const callApi = useApiCall();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (changes: {
-      edition_interval?: number;
-      edition_size?: number;
-    }) => callApi(patchSettings(changes)),
-    onSuccess: (settings) => {
-      client.setQueryData(qk.settings, settings);
+    mutationFn: (page: { name: string; slug: string }) =>
+      callApi(postPage(page)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.pages });
+    },
+  });
+}
+
+/**
+ * Saves a page.
+ *
+ * One mutation for every control on a page, whether it came from the dialog's single save or
+ * from a cadence button pressed on its own. The distinction that matters is in the body: a
+ * field left out is left alone, so a button that changes the size sends only the size.
+ */
+export function useUpdatePage() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: PageChanges }) =>
+      callApi(patchPage(id, changes)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.pages });
+      // A page that draws from different things now shows different things, and its address
+      // may have moved. Both make every held edition stale.
+      void client.invalidateQueries({ queryKey: qk.edition });
+    },
+  });
+}
+
+export function useDeletePage() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => callApi(deletePage(id)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.pages });
+      void client.invalidateQueries({ queryKey: qk.edition });
     },
   });
 }

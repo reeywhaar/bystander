@@ -15,7 +15,15 @@ export const qk = {
   /** Its own root: the masthead's `me` and the account page answer different questions. */
   account: ["account"] as const,
 
+  /**
+   * The root, and one key per page beneath it.
+   *
+   * Beneath, because a reader with several pages holds several editions at once and switching
+   * tabs must not discard the one being left — while marking something read has to be able to
+   * reach all of them at a stroke, which invalidating the root does.
+   */
   edition: ["edition"] as const,
+  editionOf: (page: string) => ["edition", page] as const,
   /** Its own root: marking something read changes both, and neither is a prefix of the other. */
   read: ["read"] as const,
 
@@ -23,7 +31,10 @@ export const qk = {
   feed: (id: string) => ["feeds", id] as const,
 
   tags: ["tags"] as const,
-  settings: ["settings"] as const,
+
+  /** Under one root, so saving one page also refreshes the strip that lists them all. */
+  pages: ["pages"] as const,
+  page: (id: string) => ["pages", id] as const,
 
   /** Under one root, so refreshing the user list never discards the invitation list. */
   adminUsers: ["admin", "users"] as const,

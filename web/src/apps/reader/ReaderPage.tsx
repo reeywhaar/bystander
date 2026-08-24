@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { useParams } from "react-router";
 
 import { ApiError } from "@app/api/error";
 import type { Me } from "@app/api/types";
@@ -17,11 +18,16 @@ import {
 } from "@app/queries/hooks";
 
 import { ArticleCard } from "@app/apps/reader/ArticleCard";
+import { PageTabs } from "@app/apps/reader/PageTabs";
 
 export function ReaderPage({ me }: { me: Me }) {
-  const edition = useEdition();
+  // Which front page this is. Absent at the root, which is the main page — and which the
+  // endpoints already read as "the main one", so nothing here has to special-case it.
+  const { slug = "" } = useParams();
+
+  const edition = useEdition(slug);
   const setRead = useSetRead();
-  const regenerate = useRegenerate();
+  const regenerate = useRegenerate(slug);
   // Only to tell the two empty states apart: somebody with no feeds needs a different
   // sentence from somebody whose feeds have not been fetched yet.
   const feeds = useFeeds();
@@ -29,6 +35,8 @@ export function ReaderPage({ me }: { me: Me }) {
   // Above the early returns, because hooks cannot be called conditionally. It does nothing
   // until the grid is on the page.
   const grid = useRef<HTMLDivElement>(null);
+  // The page id is in here because moving between tabs replaces every card without unmounting
+  // the grid, and a fresh set of cards is a fresh set of heights to measure.
   useMasonry(grid, [edition.data?.id, edition.data?.items.length]);
 
   if (edition.isPending) return <Spinner label="Fetching your page" />;
@@ -51,6 +59,8 @@ export function ReaderPage({ me }: { me: Me }) {
           Next page {until(page.next_edition_at)}
         </span>
       </Masthead>
+
+      <PageTabs />
 
       <main className="mx-auto max-w-[1400px] px-6 py-10">
         {regenerate.error ? (

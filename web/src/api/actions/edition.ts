@@ -3,10 +3,20 @@ import type { Edition } from "@app/api/types";
 
 const seg = (value: string) => encodeURIComponent(value);
 
-/** `GET /api/edition` — the live page. Empty `items` before the first is generated. */
-export function getEdition(): ApiAction<Edition> {
+/**
+ * `GET /api/edition` — the live page. Empty `items` before the first is generated.
+ *
+ * `page` names one of this person's pages, by address or by id. Empty is the main page, which
+ * is also what the endpoint answers when the parameter is absent — so the reader at `/` asks
+ * for nothing in particular and gets the right thing.
+ */
+export function getEdition(page = ""): ApiAction<Edition> {
   return createApiAction((d) =>
-    d.call({ method: "GET", path: "/api/edition" }),
+    d.call({
+      method: "GET",
+      path: "/api/edition",
+      ...(page ? { query: { page } } : {}),
+    }),
   );
 }
 
@@ -17,9 +27,13 @@ export function getEdition(): ApiAction<Edition> {
  * and 404 when there is nothing at all yet. Two different situations, two different
  * sentences — see private/docs/api_design.md.
  */
-export function postEditionRegenerate(): ApiAction<Edition> {
+export function postEditionRegenerate(page = ""): ApiAction<Edition> {
   return createApiAction((d) =>
-    d.call({ method: "POST", path: "/api/edition/regenerate" }),
+    d.call({
+      method: "POST",
+      path: "/api/edition/regenerate",
+      ...(page ? { query: { page } } : {}),
+    }),
   );
 }
 

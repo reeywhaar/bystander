@@ -13,7 +13,7 @@ import (
 func TestSignedOutIsRefused(t *testing.T) {
 	h := newHarness(t)
 
-	for _, path := range []string{"/api/me", "/api/edition", "/api/feeds", "/api/tags", "/api/settings"} {
+	for _, path := range []string{"/api/me", "/api/edition", "/api/feeds", "/api/tags", "/api/pages"} {
 		res := h.do(http.MethodGet, path, nil)
 		res.Body.Close()
 		if res.StatusCode != http.StatusUnauthorized {
