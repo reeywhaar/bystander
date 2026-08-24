@@ -218,6 +218,40 @@ describe("ArticleCard layout", () => {
     );
   });
 
+  /*
+   * The headline and the columned body have to be in the same .card-body for the stylesheet
+   * to see them together.
+   *
+   * A lead's headline carries a measure — 46rem, so it stops short of a very wide card the
+   * way its standfirst does — and that measure is wrong the moment the body is set in
+   * columns, because the body then runs the full width and the headline is the only thing
+   * left wearing one. It looked like the headline had been flowed into the columns; it had
+   * not. The stylesheet undoes the cap with `.card-body:has(.prose-columns) .headline`, which
+   * is a structural bet: move either of them out of .card-body and the rule silently stops
+   * matching, and the only symptom is a headline that is too narrow again.
+   */
+  it("keeps the headline and a columned body in one .card-body", () => {
+    render1(plain({ columns: 2 }), "lead");
+
+    // The stylesheet's own selector, run against the real markup. Asserting the pieces
+    // separately would pass on a card where they are in different .card-body elements.
+    expect(
+      document.querySelector(
+        ".slot-lead .card-body:has(.prose-columns) .headline",
+      ),
+    ).not.toBeNull();
+
+    // And it must not match when the body is a single column, or the measure a lead is
+    // supposed to keep would be gone everywhere.
+    document.body.innerHTML = "";
+    render1(plain({ columns: 1 }), "lead");
+    expect(
+      document.querySelector(
+        ".slot-lead .card-body:has(.prose-columns) .headline",
+      ),
+    ).toBeNull();
+  });
+
   // Two things competing for one measure is how a card ends up with neither.
   it("does not set a body in columns beside a picture", () => {
     render1(plain({ frame: boxed, aside: true, columns: 4 }), "wide");

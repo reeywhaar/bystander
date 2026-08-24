@@ -594,6 +594,23 @@ body {
   .slot-wide .prose-columns {
     max-width: none;
   }
+  /*
+   * And the headline loses its measure whenever the body below it has lost the same one.
+   *
+   * The cap is right for a lead set in one column: headline and standfirst both stop short of
+   * the card's edge, and the block reads as one left-aligned column of a newspaper. Set the
+   * body in columns and the same cap is what makes the headline look like a column too —
+   * seven hundred and thirty-six pixels of headline over twelve hundred of prose, which is
+   * exactly the report that produced this rule. It is not that the headline was being flowed
+   * into the columns; it is that it was the only thing on the card still wearing a measure.
+   *
+   * Conditional rather than removed, because the two cases want opposite things and a headline
+   * running the full width over a standfirst capped at thirty-four rem is the same mismatch the
+   * other way round.
+   */
+  .slot-lead .card-body:has(.prose-columns) .headline {
+    max-width: none;
+  }
 
   /*
    * The nameplate, and the one piece of type here that never joins the rotation. A paper's
