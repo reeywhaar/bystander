@@ -119,8 +119,7 @@ be the unread-count problem wearing a different hat.
 
 A read mark belongs to the composition it was made on, and goes when that page turns. Reading
 is still about you rather than about the tab you were looking at, so marking an article read
-marks it on every front page it is currently on — and the month-long record below outlives all
-of them.
+marks it on every front page it is currently on — and the record below outlives all of them.
 
 ### More than one front page
 
@@ -187,9 +186,14 @@ falls back to the reading face, which is what the page did before any of this ex
 [`web/scripts/fetch-fonts.sh`](web/scripts/fetch-fonts.sh) holds the list, and adding one is
 a line in it.
 
-What you **read**, though, is kept for a month, under Settings → Recently read. That is not an
-unread count in disguise: it counts nothing, it lists only what you have already dealt
-with, and it expires. A list of things you have finished with asks nothing of you.
+What you **read** is kept for as long as you follow the feed, and the most recent five hundred
+are under Settings → Recently read. Unfollow a feed and what you read there goes with it.
+
+It is kept because it has a job beyond the list: an article you have read is never offered to
+any of your pages again, and a record that expired would hand a story back a year later as
+though it were new. That is the opposite of an unread count — it counts nothing, it holds only
+what you have already dealt with, and nothing about it asks anything of you. It is a list you
+never have to visit, backing a promise you never have to think about.
 
 ### How far back a feed reaches
 

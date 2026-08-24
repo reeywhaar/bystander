@@ -319,3 +319,141 @@ func TestTwoFeedsWithTheSameArticleKeepBoth(t *testing.T) {
 			len(got[one.ID]), len(got[two.ID]))
 	}
 }
+
+// What somebody has read outlives any retention, because it has a job that does not expire.
+//
+// It was kept for a month and dropped. That was right while its only job was a list to look
+// back at; it now also decides what a page may draw from — an article this person has read is
+// not offered to any of their pages again — and a memory that forgets after a month hands back
+// a story a year later as though it were new.
+func TestWhatWasReadIsKeptHoweverLongAgoItWas(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, err := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatalf("CreatePrincipal(): %v", err)
+	}
+	feed, err := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+
+	// Read two years ago, which is well past any retention this ever had.
+	long := s.Now().Add(-2 * 365 * 24 * time.Hour)
+	if _, err := s.derived.ExecContext(ctx,
+		`INSERT INTO read_articles (principal_id, item_id, feed_id, title, link, published_at, read_at)
+		 VALUES (?, 'a_old', ?, 'An old headline', 'https://example.com/old', ?, ?)`,
+		p.ID, feed.ID, unix(long), unix(long)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	read, err := s.ReadArticles(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ReadArticles(): %v", err)
+	}
+	if len(read) != 1 {
+		t.Fatalf("%d articles in the list, want the one read two years ago", len(read))
+	}
+
+	// And the sweep leaves it, because the feed is still followed.
+	if n, err := s.PruneReadArticles(ctx, []string{feed.ID}); err != nil || n != 0 {
+		t.Errorf("PruneReadArticles() collected %d, %v — want it left alone", n, err)
+	}
+}
+
+// Unfollowing a feed takes what was read there with it: the record's job is to keep an article
+// somebody has finished with off their pages, and a feed they no longer follow puts nothing on
+// one. Following it again is a fresh start.
+func TestUnfollowingAFeedForgetsWhatWasReadThere(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, err := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatalf("CreatePrincipal(): %v", err)
+	}
+	kept, err := s.UpsertFeed(ctx, "https://kept.example.com/feed.xml", "Kept", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	dropped, err := s.UpsertFeed(ctx, "https://dropped.example.com/feed.xml", "Dropped", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+
+	var subs []*Subscription
+	for _, feed := range []*Feed{kept, dropped} {
+		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil)
+		if err != nil {
+			t.Fatalf("Subscribe(): %v", err)
+		}
+		subs = append(subs, sub)
+		if _, err := s.derived.ExecContext(ctx,
+			`INSERT INTO read_articles (principal_id, item_id, feed_id, title, link, published_at, read_at)
+			 VALUES (?, ?, ?, 'A headline', 'https://example.com/1', 100, 200)`,
+			p.ID, "a_"+feed.ID, feed.ID); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	if err := s.DeleteSubscription(ctx, p.ID, subs[1].ID); err != nil {
+		t.Fatalf("DeleteSubscription(): %v", err)
+	}
+
+	read, err := s.ReadArticles(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ReadArticles(): %v", err)
+	}
+	if len(read) != 1 {
+		t.Fatalf("%d articles left, want only the one on the feed still followed", len(read))
+	}
+	if read[0].FeedID != kept.ID {
+		t.Errorf("what was left is from %s, want the feed still followed", read[0].FeedID)
+	}
+}
+
+// One person unfollowing must not forget what another person read on the same feed.
+func TestUnfollowingLeavesEverybodyElsesReadingAlone(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	feed, err := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+
+	var leaving *Subscription
+	var people []*Principal
+	for _, name := range []string{"alice", "bob"} {
+		p, err := s.CreatePrincipal(ctx, name, "correct-horse", RoleUser)
+		if err != nil {
+			t.Fatalf("CreatePrincipal(): %v", err)
+		}
+		people = append(people, p)
+		sub, err := s.Subscribe(ctx, p.ID, feed.ID, DefaultPriority, nil)
+		if err != nil {
+			t.Fatalf("Subscribe(): %v", err)
+		}
+		if name == "alice" {
+			leaving = sub
+		}
+		if _, err := s.derived.ExecContext(ctx,
+			`INSERT INTO read_articles (principal_id, item_id, feed_id, title, link, published_at, read_at)
+			 VALUES (?, 'a_1', ?, 'A headline', 'https://example.com/1', 100, 200)`,
+			p.ID, feed.ID); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	if err := s.DeleteSubscription(ctx, people[0].ID, leaving.ID); err != nil {
+		t.Fatalf("DeleteSubscription(): %v", err)
+	}
+
+	if read, _ := s.ReadArticles(ctx, people[0].ID); len(read) != 0 {
+		t.Errorf("the person who unfollowed still has %d read articles", len(read))
+	}
+	if read, _ := s.ReadArticles(ctx, people[1].ID); len(read) != 1 {
+		t.Errorf("the person still following has %d, want theirs untouched", len(read))
+	}
+}

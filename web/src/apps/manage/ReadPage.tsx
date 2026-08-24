@@ -4,12 +4,16 @@ import { absolute, exact, since } from "@app/lib/time";
 import { useReadArticles } from "@app/queries/hooks";
 
 /**
- * A month of what has been read.
+ * What has been read, most recent first.
  *
  * The one list in this application that is allowed to exist, because it counts nothing and
  * asks for nothing: everything on it is already dealt with. It is here rather than in the
  * reader because it is a thing to look back at, not the front page — and keeping it out of
  * the reader's bundle keeps that bundle to the page itself.
+ *
+ * The record behind it is kept for as long as the feed is followed, because it is also what
+ * stops an article somebody has read being offered again. The list is the bounded half — the
+ * server sends the most recent few hundred — which is what "recently" is doing in the name.
  */
 export function ReadPage() {
   const articles = useReadArticles();
@@ -20,8 +24,8 @@ export function ReadPage() {
   if (articles.data.length === 0) {
     return (
       <p className="py-16 text-center text-sm text-ink-muted">
-        Nothing yet. Articles you mark read are kept here for a month, and then
-        they are not.
+        Nothing yet. Articles you mark read turn up here, and stay for as long
+        as you follow the feed they came from.
       </p>
     );
   }
@@ -29,7 +33,9 @@ export function ReadPage() {
   return (
     <div className="flex flex-col gap-8">
       <p className="text-sm text-ink-muted">
-        Kept for a month, then dropped. Pages come and go; this outlives them.
+        Kept for as long as you follow the feed. Pages come and go; this
+        outlives them — and it is what keeps an article you have finished with
+        from turning up on a later one.
       </p>
 
       {group(articles.data).map(([day, entries]) => (

@@ -143,10 +143,13 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		s.log.Debug("pruned shown records", "count", n)
 	}
 
-	if n, err := s.store.PruneReadArticles(ctx); err != nil {
+	// What was read on feeds that are gone. Nothing here goes by age: what somebody has read
+	// is kept for as long as they follow the feed, because it is what keeps an article they
+	// have finished with off their pages.
+	if n, err := s.store.PruneReadArticles(ctx, feedIDs); err != nil {
 		s.log.Error("could not prune what was read", "error", err)
 	} else if n > 0 {
-		s.log.Debug("pruned read articles past retention", "count", n)
+		s.log.Debug("pruned what was read on feeds that are gone", "count", n)
 	}
 
 	// Shared links are checked for expiry when they are opened, so this is housekeeping

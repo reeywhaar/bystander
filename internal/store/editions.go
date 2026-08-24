@@ -217,9 +217,14 @@ func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []
 	return &ed, out, rows.Err()
 }
 
-// ReadRetention is how long the record of an article having been read is kept. A month, as
-// a convenience for looking back — not an archive.
-const ReadRetention = 30 * 24 * time.Hour
+// ReadListLimit is how much of somebody's reading the list shows.
+//
+// The record itself is kept until they stop following the feed — see the migration — but the
+// list is called Recently read and five hundred of them is recent by any measure. Without a
+// bound this grows without one: a reader getting through fifty articles a day has eighteen
+// thousand rows after a year, and a screen that renders all of them is a screen that stops
+// opening.
+const ReadListLimit = 500
 
 // ReadArticle is something this person has read, as remembered after its page is gone.
 type ReadArticle struct {
@@ -292,15 +297,17 @@ func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bo
 
 // ReadArticles is what this person has read lately, newest first.
 //
-// Bounded by retention rather than by a page size: the whole list is a month at most, and a
-// month of somebody's reading is a few hundred rows.
+// Bounded by [ReadListLimit] rather than by age. The record outlives the list on purpose: what
+// somebody has read is what keeps an article they have finished with off their pages, and that
+// has to hold for as long as they follow the feed.
 func (s *Store) ReadArticles(ctx context.Context, principalID string) ([]*ReadArticle, error) {
 	rows, err := s.derived.QueryContext(ctx,
 		`SELECT item_id, feed_id, title, link, published_at, read_at
 		   FROM read_articles
-		  WHERE principal_id = ? AND read_at >= ?
-		  ORDER BY read_at DESC`,
-		principalID, unix(s.Now().Add(-ReadRetention)))
+		  WHERE principal_id = ?
+		  ORDER BY read_at DESC
+		  LIMIT ?`,
+		principalID, ReadListLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -323,10 +330,38 @@ func (s *Store) ReadArticles(ctx context.Context, principalID string) ([]*ReadAr
 	return out, rows.Err()
 }
 
-// PruneReadArticles drops what was read longer ago than the retention.
-func (s *Store) PruneReadArticles(ctx context.Context) (int64, error) {
+// PruneReadArticles drops what was read on feeds that no longer exist.
+//
+// Nothing here goes by age. Unfollowing a feed takes what was read there with it, and that
+// happens the moment somebody unfollows — see DeleteSubscription. This is the safety net for
+// the two ways that can be missed: the delete is across two databases and so cannot be in one
+// transaction with the unsubscribe, and a feed the last follower drops is collected wholesale
+// by the sweep rather than one subscription at a time.
+func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (int64, error) {
+	if len(liveFeedIDs) == 0 {
+		res, err := s.derived.ExecContext(ctx, `DELETE FROM read_articles`)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+
+	args, placeholders := inList(liveFeedIDs)
 	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM read_articles WHERE read_at < ?`, unix(s.Now().Add(-ReadRetention)))
+		`DELETE FROM read_articles WHERE feed_id NOT IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// ForgetReadArticles drops what one person read on one feed.
+//
+// Called when they unfollow it. The record's job is to keep an article they have finished with
+// off their pages, and a feed they no longer follow has no pages to be kept off.
+func (s *Store) ForgetReadArticles(ctx context.Context, principalID, feedID string) (int64, error) {
+	res, err := s.derived.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE principal_id = ? AND feed_id = ?`, principalID, feedID)
 	if err != nil {
 		return 0, err
 	}

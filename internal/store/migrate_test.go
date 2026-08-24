@@ -87,12 +87,31 @@ func TestUpgradingKeepsWhatWasThere(t *testing.T) {
 		 VALUES ('e_1', 'p_1', 100, 7, 10)`,
 		`INSERT INTO edition_items (edition_id, item_id, rank, slot)
 		 VALUES ('e_1', 'a_1', 0, 'lead')`,
-		`INSERT INTO shown (principal_id, feed_id, guid_hash, shown_at)
-		 VALUES ('p_1', 'f_1', X'00', 100)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("seed the old database: %v", err)
 		}
+	}
+
+	// The shown table is seeded separately, because what it is keyed by has changed once
+	// already — it was per person and is now per page — and this test seeds whatever the
+	// schema looked like one migration ago. Hard-coding either column name makes this fail
+	// on the day somebody adds a migration, with an error about a column rather than about
+	// an upgrade losing data, which is the thing it is here to catch.
+	var byPrincipal int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM pragma_table_info('shown') WHERE name = 'principal_id'`).
+		Scan(&byPrincipal); err != nil {
+		t.Fatalf("inspect shown: %v", err)
+	}
+	owner := "page_id"
+	if byPrincipal == 1 {
+		owner = "principal_id"
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO shown (`+owner+`, feed_id, guid_hash, shown_at) VALUES ('x_1', 'f_1', X'00', 100)`,
+	); err != nil {
+		t.Fatalf("seed the old database: %v", err)
 	}
 	db.Close()
 

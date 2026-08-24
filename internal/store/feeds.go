@@ -520,10 +520,40 @@ func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, 
 // DeleteSubscription stops a principal following a feed. The feed itself survives if
 // somebody else follows it, and is collected by the sweep if nobody does.
 func (s *Store) DeleteSubscription(ctx context.Context, principalID, id string) error {
+	// Which feed, before the row that says so is gone. What was read is filed by feed rather
+	// than by subscription, because it outlives any one person's following of it.
+	var feedID string
+	err := s.main.QueryRowContext(ctx,
+		`SELECT feed_id FROM subscriptions WHERE id = ? AND principal_id = ?`,
+		id, principalID).Scan(&feedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotFound("no subscription %s", id)
+	}
+	if err != nil {
+		return err
+	}
+
 	res, err := s.main.ExecContext(ctx,
 		`DELETE FROM subscriptions WHERE id = ? AND principal_id = ?`, id, principalID)
 	if err != nil {
 		return err
 	}
-	return expectOne(res, NotFound("no subscription %s", id))
+	if err := expectOne(res, NotFound("no subscription %s", id)); err != nil {
+		return err
+	}
+
+	// And what they read there, which has nothing left to do: its job is to keep an article
+	// somebody has finished with off their pages, and a feed they no longer follow puts
+	// nothing on one.
+	//
+	// A second statement rather than part of the transaction above, because the two live in
+	// different databases and this program never spans them — see entities.md. So the order
+	// matters, and it is this way round on purpose: the subscription going is what the caller
+	// asked for, and a failure here leaves rows that are merely unused rather than leaving
+	// somebody still following a feed whose reading has been forgotten. They are collected by
+	// the sweep once nobody follows the feed at all.
+	if _, err := s.ForgetReadArticles(ctx, principalID, feedID); err != nil {
+		return err
+	}
+	return nil
 }
