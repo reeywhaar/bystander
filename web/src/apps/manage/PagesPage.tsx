@@ -137,14 +137,24 @@ export function PagesPage() {
 /** What a page draws from, in a sentence, for the line under its name. */
 function describe(page: Page): string {
   const parts: string[] = [];
-  if (page.tag_filter === "including")
-    parts.push(`${page.tag_ids.length} tags`);
-  if (page.tag_filter === "excluding")
-    parts.push(`all but ${page.tag_ids.length} tags`);
-  if (page.feed_filter === "including")
-    parts.push(`${page.feed_ids.length} feeds`);
-  if (page.feed_filter === "excluding")
-    parts.push(`all but ${page.feed_ids.length} feeds`);
+  const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+  // The tags first, because they are the funnel and the feeds are corrections to what comes
+  // out of it — which is also the order somebody set them in.
+  if (page.include_tag_ids.length > 0)
+    parts.push(count(page.include_tag_ids.length, "tag"));
+  if (page.exclude_tag_ids.length > 0)
+    parts.push(
+      // "all but" only when nothing narrowed it first, or the sentence would claim the page
+      // draws from everything right after saying which tags it draws from.
+      page.include_tag_ids.length > 0
+        ? `less ${count(page.exclude_tag_ids.length, "tag")}`
+        : `all but ${count(page.exclude_tag_ids.length, "tag")}`,
+    );
+  if (page.include_feed_ids.length > 0)
+    parts.push(`always ${count(page.include_feed_ids.length, "feed")}`);
+  if (page.exclude_feed_ids.length > 0)
+    parts.push(`never ${count(page.exclude_feed_ids.length, "feed")}`);
 
   const window = ARTICLE_WINDOWS.find(
     (option) => option.seconds === page.max_article_age,

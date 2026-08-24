@@ -215,12 +215,6 @@ export interface Tag {
   created_at: number;
 }
 
-/** How a page reads its list of tags. */
-export type TagFilter = "no" | "including" | "excluding";
-
-/** How a page reads its list of feeds. */
-export type FeedFilter = "all" | "including" | "excluding";
-
 /**
  * One front page: what it is called, where it lives, and what it draws from.
  *
@@ -241,11 +235,21 @@ export interface Page {
   /** Seconds; zero is no limit. One of `ARTICLE_WINDOWS`. */
   max_article_age: number;
 
-  tag_filter: TagFilter;
-  feed_filter: FeedFilter;
-  /** Always present, even when the mode above says nothing reads them. */
-  tag_ids: string[];
-  feed_ids: string[];
+  /**
+   * What this page does with each tag and each feed it has an opinion about. Anything on
+   * neither side it has no opinion about, which is the ordinary case.
+   *
+   * The tags are a funnel: any `include_tag_ids` holds the page to subscriptions carrying one
+   * of them, and `exclude_tag_ids` then drops what it matches. An empty include side means the
+   * page was never narrowed this way, not that it is narrowed to nothing.
+   *
+   * The feeds override the result in both directions: `include_feed_ids` are on the page
+   * whatever the tags decided, `exclude_feed_ids` are off it whatever they decided.
+   */
+  include_tag_ids: string[];
+  exclude_tag_ids: string[];
+  include_feed_ids: string[];
+  exclude_feed_ids: string[];
 }
 
 export interface User {

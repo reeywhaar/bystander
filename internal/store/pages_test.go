@@ -73,7 +73,8 @@ func TestAPageIsMadeAndTakenAway(t *testing.T) {
 		t.Error("a new page claims to be the main one")
 	}
 	// Nothing is filtered until somebody says so, so a new page is a page of everything.
-	if page.TagFilter != TagsIgnored || page.FeedFilter != FeedsAll {
+	if len(page.IncludeTagIDs) != 0 || len(page.ExcludeTagIDs) != 0 ||
+		len(page.IncludeFeedIDs) != 0 || len(page.ExcludeFeedIDs) != 0 {
 		t.Errorf("page = %+v, want no filtering to begin with", page)
 	}
 
@@ -153,12 +154,10 @@ func TestAPageIsSavedAllAtOnce(t *testing.T) {
 		t.Fatalf("CreatePage(): %v", err)
 	}
 
-	mode := TagsIncluding
 	hourly := time.Hour
 	size := 20
 	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
-		TagFilter:       &mode,
-		TagIDs:          []string{tag.ID},
+		IncludeTagIDs:   []string{tag.ID},
 		EditionInterval: &hourly,
 		EditionSize:     &size,
 	}); err != nil {
@@ -169,7 +168,7 @@ func TestAPageIsSavedAllAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PageByID(): %v", err)
 	}
-	if got.TagFilter != TagsIncluding || len(got.TagIDs) != 1 || got.TagIDs[0] != tag.ID {
+	if len(got.IncludeTagIDs) != 1 || got.IncludeTagIDs[0] != tag.ID {
 		t.Errorf("page = %+v, want it including one tag", got)
 	}
 	if got.EditionInterval != time.Hour || got.EditionSize != 20 {
@@ -179,27 +178,93 @@ func TestAPageIsSavedAllAtOnce(t *testing.T) {
 
 // A list nobody reads should not be waiting to reappear. What somebody last chose while the
 // filter was off is not what they mean when they turn it back on.
-func TestTurningAFilterOffEmptiesItsList(t *testing.T) {
+// Emptying a side is how a filter is turned off now, and it must actually empty it.
+func TestEmptyingASideClearsIt(t *testing.T) {
+	s, p := personWithPages(t)
+
+	feed, _ := s.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+	if _, err := s.Subscribe(t.Context(), p.ID, feed.ID, DefaultPriority, DefaultArticleWindow, nil); err != nil {
+		t.Fatalf("Subscribe(): %v", err)
+	}
+	page, _ := s.CreatePage(t.Context(), p.ID, "Finances", "finances")
+
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		ExcludeFeedIDs: []string{feed.ID},
+	}); err != nil {
+		t.Fatalf("UpdatePage(): %v", err)
+	}
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		ExcludeFeedIDs: []string{},
+	}); err != nil {
+		t.Fatalf("UpdatePage(): %v", err)
+	}
+
+	got, _ := s.PageByID(t.Context(), page.ID)
+	if len(got.ExcludeFeedIDs) != 0 {
+		t.Errorf("feeds = %v, want the side cleared when it was named", got.ExcludeFeedIDs)
+	}
+}
+
+// The two sides of a list are separate, and saving one must not take the other with it.
+//
+// They share a table, so the delete-then-insert that replaces a side has to be told which side
+// it is replacing. Without that, saving the drop side would empty the draw-from side — and the
+// page would silently widen to everything, which is the opposite of what the person pressing
+// save was doing.
+func TestSavingOneSideLeavesTheOtherAlone(t *testing.T) {
+	s, p := personWithPages(t)
+
+	finance, _ := s.CreateTag(t.Context(), p.ID, "Finance", "", DefaultPriority)
+	crypto, _ := s.CreateTag(t.Context(), p.ID, "Crypto", "", DefaultPriority)
+	page, _ := s.CreatePage(t.Context(), p.ID, "Finances", "finances")
+
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		IncludeTagIDs: []string{finance.ID},
+	}); err != nil {
+		t.Fatalf("UpdatePage(): %v", err)
+	}
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		ExcludeTagIDs: []string{crypto.ID},
+	}); err != nil {
+		t.Fatalf("UpdatePage(): %v", err)
+	}
+
+	got, _ := s.PageByID(t.Context(), page.ID)
+	if len(got.IncludeTagIDs) != 1 || got.IncludeTagIDs[0] != finance.ID {
+		t.Errorf("draws from %v, want just Finance", got.IncludeTagIDs)
+	}
+	if len(got.ExcludeTagIDs) != 1 || got.ExcludeTagIDs[0] != crypto.ID {
+		t.Errorf("drops %v, want just Crypto", got.ExcludeTagIDs)
+	}
+}
+
+// Taking a tag and dropping it is a contradiction, not a filter with an unlucky answer.
+//
+// Refused when the page is saved rather than settled by whichever side is applied last, and
+// refused across requests too: a save that only sets the drop side still has to agree with the
+// draw-from side already there. The interface cannot produce it — one switch cannot hold two
+// answers — which is a reason to check it here rather than a reason not to.
+func TestAPageCannotDrawFromATagAndDropIt(t *testing.T) {
 	s, p := personWithPages(t)
 
 	tag, _ := s.CreateTag(t.Context(), p.ID, "Finance", "", DefaultPriority)
 	page, _ := s.CreatePage(t.Context(), p.ID, "Finances", "finances")
 
-	including := TagsIncluding
 	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
-		TagFilter: &including, TagIDs: []string{tag.ID},
+		IncludeTagIDs: []string{tag.ID}, ExcludeTagIDs: []string{tag.ID},
+	}); err == nil {
+		t.Error("UpdatePage() accepted a tag on both lists in one save")
+	}
+
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		IncludeTagIDs: []string{tag.ID},
 	}); err != nil {
 		t.Fatalf("UpdatePage(): %v", err)
 	}
-
-	off := TagsIgnored
-	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{TagFilter: &off}); err != nil {
-		t.Fatalf("UpdatePage(): %v", err)
-	}
-
-	got, _ := s.PageByID(t.Context(), page.ID)
-	if len(got.TagIDs) != 0 {
-		t.Errorf("tags = %v, want the list cleared with the filter", got.TagIDs)
+	if err := s.UpdatePage(t.Context(), page.ID, PagePatch{
+		ExcludeTagIDs: []string{tag.ID},
+	}); err == nil {
+		t.Error("UpdatePage() accepted a tag it already draws from onto the drop list")
 	}
 }
 
@@ -209,9 +274,8 @@ func TestAPageCannotFilterBySomethingThatIsNotThere(t *testing.T) {
 	s, p := personWithPages(t)
 	page, _ := s.CreatePage(t.Context(), p.ID, "Finances", "finances")
 
-	including := TagsIncluding
 	err := s.UpdatePage(t.Context(), page.ID, PagePatch{
-		TagFilter: &including, TagIDs: []string{"t_NOT_A_TAG"},
+		IncludeTagIDs: []string{"t_NOT_A_TAG"},
 	})
 	if err == nil {
 		t.Fatal("UpdatePage() accepted a tag that does not exist")
@@ -220,8 +284,8 @@ func TestAPageCannotFilterBySomethingThatIsNotThere(t *testing.T) {
 	// And the refusal took the rest of the save with it, because a page saved half way is a
 	// page drawing from the wrong things.
 	got, _ := s.PageByID(t.Context(), page.ID)
-	if got.TagFilter != TagsIgnored {
-		t.Errorf("filter = %q, want the whole save rolled back", got.TagFilter)
+	if len(got.IncludeTagIDs) != 0 {
+		t.Errorf("tags = %v, want the whole save rolled back", got.IncludeTagIDs)
 	}
 }
 

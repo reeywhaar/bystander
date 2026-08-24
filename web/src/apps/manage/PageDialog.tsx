@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type {
-  FeedFilter,
-  Page,
-  Subscription,
-  Tag,
-  TagFilter,
-} from "@app/api/types";
+import type { Page, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Field } from "@app/components/ui/Field";
 import { Modal } from "@app/components/ui/Modal";
+import {
+  StanceSwitch,
+  stanceOf,
+  withStance,
+  type Stance,
+} from "@app/components/ui/StanceSwitch";
 import {
   useCreatePage,
   useFeeds,
@@ -19,41 +19,47 @@ import {
 } from "@app/queries/hooks";
 
 /**
- * What the tag control offers, and what each choice means in a sentence.
+ * What each position of a tag's switch means.
  *
- * A segmented control rather than a checkbox and a list, because there are three states and
- * two of them are opposites. "Not filtering" and "including nothing" would be the same empty
- * list under a checkbox, and they are not the same intention.
+ * The tags are a funnel: anything on the take side narrows the page to what carries it, and
+ * anything on the drop side is removed afterwards. The order matters and is the reason there
+ * are two sides rather than one — "Finance, but not the feeds that are also Crypto" needs the
+ * narrowing to have happened before the removing.
  */
-const TAG_MODES: { value: TagFilter; label: string }[] = [
-  { value: "no", label: "Any tag" },
-  { value: "including", label: "Only these tags" },
-  { value: "excluding", label: "All but these tags" },
-];
-
-const FEED_MODES: { value: FeedFilter; label: string }[] = [
-  { value: "all", label: "Any feed" },
-  { value: "including", label: "Only these feeds" },
-  { value: "excluding", label: "All but these feeds" },
-];
+const TAG_SAYS: Record<Stance, string> = {
+  exclude: "drop anything with this tag",
+  neutral: "no opinion",
+  include: "draw from this tag",
+};
 
 /**
- * Which feed modes make sense beside a given tag mode.
+ * And what they mean for a feed, which is not the same thing.
  *
- * Narrowing twice in the same direction is a control that cannot do anything: a page already
- * held to a set of tags does not also need "only these feeds", because the feeds it could pick
- * are the ones the tags already chose — and the useful second gesture is to drop one of them.
- * The same the other way round. So the second control offers the direction the first did not.
+ * A feed's switch overrides whatever the tags decided, in both directions. That is a stronger
+ * thing than a second funnel and a more useful one: the two gestures anybody actually makes
+ * about one publisher are "this one as well" and "this one never", and a filter that could only
+ * narrow could express neither.
  */
-function feedModesFor(tags: TagFilter): FeedFilter[] {
-  switch (tags) {
-    case "including":
-      return ["all", "excluding"];
-    case "excluding":
-      return ["all", "including"];
-    default:
-      return ["all", "including", "excluding"];
-  }
+const FEED_SAYS: Record<Stance, string> = {
+  exclude: "never on this page",
+  neutral: "whatever the tags decide",
+  include: "always on this page",
+};
+
+/** The two sides of one list, held together because a change needs both to be applied. */
+type Sides = { include: string[]; exclude: string[] };
+
+const NOTHING: Sides = { include: [], exclude: [] };
+
+/** Whether a subscription gets through the tag funnel, which is what "no opinion" defers to. */
+function passesTags(
+  sub: Subscription,
+  include: string[],
+  exclude: string[],
+): boolean {
+  if (include.length > 0 && !sub.tag_ids.some((id) => include.includes(id)))
+    return false;
+  return !sub.tag_ids.some((id) => exclude.includes(id));
 }
 
 /** A slug proposed from a name, so nobody has to think about URLs to make a page. */
@@ -65,74 +71,63 @@ function slugify(name: string): string {
     .slice(0, 40);
 }
 
-function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-ink">{label}</span>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={option.value === value}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              option.value === value
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-rule text-ink-muted hover:text-ink"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** A list of things to tick, which is what both filter lists are. */
-function Picker({
+/**
+ * One list of names, each with a switch, and a note beside the ones that are deferring.
+ *
+ * The note is only on the neutral rows and only where there is something to defer to. A feed
+ * left alone follows the tags, and which way that lands it is not visible from the switch — so
+ * a page could be saved with a feed somebody believed was on it and is not. Saying "in" or
+ * "out" beside the middle position is the difference between a control that shows its state and
+ * one that shows half of it.
+ */
+function StanceList({
   items,
-  chosen,
-  onToggle,
+  include,
+  exclude,
+  onChange,
+  says,
   empty,
 }: {
-  items: { id: string; label: string }[];
-  chosen: string[];
-  onToggle: (id: string) => void;
+  items: { id: string; label: string; defersTo?: boolean }[];
+  include: string[];
+  exclude: string[];
+  onChange: (id: string, stance: Stance) => void;
+  says: Record<Stance, string>;
   empty: string;
 }) {
   if (items.length === 0) {
     return <p className="text-sm text-ink-muted">{empty}</p>;
   }
   return (
-    <div className="max-h-48 overflow-y-auto rounded-md border border-rule p-2">
-      {items.map((item) => (
-        <label
-          key={item.id}
-          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-ink hover:bg-ink/5"
-        >
-          <input
-            type="checkbox"
-            checked={chosen.includes(item.id)}
-            onChange={() => onToggle(item.id)}
-            // Otherwise the browser draws its own blue, which is the only blue anywhere in
-            // this product and lands in the middle of a page that is otherwise ink on paper.
-            className="accent-accent"
-          />
-          {item.label}
-        </label>
-      ))}
+    <div className="max-h-52 overflow-y-auto rounded-md border border-rule">
+      {items.map((item) => {
+        const stance = stanceOf(item.id, include, exclude);
+        return (
+          <div
+            key={item.id}
+            className="flex items-center gap-3 px-2 py-1.5 text-sm"
+          >
+            <span
+              className={`flex-1 truncate ${
+                stance === "exclude" ? "text-ink-faint" : "text-ink"
+              }`}
+            >
+              {item.label}
+            </span>
+            {stance === "neutral" && item.defersTo !== undefined ? (
+              <span className="text-xs text-ink-faint">
+                {item.defersTo ? "in" : "out"}
+              </span>
+            ) : null}
+            <StanceSwitch
+              value={stance}
+              onChange={(next) => onChange(item.id, next)}
+              name={item.label}
+              says={says}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -168,10 +163,12 @@ export function PageDialog({
   // Whether the address has been typed into. Until it has, it follows the name — which is what
   // somebody naming a page expects, and it stops being a field anybody has to think about.
   const [slugTouched, setSlugTouched] = useState(false);
-  const [tagMode, setTagMode] = useState<TagFilter>("no");
-  const [feedMode, setFeedMode] = useState<FeedFilter>("all");
-  const [tagIDs, setTagIDs] = useState<string[]>([]);
-  const [feedIDs, setFeedIDs] = useState<string[]>([]);
+  // Both sides of each list in one piece of state, so a change can be applied to what is
+  // actually there rather than to what the last render closed over. Two separate pieces would
+  // read the same stale pair twice if two switches ever moved in one tick, and the second
+  // answer would quietly undo the first.
+  const [tagSides, setTagSides] = useState<Sides>(NOTHING);
+  const [feedSides, setFeedSides] = useState<Sides>(NOTHING);
 
   // Reset whenever the dialog opens on something else. A draft is a snapshot of the page it
   // was opened on, and leaving the last one behind would show somebody else's filter.
@@ -180,50 +177,46 @@ export function PageDialog({
     setName(page?.name ?? "");
     setSlug(page?.slug ?? "");
     setSlugTouched(Boolean(page));
-    setTagMode(page?.tag_filter ?? "no");
-    setFeedMode(page?.feed_filter ?? "all");
-    setTagIDs(page?.tag_ids ?? []);
-    setFeedIDs(page?.feed_ids ?? []);
+    setTagSides({
+      include: page?.include_tag_ids ?? [],
+      exclude: page?.exclude_tag_ids ?? [],
+    });
+    setFeedSides({
+      include: page?.include_feed_ids ?? [],
+      exclude: page?.exclude_feed_ids ?? [],
+    });
   }, [open, page]);
 
-  const allowedFeedModes = feedModesFor(tagMode);
+  // Every feed, not the ones the tags left. A feed's switch overrides the tags, so the feed
+  // the tags dropped is exactly the one somebody might want to put back — offering only what
+  // already gets through would hide the rows the control exists for.
+  const feedRows = useMemo(
+    () =>
+      (feeds.data ?? []).map((sub: Subscription) => ({
+        id: sub.feed_id,
+        label: sub.title,
+        defersTo: passesTags(sub, tagSides.include, tagSides.exclude),
+      })),
+    [feeds.data, tagSides],
+  );
 
-  // Which feeds the second control may offer, given what the first one already decided.
-  //
-  // Showing all of them would offer feeds that the tag filter has already excluded, where
-  // ticking one does nothing — a control that accepts a gesture and produces no change is
-  // worse than one that is not there.
-  const feedChoices = useMemo(() => {
-    const subs = feeds.data ?? [];
-    const chosen = new Set(tagIDs);
-    const matches = (sub: Subscription) =>
-      sub.tag_ids.some((id) => chosen.has(id));
-
-    const visible =
-      tagMode === "including"
-        ? subs.filter(matches)
-        : tagMode === "excluding"
-          ? subs.filter((sub) => !matches(sub))
-          : subs;
-
-    return visible.map((sub) => ({ id: sub.feed_id, label: sub.title }));
-  }, [feeds.data, tagMode, tagIDs]);
-
-  const toggle = (list: string[], id: string) =>
-    list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+  const setTag = (id: string, stance: Stance) =>
+    setTagSides((cur) => withStance(id, stance, cur.include, cur.exclude));
+  const setFeed = (id: string, stance: Stance) =>
+    setFeedSides((cur) => withStance(id, stance, cur.include, cur.exclude));
 
   const saving = create.isPending || update.isPending;
   const error = create.error ?? update.error;
 
   const submit = async () => {
-    // The lists are sent whatever the mode says, and the server clears the ones its mode does
-    // not read. One request describes the whole page, so there is no order in which a reader
-    // could catch it half-applied.
+    // All four sides, always. One request describes the whole filter, so there is no order in
+    // which a reader could catch it half-applied — which matters here because the sides mean
+    // different things together than they do apart.
     const body = {
-      tag_filter: tagMode,
-      feed_filter: feedMode,
-      tag_ids: tagMode === "no" ? [] : tagIDs,
-      feed_ids: feedMode === "all" ? [] : feedIDs,
+      include_tag_ids: tagSides.include,
+      exclude_tag_ids: tagSides.exclude,
+      include_feed_ids: feedSides.include,
+      exclude_feed_ids: feedSides.exclude,
     };
 
     if (page) {
@@ -299,49 +292,43 @@ export function PageDialog({
           </>
         )}
 
-        <Segmented
-          label="Tags"
-          value={tagMode}
-          options={TAG_MODES}
-          onChange={(mode) => {
-            setTagMode(mode);
-            // The feed control means something different beside a different tag mode, and a
-            // choice made against the old one is not a choice anybody made against this one.
-            setFeedMode("all");
-            setFeedIDs([]);
-          }}
-        />
-        {tagMode !== "no" ? (
-          <Picker
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-ink">Tags</span>
+          <p className="text-xs text-ink-faint">
+            Leave a tag alone and it says nothing. Push one right and this page
+            draws only from tags pushed right; push one left and it drops what
+            carries that tag afterwards — which is how a finance page loses the
+            crypto half of itself.
+          </p>
+          <StanceList
             items={(tags.data ?? []).map((tag: Tag) => ({
               id: tag.id,
               label: tag.name,
             }))}
-            chosen={tagIDs}
-            onToggle={(id) => setTagIDs((current) => toggle(current, id))}
+            include={tagSides.include}
+            exclude={tagSides.exclude}
+            onChange={setTag}
+            says={TAG_SAYS}
             empty="You have no tags yet. Tag a few feeds and they will show up here."
           />
-        ) : null}
+        </div>
 
-        <Segmented
-          label="Feeds"
-          value={feedMode}
-          options={FEED_MODES.filter((mode) =>
-            allowedFeedModes.includes(mode.value),
-          )}
-          onChange={(mode) => {
-            setFeedMode(mode);
-            setFeedIDs([]);
-          }}
-        />
-        {feedMode !== "all" ? (
-          <Picker
-            items={feedChoices}
-            chosen={feedIDs}
-            onToggle={(id) => setFeedIDs((current) => toggle(current, id))}
-            empty="Nothing to choose from — the tags above have already narrowed this to nothing."
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-ink">Feeds</span>
+          <p className="text-xs text-ink-faint">
+            A feed overrules the tags. Right is always on this page, left is
+            never, and left alone it follows the tags — the word beside it says
+            where that lands it.
+          </p>
+          <StanceList
+            items={feedRows}
+            include={feedSides.include}
+            exclude={feedSides.exclude}
+            onChange={setFeed}
+            says={FEED_SAYS}
+            empty="You follow no feeds yet."
           />
-        ) : null}
+        </div>
 
         {error ? <Alert>{error.message}</Alert> : null}
       </div>

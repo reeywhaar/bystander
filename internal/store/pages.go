@@ -11,28 +11,6 @@ import (
 	"bystander/internal/ids"
 )
 
-// TagFilter says how a page reads its list of tags.
-type TagFilter string
-
-// FeedFilter says how a page reads its list of feeds.
-type FeedFilter string
-
-const (
-	// TagsIgnored means the tag list is not consulted, and the interface clears it.
-	TagsIgnored TagFilter = "no"
-	// TagsIncluding draws only from subscriptions carrying one of the listed tags.
-	TagsIncluding TagFilter = "including"
-	// TagsExcluding draws from everything except subscriptions carrying one of them.
-	TagsExcluding TagFilter = "excluding"
-
-	// FeedsAll means the feed list is not consulted.
-	FeedsAll FeedFilter = "all"
-	// FeedsIncluding draws only from the listed feeds.
-	FeedsIncluding FeedFilter = "including"
-	// FeedsExcluding draws from everything except the listed feeds.
-	FeedsExcluding FeedFilter = "excluding"
-)
-
 // MainPageName is what the one page everybody has is called.
 //
 // A name rather than a description, and capitalised for it. "Your page" was neither: it read as
@@ -76,12 +54,27 @@ type Page struct {
 	// be, and those are different questions.
 	ArticleWindow time.Duration
 
-	TagFilter  TagFilter
-	FeedFilter FeedFilter
-	// TagIDs and FeedIDs are the lists the filters read. Loaded only by the calls that say
-	// they load them — the tab strip does not need them and the generator does.
-	TagIDs  []string
-	FeedIDs []string
+	// The tags are a funnel, and the feeds override what comes out of it. Loaded only by the
+	// calls that say they load the lists — the tab strip does not need them and the generator
+	// does. A tag or feed the page has no opinion about is on neither list, which is the
+	// ordinary case and why both stay short.
+	//
+	// IncludeTagIDs, when it has anything in it, holds the page to subscriptions carrying at
+	// least one of these. Empty means the page was never narrowed this way, rather than
+	// narrowed to nothing.
+	IncludeTagIDs []string
+	// ExcludeTagIDs drops subscriptions carrying any of these, after the include has run.
+	// After, because that ordering is the whole point of having both: tags overlap, and
+	// "Finance, but not the feeds that are also Crypto" needs the include to have happened
+	// first.
+	ExcludeTagIDs []string
+
+	// IncludeFeedIDs are on the page whatever the tags decided, and ExcludeFeedIDs are off it
+	// whatever they decided. An override rather than a second funnel, which is the difference
+	// between what somebody wants to say — "this one as well", "this one never" — and what a
+	// narrowing filter could express.
+	IncludeFeedIDs []string
+	ExcludeFeedIDs []string
 
 	CreatedAt time.Time
 }
@@ -96,10 +89,11 @@ type PagePatch struct {
 	EditionInterval *time.Duration
 	EditionSize     *int
 	ArticleWindow   *time.Duration
-	TagFilter       *TagFilter
-	FeedFilter      *FeedFilter
-	TagIDs          []string
-	FeedIDs         []string
+	// A nil list is one the request did not mention; an empty non-nil list is one it emptied.
+	IncludeTagIDs  []string
+	ExcludeTagIDs  []string
+	IncludeFeedIDs []string
+	ExcludeFeedIDs []string
 }
 
 // MainPageID is the id of a principal's main page.
@@ -151,7 +145,7 @@ func (s *Store) PageByID(ctx context.Context, id string) (*Page, error) {
 	if err != nil {
 		return nil, err
 	}
-	return page, s.loadPageLists(ctx, page)
+	return page, loadPageLists(ctx, s.main, page)
 }
 
 // PageOf resolves one of a person's pages, by id or by address.
@@ -180,7 +174,7 @@ func (s *Store) PageOf(ctx context.Context, principalID, ref string) (*Page, err
 	if err != nil {
 		return nil, err
 	}
-	return page, s.loadPageLists(ctx, page)
+	return page, loadPageLists(ctx, s.main, page)
 }
 
 // CreatePage adds a page. The filters start off consulting nothing, which is a page of
@@ -214,18 +208,14 @@ func (s *Store) CreatePage(ctx context.Context, principalID, name, slug string) 
 		EditionInterval: 24 * time.Hour,
 		EditionSize:     60,
 		NextEditionAt:   now,
-		TagFilter:       TagsIgnored,
-		FeedFilter:      FeedsAll,
 		CreatedAt:       now,
 	}
 	_, err := s.main.ExecContext(ctx,
 		`INSERT INTO pages (id, principal_id, name, slug, is_main,
-		                    edition_interval, edition_size, next_edition_at,
-		                    tag_filter, feed_filter, created_at)
-		 VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+		                    edition_interval, edition_size, next_edition_at, created_at)
+		 VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
 		page.ID, principalID, name, slug,
-		int64(page.EditionInterval.Seconds()), page.EditionSize, unix(now),
-		string(page.TagFilter), string(page.FeedFilter), unix(now))
+		int64(page.EditionInterval.Seconds()), page.EditionSize, unix(now), unix(now))
 	if err != nil {
 		if isUnique(err) {
 			return nil, Conflict("you already have a page at %q", slug)
@@ -306,48 +296,77 @@ func (s *Store) UpdatePage(ctx context.Context, id string, patch PagePatch) erro
 		}
 		current.ArticleWindow = *patch.ArticleWindow
 	}
-	if patch.TagFilter != nil {
-		if !validTagFilter(*patch.TagFilter) {
-			return Invalid("%q is not a way of filtering by tag", *patch.TagFilter)
-		}
-		current.TagFilter = *patch.TagFilter
-	}
-	if patch.FeedFilter != nil {
-		if !validFeedFilter(*patch.FeedFilter) {
-			return Invalid("%q is not a way of filtering by feed", *patch.FeedFilter)
-		}
-		current.FeedFilter = *patch.FeedFilter
-	}
 
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE pages SET name = ?, slug = ?, edition_interval = ?, edition_size = ?,
-		                  next_edition_at = ?, max_article_age = ?, tag_filter = ?, feed_filter = ?
+		                  next_edition_at = ?, max_article_age = ?
 		  WHERE id = ?`,
 		current.Name, current.Slug, int64(current.EditionInterval.Seconds()), current.EditionSize,
-		unix(current.NextEditionAt), int64(current.ArticleWindow.Seconds()),
-		string(current.TagFilter), string(current.FeedFilter), id); err != nil {
+		unix(current.NextEditionAt), int64(current.ArticleWindow.Seconds()), id); err != nil {
 		if isUnique(err) {
 			return Conflict("you already have a page at %q", current.Slug)
 		}
 		return err
 	}
 
-	// A mode that consults no list empties it, rather than leaving a list nobody reads to
-	// reappear the next time the mode changes. What somebody last chose while the filter was
-	// off is not what they mean when they turn it back on.
-	if current.TagFilter == TagsIgnored {
-		patch.TagIDs = []string{}
-	}
-	if current.FeedFilter == FeedsAll {
-		patch.FeedIDs = []string{}
-	}
-	if patch.TagIDs != nil {
-		if err := replacePageList(ctx, tx, "page_tags", "tag_id", id, patch.TagIDs); err != nil {
-			return err
+	// A tag or feed on both sides is a contradiction rather than a filter with an unlucky
+	// answer, so it is refused here — where both halves of the patch are in hand — rather than
+	// left to the primary key, which would silently drop whichever arrived second.
+	//
+	// Checked against what the page will hold rather than against what the request mentioned:
+	// a request that only sets one side still has to agree with the other side already saved.
+	var loaded bool
+	sides := func(include, exclude []string, was func() ([]string, []string)) ([]string, []string, error) {
+		if include != nil && exclude != nil {
+			return include, exclude, nil
 		}
+		if !loaded {
+			if err := loadPageLists(ctx, tx, current); err != nil {
+				return nil, nil, err
+			}
+			loaded = true
+		}
+		heldInclude, heldExclude := was()
+		if include == nil {
+			include = heldInclude
+		}
+		if exclude == nil {
+			exclude = heldExclude
+		}
+		return include, exclude, nil
 	}
-	if patch.FeedIDs != nil {
-		if err := replacePageList(ctx, tx, "page_feeds", "feed_id", id, patch.FeedIDs); err != nil {
+
+	tagsIn, tagsOut, err := sides(patch.IncludeTagIDs, patch.ExcludeTagIDs,
+		func() ([]string, []string) { return current.IncludeTagIDs, current.ExcludeTagIDs })
+	if err != nil {
+		return err
+	}
+	if err := noBothSides(tagsIn, tagsOut, "tag"); err != nil {
+		return err
+	}
+
+	feedsIn, feedsOut, err := sides(patch.IncludeFeedIDs, patch.ExcludeFeedIDs,
+		func() ([]string, []string) { return current.IncludeFeedIDs, current.ExcludeFeedIDs })
+	if err != nil {
+		return err
+	}
+	if err := noBothSides(feedsIn, feedsOut, "feed"); err != nil {
+		return err
+	}
+
+	for _, list := range []struct {
+		table, column, mode string
+		ids                 []string
+	}{
+		{"page_tags", "tag_id", "include", patch.IncludeTagIDs},
+		{"page_tags", "tag_id", "exclude", patch.ExcludeTagIDs},
+		{"page_feeds", "feed_id", "include", patch.IncludeFeedIDs},
+		{"page_feeds", "feed_id", "exclude", patch.ExcludeFeedIDs},
+	} {
+		if list.ids == nil {
+			continue
+		}
+		if err := replacePageList(ctx, tx, list.table, list.column, id, list.mode, list.ids); err != nil {
 			return err
 		}
 	}
@@ -433,7 +452,7 @@ func (s *Store) ScheduleNextEdition(ctx context.Context, pageID string, at time.
 	return err
 }
 
-const pageColumns = `id, principal_id, name, slug, is_main, edition_interval, edition_size, next_edition_at, max_article_age, tag_filter, feed_filter, created_at`
+const pageColumns = `id, principal_id, name, slug, is_main, edition_interval, edition_size, next_edition_at, max_article_age, created_at`
 
 func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 	var (
@@ -443,37 +462,52 @@ func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 		next     int64
 		window   int64
 		created  int64
-		tagMode  string
-		feedMode string
 	)
 	if err := row.Scan(&page.ID, &page.PrincipalID, &page.Name, &page.Slug, &isMain,
-		&interval, &page.EditionSize, &next, &window, &tagMode, &feedMode, &created); err != nil {
+		&interval, &page.EditionSize, &next, &window, &created); err != nil {
 		return nil, err
 	}
 	page.IsMain = isMain == 1
 	page.EditionInterval = time.Duration(interval) * time.Second
 	page.ArticleWindow = time.Duration(window) * time.Second
 	page.NextEditionAt = time.Unix(next, 0).UTC()
-	page.TagFilter = TagFilter(tagMode)
-	page.FeedFilter = FeedFilter(feedMode)
 	page.CreatedAt = time.Unix(created, 0).UTC()
 	return &page, nil
 }
 
-// loadPageLists fills in the tags and feeds a page's filters read.
-func (s *Store) loadPageLists(ctx context.Context, page *Page) error {
+// reader is whatever a query can be asked through: the database, or a transaction on it.
+//
+// It exists because there is exactly one connection to each database — see store.Open — so a
+// read issued against the pool while a transaction holds that connection waits for a connection
+// the transaction will not give up until it commits, and the commit is waiting on the read.
+// That is a deadlock with no timeout and no error, and the only symptom is a request that never
+// returns. Passing the transaction in is what stops the question arising.
+type reader interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// loadPageLists fills in the tags and feeds a page's filter names, side by side.
+func loadPageLists(ctx context.Context, db reader, page *Page) error {
 	var err error
-	if page.TagIDs, err = s.pageList(ctx, "page_tags", "tag_id", page.ID); err != nil {
+	if page.IncludeTagIDs, err = pageList(ctx, db, "page_tags", "tag_id", page.ID, "include"); err != nil {
 		return err
 	}
-	page.FeedIDs, err = s.pageList(ctx, "page_feeds", "feed_id", page.ID)
+	if page.ExcludeTagIDs, err = pageList(ctx, db, "page_tags", "tag_id", page.ID, "exclude"); err != nil {
+		return err
+	}
+	if page.IncludeFeedIDs, err = pageList(ctx, db, "page_feeds", "feed_id", page.ID, "include"); err != nil {
+		return err
+	}
+	page.ExcludeFeedIDs, err = pageList(ctx, db, "page_feeds", "feed_id", page.ID, "exclude")
 	return err
 }
 
-func (s *Store) pageList(ctx context.Context, table, column, pageID string) ([]string, error) {
+// pageList is one side of one of a page's two filter lists.
+func pageList(ctx context.Context, db reader, table, column, pageID, mode string) ([]string, error) {
 	// The table and column are constants at every call site, never anything a request said.
-	rows, err := s.main.QueryContext(ctx,
-		`SELECT `+column+` FROM `+table+` WHERE page_id = ? ORDER BY `+column, pageID)
+	rows, err := db.QueryContext(ctx,
+		`SELECT `+column+` FROM `+table+` WHERE page_id = ? AND mode = ? ORDER BY `+column,
+		pageID, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -490,13 +524,20 @@ func (s *Store) pageList(ctx context.Context, table, column, pageID string) ([]s
 	return out, rows.Err()
 }
 
-// replacePageList sets one of a page's lists to exactly what was given.
+// replacePageList sets one side of one of a page's lists to exactly what was given, leaving the
+// other side alone.
+//
+// The mode in the delete is what makes that true. Both sides live in one table, so without it
+// saving the drop side would empty the draw-from side — and the page would silently widen to
+// everything, which is the opposite of what the person pressing save was doing.
 //
 // Delete then insert, rather than working out a difference. The list is a handful of rows and
 // the request already carries the whole of what it should be, so a diff would be arithmetic in
 // aid of nothing.
-func replacePageList(ctx context.Context, tx *sql.Tx, table, column, pageID string, ids []string) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE page_id = ?`, pageID); err != nil {
+func replacePageList(ctx context.Context, tx *sql.Tx, table, column, pageID, mode string, ids []string) error {
+	// The table and column are constants at every call site, never anything a request said.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM `+table+` WHERE page_id = ? AND mode = ?`, pageID, mode); err != nil {
 		return err
 	}
 	if len(ids) == 0 {
@@ -504,18 +545,35 @@ func replacePageList(ctx context.Context, tx *sql.Tx, table, column, pageID stri
 	}
 
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT OR IGNORE INTO `+table+` (page_id, `+column+`) VALUES (?, ?)`)
+		`INSERT INTO `+table+` (page_id, `+column+`, mode) VALUES (?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, id := range ids {
-		if _, err := stmt.ExecContext(ctx, pageID, id); err != nil {
+		if _, err := stmt.ExecContext(ctx, pageID, id, mode); err != nil {
 			// A tag or feed that is not this person's, or not there at all. Refused rather
 			// than ignored: a filter quietly missing one of the things it was told about is
 			// a page drawing from the wrong set and saying nothing.
 			return Invalid("%s is not something this page can filter by", id)
+		}
+	}
+	return nil
+}
+
+// noBothSides refuses a tag or feed that is on both sides at once.
+func noBothSides(include, exclude []string, what string) error {
+	if len(include) == 0 || len(exclude) == 0 {
+		return nil
+	}
+	on := make(map[string]bool, len(include))
+	for _, id := range include {
+		on[id] = true
+	}
+	for _, id := range exclude {
+		if on[id] {
+			return Invalid("a page cannot both take a %s and drop it", what)
 		}
 	}
 	return nil
@@ -545,12 +603,4 @@ func checkSlug(slug string) error {
 		return Invalid("a page's address may use lowercase letters, numbers and hyphens")
 	}
 	return nil
-}
-
-func validTagFilter(f TagFilter) bool {
-	return f == TagsIgnored || f == TagsIncluding || f == TagsExcluding
-}
-
-func validFeedFilter(f FeedFilter) bool {
-	return f == FeedsAll || f == FeedsIncluding || f == FeedsExcluding
 }

@@ -207,7 +207,11 @@ export function ReaderPage({ me }: { me: Me }) {
 /** Whether a page draws from less than everything. */
 function isFiltered(page: Page | undefined): boolean {
   return Boolean(
-    page && (page.tag_filter !== "no" || page.feed_filter !== "all"),
+    page &&
+    (page.include_tag_ids.length > 0 ||
+      page.exclude_tag_ids.length > 0 ||
+      page.include_feed_ids.length > 0 ||
+      page.exclude_feed_ids.length > 0),
   );
 }
 

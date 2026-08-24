@@ -17,10 +17,10 @@ function page(overrides: Partial<Page> = {}): Page {
     edition_size: 60,
     next_edition_at: 1_787_000_000,
     max_article_age: 0,
-    tag_filter: "no",
-    feed_filter: "all",
-    tag_ids: [],
-    feed_ids: [],
+    include_tag_ids: [],
+    exclude_tag_ids: [],
+    include_feed_ids: [],
+    exclude_feed_ids: [],
     ...overrides,
   };
 }

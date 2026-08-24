@@ -3,6 +3,7 @@ package edition
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,17 +16,29 @@ import (
 func twoFeeds(t *testing.T, each int) (*instance, *store.Feed, *store.Tag) {
 	t.Helper()
 	in := newInstance(t, each)
-	ctx := context.Background()
 
-	tag, err := in.store.CreateTag(ctx, in.principal.ID, "Finance", "", store.DefaultPriority)
+	tag, err := in.store.CreateTag(context.Background(), in.principal.ID, "Finance", "", store.DefaultPriority)
 	if err != nil {
 		t.Fatalf("CreateTag(): %v", err)
 	}
-	feed, err := in.store.UpsertFeed(ctx, "https://money.example.com/feed.xml", "Money", "https://money.example.com")
+	return in, in.addFeed(t, "Money", "money", each, tag.ID), tag
+}
+
+// addFeed adds one followed feed with `each` articles, carrying the given tags.
+//
+// Titles are prefixed with the name, which is how every assertion here tells one feed's
+// articles from another's.
+func (in *instance) addFeed(t *testing.T, name, host string, each int, tagIDs ...string) *store.Feed {
+	t.Helper()
+	ctx := context.Background()
+
+	url := "https://" + host + ".example.com"
+	feed, err := in.store.UpsertFeed(ctx, url+"/feed.xml", name, url)
 	if err != nil {
 		t.Fatalf("UpsertFeed(): %v", err)
 	}
-	if _, err := in.store.Subscribe(ctx, in.principal.ID, feed.ID, store.DefaultPriority, store.DefaultArticleWindow, []string{tag.ID}); err != nil {
+	if _, err := in.store.Subscribe(ctx, in.principal.ID, feed.ID,
+		store.DefaultPriority, store.DefaultArticleWindow, tagIDs); err != nil {
 		t.Fatalf("Subscribe(): %v", err)
 	}
 
@@ -35,9 +48,9 @@ func twoFeeds(t *testing.T, each int) (*instance, *store.Feed, *store.Tag) {
 		items[i] = &store.Item{
 			ID:          ids.New(ids.Article),
 			FeedID:      feed.ID,
-			GUID:        fmt.Sprintf("money-%d", i),
-			Title:       fmt.Sprintf("Money %d", i),
-			Link:        fmt.Sprintf("https://money.example.com/%d", i),
+			GUID:        fmt.Sprintf("%s-%d", host, i),
+			Title:       fmt.Sprintf("%s %d", name, i),
+			Link:        fmt.Sprintf("%s/%d", url, i),
 			Summary:     "<p>A standfirst</p>",
 			PublishedAt: base.Add(time.Duration(i) * time.Minute),
 			FetchedAt:   base,
@@ -46,7 +59,7 @@ func twoFeeds(t *testing.T, each int) (*instance, *store.Feed, *store.Tag) {
 	if _, err := in.store.SaveItems(ctx, items); err != nil {
 		t.Fatalf("SaveItems(): %v", err)
 	}
-	return in, feed, tag
+	return feed
 }
 
 // page makes a second page and returns it, composed and ready to inspect.
@@ -83,8 +96,7 @@ func titlesOf(t *testing.T, st *store.Store, pageID string) []string {
 
 func TestAPageIncludingATagDrawsOnlyFromIt(t *testing.T) {
 	in, _, tag := twoFeeds(t, 6)
-	including := store.TagsIncluding
-	page := in.page(t, "finances", store.PagePatch{TagFilter: &including, TagIDs: []string{tag.ID}})
+	page := in.page(t, "finances", store.PagePatch{IncludeTagIDs: []string{tag.ID}})
 
 	if _, err := in.gen.Generate(context.Background(), page.ID); err != nil {
 		t.Fatalf("Generate(): %v", err)
@@ -103,8 +115,7 @@ func TestAPageIncludingATagDrawsOnlyFromIt(t *testing.T) {
 
 func TestAPageExcludingATagLeavesItOut(t *testing.T) {
 	in, _, tag := twoFeeds(t, 6)
-	excluding := store.TagsExcluding
-	page := in.page(t, "everything-else", store.PagePatch{TagFilter: &excluding, TagIDs: []string{tag.ID}})
+	page := in.page(t, "everything-else", store.PagePatch{ExcludeTagIDs: []string{tag.ID}})
 
 	if _, err := in.gen.Generate(context.Background(), page.ID); err != nil {
 		t.Fatalf("Generate(): %v", err)
@@ -121,18 +132,99 @@ func TestAPageExcludingATagLeavesItOut(t *testing.T) {
 	}
 }
 
-func TestAPageCanBeHeldToOneFeed(t *testing.T) {
-	in, money, _ := twoFeeds(t, 6)
-	only := store.FeedsIncluding
-	page := in.page(t, "money-only", store.PagePatch{FeedFilter: &only, FeedIDs: []string{money.ID}})
+// A feed switched on is on the page even when the tags said otherwise.
+//
+// This is the half a narrowing filter could never express. The old feed filter could only take
+// the tags' answer and cut it down further, so "everything but Crypto, except keep this one" —
+// which is the ordinary thing anybody wants to say about one publisher — had no shape.
+func TestAFeedSwitchedOnBeatsAnExcludedTag(t *testing.T) {
+	in, money, tag := twoFeeds(t, 6)
+	page := in.page(t, "kept", store.PagePatch{
+		ExcludeTagIDs:  []string{tag.ID},
+		IncludeFeedIDs: []string{money.ID},
+	})
 
 	if _, err := in.gen.Generate(context.Background(), page.ID); err != nil {
 		t.Fatalf("Generate(): %v", err)
 	}
+
+	var kept bool
 	for _, title := range titlesOf(t, in.store, page.ID) {
-		if title[:5] != "Money" {
-			t.Errorf("%q reached a page held to one feed", title)
+		if title[:5] == "Money" {
+			kept = true
 		}
+	}
+	if !kept {
+		t.Error("a feed switched on was dropped by a tag it carries; the switch is meant to overrule the tags")
+	}
+}
+
+// And the other way: a feed switched off stays off however the tags voted.
+//
+// A second feed carries the same tag, so the page is not empty — otherwise this would pass on a
+// page that composed nothing at all, which proves the feed was dropped only by proving that
+// everything was.
+func TestAFeedSwitchedOffBeatsAnIncludedTag(t *testing.T) {
+	in, money, tag := twoFeeds(t, 6)
+	in.addFeed(t, "Bonds", "bonds", 6, tag.ID)
+
+	page := in.page(t, "dropped", store.PagePatch{
+		IncludeTagIDs:  []string{tag.ID},
+		ExcludeFeedIDs: []string{money.ID},
+	})
+	if _, err := in.gen.Generate(context.Background(), page.ID); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+
+	var kept int
+	for _, title := range titlesOf(t, in.store, page.ID) {
+		if strings.HasPrefix(title, "Money") {
+			t.Errorf("%q reached a page that switched its feed off", title)
+		}
+		if strings.HasPrefix(title, "Bonds") {
+			kept++
+		}
+	}
+	if kept == 0 {
+		t.Error("the other feed carrying that tag was dropped too; the switch is about one feed")
+	}
+}
+
+// The case the two tag sides exist for, which is the one a single mode could not say: draw from
+// a tag, then drop the feeds that also carry another. Both tags are on the same feed, so
+// nothing but the ordering between the two sides decides the answer.
+func TestATagCanBeDrawnFromAndAnOverlappingOneDropped(t *testing.T) {
+	in, _, finance := twoFeeds(t, 6)
+	ctx := context.Background()
+
+	crypto, err := in.store.CreateTag(ctx, in.principal.ID, "Crypto", "", store.DefaultPriority)
+	if err != nil {
+		t.Fatalf("CreateTag(): %v", err)
+	}
+	// One feed carrying both tags, and one carrying only the first. The overlap is the whole
+	// point: under a single mode, excluding Crypto meant giving up the include, and including
+	// Finance meant taking Coins along with it.
+	in.addFeed(t, "Coins", "coins", 6, finance.ID, crypto.ID)
+
+	page := in.page(t, "finance-not-crypto", store.PagePatch{
+		IncludeTagIDs: []string{finance.ID},
+		ExcludeTagIDs: []string{crypto.ID},
+	})
+	if _, err := in.gen.Generate(ctx, page.ID); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+
+	var kept int
+	for _, title := range titlesOf(t, in.store, page.ID) {
+		if strings.HasPrefix(title, "Coins") {
+			t.Errorf("%q is Finance and Crypto at once; drawing from one and dropping the other must drop it", title)
+		}
+		if strings.HasPrefix(title, "Money") {
+			kept++
+		}
+	}
+	if kept == 0 {
+		t.Error("the Finance feed that is not Crypto was dropped too; the exclude is meant to take only the overlap")
 	}
 }
 
@@ -145,8 +237,7 @@ func TestAPageThatMatchesNothingIsSimplyEmpty(t *testing.T) {
 		t.Fatalf("CreateTag(): %v", err)
 	}
 
-	including := store.TagsIncluding
-	page := in.page(t, "empty", store.PagePatch{TagFilter: &including, TagIDs: []string{unused.ID}})
+	page := in.page(t, "empty", store.PagePatch{IncludeTagIDs: []string{unused.ID}})
 
 	ed, err := in.gen.Generate(context.Background(), page.ID)
 	if err != nil {
@@ -230,9 +321,8 @@ func TestOneArticleReachesEveryPageItBelongsOn(t *testing.T) {
 	in, _, tag := twoFeeds(t, 6)
 	ctx := context.Background()
 
-	including := store.TagsIncluding
 	finances := in.page(t, "finances", store.PagePatch{
-		TagFilter: &including, TagIDs: []string{tag.ID},
+		IncludeTagIDs: []string{tag.ID},
 	})
 
 	// The filtered page first, so if anything were being taken rather than shared, the main
@@ -307,8 +397,7 @@ func TestAPageDoesNotDrawWhatYouHaveAlreadyRead(t *testing.T) {
 	in, _, tag := twoFeeds(t, 30)
 	ctx := context.Background()
 
-	including := store.TagsIncluding
-	money := in.page(t, "money", store.PagePatch{TagFilter: &including, TagIDs: []string{tag.ID}})
+	money := in.page(t, "money", store.PagePatch{IncludeTagIDs: []string{tag.ID}})
 
 	if _, err := in.gen.Generate(ctx, money.ID); err != nil {
 		t.Fatalf("Generate(): %v", err)

@@ -132,11 +132,22 @@ questions the Front Page already answered: how often it is composed, how much is
 far back it reaches. A finance page turning hourly with fifteen articles and a day's reach is a
 different object from a Sunday page of long reads turning weekly.
 
-The filter is two controls that compose. **Tags**: any, only these, or all but these. **Feeds**:
-the same, and the second control offers only the direction the first did not — a page already
-held to a set of tags does not also need "only these feeds", because the tags already chose
-them; what is useful is dropping one. Everything is saved in one gesture, because a mode changed
-without its list is a page drawing from the wrong things — briefly, and then for a week.
+The filter is one list of your tags and one of your feeds, each name on a switch with three
+positions: left to drop it, right to take it, and the middle — where everything starts — to say
+nothing about it.
+
+**Tags are a funnel.** Push any tag right and the page draws only from tags pushed right; push
+one left and it drops what carries that tag *afterwards*. That order is the whole reason there
+are two directions rather than a choice between them: tags overlap, so a finance page that loses
+the crypto half of itself needs to take Finance and then drop Crypto, and neither gesture alone
+can say it.
+
+**Feeds overrule the funnel**, in both directions. Right is on this page whatever the tags
+decided; left is off it whatever they decided. A feed left in the middle follows the tags, and
+the list says beside it whether that currently lands it in or out — otherwise the two useful
+things anybody wants to say about one publisher, "this one as well" and "this one never", would
+depend on a tag rule they would have to work out. Everything is saved in one gesture, because
+half a filter is a page drawing from the wrong things — briefly, and then for a week.
 
 **Pages are views, not shares.** An article that belongs on two of them appears on both. What
 each page remembers separately is what *it* has shown, so a weekly page is not quietly emptied

@@ -119,36 +119,36 @@ func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition
 
 // eligible is the subscriptions one page may draw from.
 //
-// Both filters are applied, and they compose rather than override: a page including the tag
-// "finance" and excluding one particular feed means both. The interface narrows what the second
-// control can offer once the first is set, which keeps a person from building a combination
-// that selects nothing — but it is the interface that does that, and this applies whatever it
-// was given.
+// The tags are a funnel and the feeds override what comes out of it, so the feeds are settled
+// first — an override that ran second would still be an override, but reading it that way makes
+// the ordering look like a detail rather than the meaning.
+//
+// **A feed the page has an opinion about takes it, whatever the tags say.** On means on and off
+// means off. Those are the two gestures anybody actually makes about one publisher — "this one
+// as well" and "this one never" — and neither was sayable when the feed list was a second
+// funnel narrowing the first.
+//
+// **Otherwise the tags decide.** Any tag on the include side holds the page to subscriptions
+// carrying at least one of them; an empty include side is not a filter, it means the page was
+// never narrowed this way rather than narrowed to nothing. Then the exclude side drops what it
+// matches — after, and that ordering is the whole point of having both. Tags overlap, and
+// "Finance, but not the feeds that are also Crypto" needs the include to have happened first.
 func eligible(page *store.Page, subs []*store.Subscription) []*store.Subscription {
-	tagged := set(page.TagIDs)
-	feeds := set(page.FeedIDs)
+	always := set(page.IncludeFeedIDs)
+	never := set(page.ExcludeFeedIDs)
+	include := set(page.IncludeTagIDs)
+	exclude := set(page.ExcludeTagIDs)
 
 	out := make([]*store.Subscription, 0, len(subs))
 	for _, sub := range subs {
-		switch page.TagFilter {
-		case store.TagsIncluding:
-			if !anyOf(sub.TagIDs, tagged) {
-				continue
-			}
-		case store.TagsExcluding:
-			if anyOf(sub.TagIDs, tagged) {
-				continue
-			}
-		}
-		switch page.FeedFilter {
-		case store.FeedsIncluding:
-			if !feeds[sub.FeedID] {
-				continue
-			}
-		case store.FeedsExcluding:
-			if feeds[sub.FeedID] {
-				continue
-			}
+		switch {
+		case never[sub.FeedID]:
+			continue
+		case always[sub.FeedID]:
+		case len(include) > 0 && !anyOf(sub.TagIDs, include):
+			continue
+		case anyOf(sub.TagIDs, exclude):
+			continue
 		}
 		out = append(out, sub)
 	}

@@ -25,7 +25,8 @@ func TestEveryAccountHasOnePageToBeginWith(t *testing.T) {
 		t.Errorf("page = %+v, want its cadence and size", pages[0])
 	}
 	// Never null, so the interface can read them without checking.
-	if pages[0].TagIDs == nil || pages[0].FeedIDs == nil {
+	if pages[0].IncludeTagIDs == nil || pages[0].ExcludeTagIDs == nil ||
+		pages[0].IncludeFeedIDs == nil || pages[0].ExcludeFeedIDs == nil {
 		t.Errorf("page = %+v, want empty lists rather than nulls", pages[0])
 	}
 }
@@ -73,15 +74,14 @@ func TestAPageIsSavedInOneRequest(t *testing.T) {
 
 	var saved pageBody
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
-		"tag_filter":       "including",
-		"tag_ids":          []string{tag.ID},
+		"include_tag_ids":  []string{tag.ID},
 		"edition_interval": 3600,
 		"edition_size":     20,
 		"max_article_age":  86400,
 	}), http.StatusOK, &saved)
 
-	if saved.TagFilter != "including" || len(saved.TagIDs) != 1 || saved.TagIDs[0] != tag.ID {
-		t.Errorf("page = %+v, want it including one tag", saved)
+	if len(saved.IncludeTagIDs) != 1 || saved.IncludeTagIDs[0] != tag.ID {
+		t.Errorf("page = %+v, want it drawing from one tag", saved)
 	}
 	if saved.EditionInterval != 3600 || saved.EditionSize != 20 || saved.MaxArticleAge != 86400 {
 		t.Errorf("page = %+v, want hourly, twenty articles, a day's window", saved)
@@ -104,22 +104,22 @@ func TestAnAbsentListIsNotAnEmptyOne(t *testing.T) {
 	h.expect(h.do(http.MethodPost, "/api/pages",
 		map[string]any{"name": "Finances", "slug": "finances"}), http.StatusCreated, &page)
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
-		"tag_filter": "including", "tag_ids": []string{tag.ID},
+		"include_tag_ids": []string{tag.ID},
 	}), http.StatusOK, nil)
 
 	// Something else entirely; the tag list is not mentioned and must survive.
 	var after pageBody
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID,
 		map[string]any{"edition_size": 30}), http.StatusOK, &after)
-	if len(after.TagIDs) != 1 {
-		t.Errorf("tags = %v, want the list left alone by a request that did not mention it", after.TagIDs)
+	if len(after.IncludeTagIDs) != 1 {
+		t.Errorf("tags = %v, want the list left alone by a request that did not mention it", after.IncludeTagIDs)
 	}
 
 	// Named and empty means empty.
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID,
-		map[string]any{"tag_ids": []string{}}), http.StatusOK, &after)
-	if len(after.TagIDs) != 0 {
-		t.Errorf("tags = %v, want the list cleared when it was named", after.TagIDs)
+		map[string]any{"include_tag_ids": []string{}}), http.StatusOK, &after)
+	if len(after.IncludeTagIDs) != 0 {
+		t.Errorf("tags = %v, want the list cleared when it was named", after.IncludeTagIDs)
 	}
 }
 
@@ -253,7 +253,7 @@ func TestChangingAFilterComposesThePageAgain(t *testing.T) {
 	h.expect(h.do(http.MethodPost, "/api/tags", map[string]any{"name": "Nobody"}),
 		http.StatusCreated, &tag)
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
-		"tag_filter": "including", "tag_ids": []string{tag.ID},
+		"include_tag_ids": []string{tag.ID},
 	}), http.StatusOK, nil)
 
 	// Empty, not the articles it was showing under the old filter. This is the case that
@@ -284,7 +284,7 @@ func TestWideningAFilterFillsThePageAgain(t *testing.T) {
 	h.expect(h.do(http.MethodPost, "/api/pages",
 		map[string]any{"name": "Narrow", "slug": "narrow"}), http.StatusCreated, &page)
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
-		"tag_filter": "including", "tag_ids": []string{tag.ID},
+		"include_tag_ids": []string{tag.ID},
 	}), http.StatusOK, nil)
 
 	var empty editionBody
@@ -294,7 +294,7 @@ func TestWideningAFilterFillsThePageAgain(t *testing.T) {
 	}
 
 	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID,
-		map[string]any{"tag_filter": "no"}), http.StatusOK, nil)
+		map[string]any{"include_tag_ids": []string{}}), http.StatusOK, nil)
 
 	var filled editionBody
 	h.expect(h.do(http.MethodGet, "/api/edition?page=narrow", nil), http.StatusOK, &filled)

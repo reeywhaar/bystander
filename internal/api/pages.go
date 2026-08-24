@@ -25,10 +25,13 @@ type pageBody struct {
 	NextEditionAt   int64 `json:"next_edition_at"`
 	MaxArticleAge   int64 `json:"max_article_age"` // seconds; 0 is no limit
 
-	TagFilter  string   `json:"tag_filter"`
-	FeedFilter string   `json:"feed_filter"`
-	TagIDs     []string `json:"tag_ids"`
-	FeedIDs    []string `json:"feed_ids"`
+	// Each side of each list, rather than a mode and one list. The tags are a funnel — draw
+	// from these, then drop those — and the feeds override what comes out of it in both
+	// directions. Anything the page has no opinion about is on neither side.
+	IncludeTagIDs  []string `json:"include_tag_ids"`
+	ExcludeTagIDs  []string `json:"exclude_tag_ids"`
+	IncludeFeedIDs []string `json:"include_feed_ids"`
+	ExcludeFeedIDs []string `json:"exclude_feed_ids"`
 }
 
 func pageOf(page *store.Page) pageBody {
@@ -41,10 +44,10 @@ func pageOf(page *store.Page) pageBody {
 		EditionSize:     page.EditionSize,
 		NextEditionAt:   page.NextEditionAt.Unix(),
 		MaxArticleAge:   int64(page.ArticleWindow.Seconds()),
-		TagFilter:       string(page.TagFilter),
-		FeedFilter:      string(page.FeedFilter),
-		TagIDs:          orEmpty(page.TagIDs),
-		FeedIDs:         orEmpty(page.FeedIDs),
+		IncludeTagIDs:   orEmpty(page.IncludeTagIDs),
+		ExcludeTagIDs:   orEmpty(page.ExcludeTagIDs),
+		IncludeFeedIDs:  orEmpty(page.IncludeFeedIDs),
+		ExcludeFeedIDs:  orEmpty(page.ExcludeFeedIDs),
 	}
 }
 
@@ -120,10 +123,10 @@ type patchPageRequest struct {
 	EditionInterval *int64    `json:"edition_interval"`
 	EditionSize     *int      `json:"edition_size"`
 	MaxArticleAge   *int64    `json:"max_article_age"`
-	TagFilter       *string   `json:"tag_filter"`
-	FeedFilter      *string   `json:"feed_filter"`
-	TagIDs          *[]string `json:"tag_ids"`
-	FeedIDs         *[]string `json:"feed_ids"`
+	IncludeTagIDs   *[]string `json:"include_tag_ids"`
+	ExcludeTagIDs   *[]string `json:"exclude_tag_ids"`
+	IncludeFeedIDs  *[]string `json:"include_feed_ids"`
+	ExcludeFeedIDs  *[]string `json:"exclude_feed_ids"`
 }
 
 func (s *Server) patchPage(w http.ResponseWriter, r *http.Request) {
@@ -155,21 +158,19 @@ func (s *Server) patchPage(w http.ResponseWriter, r *http.Request) {
 		d := time.Duration(*body.MaxArticleAge) * time.Second
 		patch.ArticleWindow = &d
 	}
-	if body.TagFilter != nil {
-		f := store.TagFilter(*body.TagFilter)
-		patch.TagFilter = &f
-	}
-	if body.FeedFilter != nil {
-		f := store.FeedFilter(*body.FeedFilter)
-		patch.FeedFilter = &f
-	}
 	// A pointer to a slice, so that "clear this list" and "do not touch this list" are different
 	// requests. Sending [] means empty; leaving the field out means leave it alone.
-	if body.TagIDs != nil {
-		patch.TagIDs = orEmpty(*body.TagIDs)
+	if body.IncludeTagIDs != nil {
+		patch.IncludeTagIDs = orEmpty(*body.IncludeTagIDs)
 	}
-	if body.FeedIDs != nil {
-		patch.FeedIDs = orEmpty(*body.FeedIDs)
+	if body.ExcludeTagIDs != nil {
+		patch.ExcludeTagIDs = orEmpty(*body.ExcludeTagIDs)
+	}
+	if body.IncludeFeedIDs != nil {
+		patch.IncludeFeedIDs = orEmpty(*body.IncludeFeedIDs)
+	}
+	if body.ExcludeFeedIDs != nil {
+		patch.ExcludeFeedIDs = orEmpty(*body.ExcludeFeedIDs)
 	}
 
 	if err := s.store.UpdatePage(r.Context(), page.ID, patch); err != nil {
@@ -202,11 +203,11 @@ func (s *Server) patchPage(w http.ResponseWriter, r *http.Request) {
 // is on it, and a cadence changed is a statement about the next composition rather than this
 // one.
 func drawsFromSomethingElse(before, after *store.Page) bool {
-	return before.TagFilter != after.TagFilter ||
-		before.FeedFilter != after.FeedFilter ||
-		before.ArticleWindow != after.ArticleWindow ||
-		!slices.Equal(before.TagIDs, after.TagIDs) ||
-		!slices.Equal(before.FeedIDs, after.FeedIDs)
+	return before.ArticleWindow != after.ArticleWindow ||
+		!slices.Equal(before.IncludeTagIDs, after.IncludeTagIDs) ||
+		!slices.Equal(before.ExcludeTagIDs, after.ExcludeTagIDs) ||
+		!slices.Equal(before.IncludeFeedIDs, after.IncludeFeedIDs) ||
+		!slices.Equal(before.ExcludeFeedIDs, after.ExcludeFeedIDs)
 }
 
 // recompose composes a page again after its filter changed, and never fails the save.

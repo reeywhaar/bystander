@@ -1,5 +1,5 @@
 import { createApiAction, type ApiAction } from "@app/api/request";
-import type { FeedFilter, Page, TagFilter } from "@app/api/types";
+import type { Page } from "@app/api/types";
 
 /** `GET /api/pages` */
 export function getPages(): ApiAction<Page[]> {
@@ -36,10 +36,10 @@ export interface PageChanges {
   edition_interval?: number;
   edition_size?: number;
   max_article_age?: number;
-  tag_filter?: TagFilter;
-  feed_filter?: FeedFilter;
-  tag_ids?: string[];
-  feed_ids?: string[];
+  include_tag_ids?: string[];
+  exclude_tag_ids?: string[];
+  include_feed_ids?: string[];
+  exclude_feed_ids?: string[];
 }
 
 /** `PATCH /api/pages/{id}` */
