@@ -46,6 +46,7 @@ const plain = (over: Partial<Style> = {}): Style => ({
   prose: 1,
   frame: null,
   columns: false,
+  rule: false,
   ...over,
 });
 

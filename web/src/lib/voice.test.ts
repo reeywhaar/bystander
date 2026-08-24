@@ -93,6 +93,29 @@ describe("styleFor", () => {
     expect(pairs.size).toBe(VOICES.length * PROSE_STEPS);
   });
 
+  it("rules the page into bands, rarely and at irregular intervals", () => {
+    const drawn = styles(6000);
+    const ruled = drawn.filter((s) => s.rule).length;
+
+    // One or two on a ninety-article page. It was ten per cent to begin with, which put a
+    // rule every ten cards — often enough that it stops being a mark anybody sees, and a
+    // mark nobody sees is not dividing anything.
+    const perPage = (ruled / drawn.length) * 90;
+    expect(perPage).toBeGreaterThan(0.5);
+    expect(perPage).toBeLessThan(3);
+
+    // Irregular, which is the whole reason this is a chance and not a cadence. Even spacing
+    // reads as a table's gridlines.
+    const gaps: number[] = [];
+    let last = -1;
+    drawn.forEach((style, i) => {
+      if (!style.rule) return;
+      if (last >= 0) gaps.push(i - last);
+      last = i;
+    });
+    expect(new Set(gaps).size).toBeGreaterThan(5);
+  });
+
   it("needs enough text before it splits a body into columns", () => {
     // Three lines cut down the middle is one paragraph with a gap in it.
     const short = ids(400).map((id) => styleFor(EDITION, id, "Too little."));
@@ -144,6 +167,7 @@ describe("assignVoices", () => {
       prose: 0,
       frame: null,
       columns: false,
+      rule: false,
     }));
     expect(assignVoices(drawn)).toEqual([...VOICES]);
   });

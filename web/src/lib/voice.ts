@@ -110,6 +110,28 @@ export const FRAME_RANKS = 3;
  */
 const COLUMNS_NEED = 600;
 
+/**
+ * How often a rule runs across the page, as a chance per card.
+ *
+ * A newspaper breaks its page into bands with a rule, and the bands are what make a page
+ * scannable at arm's length — you find the band first and the story second.
+ *
+ * A chance rather than a cadence, which is what this was: a rule every five to nine cards put
+ * eight of them on a fifty-card page at even intervals, and even intervals are the thing a
+ * page is trying not to be. Regular rules read as a table's gridlines; irregular ones read as
+ * a compositor deciding a band had gone on long enough.
+ *
+ * Two per cent, which is one or two rules on a ninety-article page. It was ten per cent to
+ * begin with and that was far too many — a rule every ten cards is a rule you stop seeing,
+ * and a mark you stop seeing is not dividing anything. This is a break in the page, and a
+ * page has one or two of those in it.
+ *
+ * It does something structural too. Nothing sits beside a full-width element, so a rule closes
+ * the band above it and bounds how far `dense` reaches when it backfills — a hole near the top
+ * stops being filled by a card from four screens down.
+ */
+const RULE_CHANCE = 0.02;
+
 /** Everything about how one card looks that is not the server's to decide. */
 export interface Style {
   voice: Voice;
@@ -119,6 +141,8 @@ export interface Style {
   frame: Frame | null;
   /** Whether a wide card runs its body in two columns. The caller checks the width. */
   columns: boolean;
+  /** Whether a rule runs across the page above this card. */
+  rule: boolean;
 }
 
 /**
@@ -184,36 +208,15 @@ export function styleFor(
   const pad = Math.floor(next() * FRAME_RANKS);
 
   const columns = next() < 0.5 && summary.length >= COLUMNS_NEED;
+  const rule = next() < RULE_CHANCE;
 
   return {
     voice,
     prose,
     frame: line ? { line, width, ink, pad } : null,
     columns,
+    rule,
   };
-}
-
-/**
- * How many cards go between the rules that run across the page.
- *
- * A newspaper breaks its page into bands with a rule, and the bands are what make a page
- * scannable at arm's length — you find the band first and the story second. Without them a
- * grid of fifty cards is one undifferentiated field, however much the cards differ.
- *
- * It also does something structural. A rule spans every track, so nothing can sit beside it:
- * it closes the band above and starts a new one, which bounds how far `dense` can reach when
- * it backfills. A hole near the top of the page stops being filled by a card from four
- * screens down.
- *
- * Drawn once per page rather than fixed, so the bands are not the same size on every edition,
- * and drawn from the edition alone because it is a fact about the page rather than about any
- * article on it.
- */
-export function bandLength(editionID: string): number {
-  const next = generator(hash(editionID));
-  // Five to nine. Fewer and the rules are the loudest thing on the page; more and a band is
-  // long enough that the rule at the top of it has been forgotten by the bottom.
-  return 5 + Math.floor(next() * 5);
 }
 
 /**

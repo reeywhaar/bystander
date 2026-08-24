@@ -192,9 +192,15 @@ body {
   .page-rule {
     grid-column: span 16;
     border-top: 1px solid var(--rule);
-    /* The gap either side is the grid's, so this only needs to not add to it. */
-    margin: 0;
     height: 0;
+    /*
+     * Air either side, on top of the grid's own gap.
+     *
+     * Without it the rule is a hairline sitting at exactly the distance every other card is
+     * from its neighbour, which makes it read as one more edge rather than as a break. A
+     * break has to be bigger than the gaps it is dividing, or it is not dividing them.
+     */
+    margin-block: 1.5rem;
   }
 
   /*

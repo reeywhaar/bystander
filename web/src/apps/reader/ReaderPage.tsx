@@ -5,7 +5,7 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute, until } from "@app/lib/time";
-import { assignVoices, bandLength, styleFor } from "@app/lib/voice";
+import { assignVoices, styleFor } from "@app/lib/voice";
 import {
   useEdition,
   useFeeds,
@@ -71,7 +71,13 @@ export function ReaderPage({ me }: { me: Me }) {
                 styleFor(page.id, article.id, article.summary),
               );
               const voices = assignVoices(styles);
-              const band = bandLength(page.id);
+
+              // A rule spans every track, so a card caught between two of them sits alone
+              // with three quarters of its row empty. The draw is per card and cannot know
+              // where the last rule fell, so the run enforces the floor — the same shape as
+              // the no-two-faces-in-a-row rule, and for the same reason: it is a fact about
+              // the sequence, not about any one card.
+              let ruledAt = 0;
 
               return page.items.flatMap((article, i) => {
                 const card = (
@@ -83,15 +89,17 @@ export function ReaderPage({ me }: { me: Me }) {
                     onRead={(id, read) => setRead.mutate({ id, read })}
                   />
                 );
-                // A rule before the card that starts each new band, so the page reads as
-                // bands rather than as one field. Never before the first: a page does not
-                // open with a rule above its lead.
-                return i > 0 && i % band === 0
-                  ? [
-                      <hr key={`rule-${article.id}`} className="page-rule" />,
-                      card,
-                    ]
-                  : [card];
+                // A rule above the cards that drew one, so the page reads as bands rather
+                // than as one field. Never above the first — a page does not open with a
+                // rule over its lead — and never within four cards of the last one.
+                if (i > 0 && styles[i]!.rule && i - ruledAt >= 4) {
+                  ruledAt = i;
+                  return [
+                    <hr key={`rule-${article.id}`} className="page-rule" />,
+                    card,
+                  ];
+                }
+                return [card];
               });
             })()}
           </div>
