@@ -91,11 +91,11 @@ export function ArticleCard({
             // box. A template literal is invisible to it.
             // A measured picture is always filled, never fitted.
             //
-            // Its box is its own ratio, so where the two agree `contain` and `cover` draw the
-            // same thing — and where they do not, the box has been clamped, which means the
-            // picture is wider or taller than this page has room for. Fitting one of those
-            // inside its box is a letterboxed banner in a column of stories. Filling it
-            // crops to the shape the page can carry, which is what the clamp was for.
+            // Its box is its own ratio, so for nearly all of them `contain` and `cover` draw
+            // exactly the same thing. They differ only on a picture too wide or too tall for
+            // this page, whose box has been squared — and there `contain` would letterbox a
+            // panorama into a square hole, which is the shape the squaring was avoiding.
+            // Filling takes the middle of the picture instead.
             //
             // The fit still varies on pictures nothing has measured, where the box is a
             // guess and showing one whole is as good an answer as cropping it.
@@ -117,13 +117,11 @@ export function ArticleCard({
             // third of itself, and nobody here has looked at it to know whether the third
             // mattered. A measurement replaces the guess with the fact.
             //
-            // Clamped to the ladder's own range. A publisher's banner at 4:1 would otherwise
-            // be a letterbox slot in a column of stories, and a tall product shot would push
-            // its own headline off the screen — the page's shape is still the page's.
+            // Bounded rather than clamped, and the difference is the point — see [shapeOf].
             style={
               measured
                 ? {
-                    aspectRatio: clamp(
+                    aspectRatio: shapeOf(
                       article.image_width / article.image_height,
                     ),
                   }
@@ -205,15 +203,40 @@ export function ArticleCard({
 }
 
 /**
- * Holds a measured picture inside the shapes the page is built for.
+ * The widest and tallest a measured picture is drawn at, as width over height.
  *
- * The ladder runs from five-by-three to square, and those are the bounds a column of stories
- * can carry: wider and a picture is a letterbox slot, taller and it pushes the story it
- * belongs to off the screen. A publisher's banner is 4:1 and a product shot is 3:4, and
- * neither is a shape this page has anywhere to put.
+ * Two and a half to one either way — a wide landscape through square to a tall portrait. Far
+ * looser than the drawn ladder, which only ever runs from five-by-three to square, and
+ * deliberately so: the ladder is what to do knowing nothing, and a measurement is not nothing.
+ * A photograph that is genuinely a panorama should look like one, and a portrait should stand
+ * up. Holding every measured picture inside the guess's range would be measuring them and then
+ * declining to believe the answer.
  */
-function clamp(ratio: number): number {
-  return Math.min(5 / 3, Math.max(1, ratio));
+const WIDEST = 5 / 2;
+const TALLEST = 2 / 5;
+
+/**
+ * The shape a measured picture is drawn in.
+ *
+ * Inside the bounds a picture is drawn at its own ratio, whatever that is. Outside them it is
+ * drawn square and filled, which crops it — and square rather than the nearest bound, which is
+ * what this used to do.
+ *
+ * That difference is worth being clear about, because clamping sounds like the gentler of the
+ * two and is not. A 4:1 publisher's banner clamped to the widest allowed shape is still very
+ * nearly a 4:1 banner: it keeps the letterbox proportions that made it wrong for a column of
+ * stories, and only stops just short of them. Squaring it admits the page has no room for that
+ * shape at all and takes the middle of the picture instead. The same holds for the tall end,
+ * where clamping leaves a product shot still tall enough to push its own headline off screen.
+ *
+ * So the bounds are not a range to be squeezed into. They are the range this page can carry
+ * honestly, and a picture outside it is cropped rather than distorted towards the edge.
+ */
+function shapeOf(ratio: number): number {
+  // Square, and [ArticleCard] fills rather than fits every measured picture, so the crop
+  // takes the middle instead of letterboxing what would not go.
+  if (ratio > WIDEST || ratio < TALLEST) return 1;
+  return ratio;
 }
 
 function SourceLine({ article }: { article: Article }) {

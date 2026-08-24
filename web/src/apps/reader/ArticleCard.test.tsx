@@ -54,6 +54,99 @@ const plain = (over: Partial<Style> = {}): Style => ({
   ...over,
 });
 
+/**
+ * The aspect ratio a card's picture was actually drawn at, as width over height.
+ *
+ * Read as a number, because the value written is not the value stored: jsdom normalises
+ * `aspectRatio: 1` to the string "1 / 1", and what these tests are about is the shape, not
+ * how a browser chose to spell it.
+ */
+function drawnRatio(): number {
+  const img = document.querySelector("img");
+  if (!img) throw new Error("the card drew no picture");
+
+  const [width, height = "1"] = img.style.aspectRatio.split("/");
+  return Number(width) / Number(height);
+}
+
+describe("ArticleCard pictures", () => {
+  const show = (width: number, height: number, slot: Slot = "standard") =>
+    render(
+      <ArticleCard
+        article={article({ image_width: width, image_height: height, slot })}
+        style={plain()}
+        voice="didone"
+        onRead={vi.fn()}
+      />,
+    );
+
+  // The whole reason for measuring them. A photograph that is nearly square, cut to the
+  // ladder's five-by-three, loses a third of itself — and nobody here has looked at it to
+  // know whether the third mattered.
+  it("draws a measured picture at its own shape", () => {
+    show(1600, 1200);
+    expect(drawnRatio()).toBeCloseTo(4 / 3);
+  });
+
+  it("believes a panorama and a portrait, inside the bounds", () => {
+    // Wider than anything the drawn ladder can express, and drawn as it is.
+    show(2000, 800);
+    expect(drawnRatio()).toBeCloseTo(2.5);
+
+    document.body.innerHTML = "";
+    show(800, 2000);
+    expect(drawnRatio()).toBeCloseTo(0.4);
+  });
+
+  // Squared, not clamped to the nearest bound, and this is the case that distinguishes them.
+  // A 4:1 banner held at the widest allowed shape is still very nearly a 4:1 banner: it keeps
+  // the letterbox proportions that made it wrong for a column of stories.
+  it("squares a picture too wide for the page rather than nearly allowing it", () => {
+    show(4000, 1000);
+    expect(drawnRatio()).toBe(1);
+  });
+
+  it("squares a picture too tall for the page", () => {
+    // Tall enough to push its own headline off the screen.
+    show(1000, 4000);
+    expect(drawnRatio()).toBe(1);
+  });
+
+  // Filled, so squaring takes the middle of the picture instead of letterboxing it into a
+  // square hole — which is the shape the squaring was avoiding.
+  it("fills a measured picture rather than fitting it", () => {
+    show(4000, 1000);
+    expect(document.querySelector("img")!.className).toContain("object-cover");
+    expect(document.querySelector("img")!.className).not.toContain(
+      "object-contain",
+    );
+  });
+
+  // The ladder is what to do knowing nothing, and it stays that: a drawn shape from
+  // five-by-three to square, in styles.css.
+  it("leaves an unmeasured picture to the drawn ladder", () => {
+    render(
+      <ArticleCard
+        article={article({ image_width: 0, image_height: 0 })}
+        style={plain({ shot: 3 })}
+        voice="didone"
+        onRead={vi.fn()}
+      />,
+    );
+    const img = document.querySelector("img")!;
+    expect(img.style.aspectRatio).toBe("");
+    expect(img.className).toContain("shot-3");
+  });
+
+  // A full-width picture at its own shape could be a screen-high photograph above the story
+  // it belongs to. The lead's ratio is what stops the picture becoming the page.
+  it("keeps the lead's own cinematic shape whatever it measures", () => {
+    show(1000, 4000, "lead");
+    const img = document.querySelector("img")!;
+    expect(img.className).toContain("aspect-[21/9]");
+  });
+});
+
 describe("ArticleCard", () => {
   // The size is the story's, from a ladder in styles.css, and the slot only sets a floor
   // under it. A utility here would win the cascade and flatten both.
