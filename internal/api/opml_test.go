@@ -545,3 +545,53 @@ func TestMarkingAFeedReadIsYourOwnFeedOnly(t *testing.T) {
 		t.Errorf("%d articles marked read by requests that should have failed", len(read))
 	}
 }
+
+// Unreading a feed puts its articles back in the pool, which is what somebody wants when they
+// marked too much read.
+func TestUnmarkingAFeedReadPutsItBack(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}),
+		http.StatusCreated, &sub)
+
+	var marked struct {
+		Marked int `json:"marked"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/"+sub.ID+"/read",
+		map[string]string{"older_than": ""}), http.StatusOK, &marked)
+	if marked.Marked == 0 {
+		t.Fatal("nothing was marked read to begin with")
+	}
+
+	var forgotten struct {
+		Marked int `json:"marked"`
+	}
+	h.expect(h.do(http.MethodDelete, "/api/feeds/"+sub.ID+"/read", nil), http.StatusOK, &forgotten)
+	if forgotten.Marked != marked.Marked {
+		t.Errorf("forgot %d of %d marked", forgotten.Marked, marked.Marked)
+	}
+
+	var read []struct{}
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &read)
+	if len(read) != 0 {
+		t.Errorf("%d articles still read", len(read))
+	}
+
+	// And a page can draw from it again.
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	if len(page.Items) == 0 {
+		t.Error("composed nothing from a feed that was put back")
+	}
+
+	// Somebody else's subscription is still not theirs to touch.
+	elsewhere := h.signInAsSomebodyElse("bob")
+	res := h.doAs(elsewhere, http.MethodDelete, "/api/feeds/"+sub.ID+"/read", nil)
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("unmarking somebody else's subscription = %d, want 404", res.StatusCode)
+	}
+	res.Body.Close()
+}

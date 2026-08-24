@@ -75,6 +75,29 @@ describe("MarkReadDialog", () => {
     );
   });
 
+  // The other direction, which the option list offers alongside the spans.
+  it("forgets the feed's read state when that is what was chosen", async () => {
+    const { transport } = renderWith(
+      <MarkReadDialog feed={feed} open onClose={vi.fn()} />,
+      { "DELETE /api/feeds/s_1/read": { body: { marked: 8 } } },
+    );
+
+    await userEvent.click(screen.getByLabelText(/Mark it all unread/));
+    // The button follows the choice rather than staying "Mark read" over an option that
+    // does the opposite.
+    await userEvent.click(screen.getByRole("button", { name: "Mark unread" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Marked 8 articles unread.")).toBeInTheDocument();
+    });
+    expect(transport.calls).toContainEqual(
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/feeds/s_1/read",
+      }),
+    );
+  });
+
   // Nothing is a real outcome of the same press, and it covers two cases the server does not
   // tell apart: nothing that old, or it had been read already.
   it("says so when there was nothing to do", async () => {

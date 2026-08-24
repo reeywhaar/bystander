@@ -5,7 +5,7 @@ import type { Subscription } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
-import { useMarkFeedRead } from "@app/queries/hooks";
+import { useMarkFeedRead, useUnmarkFeedRead } from "@app/queries/hooks";
 
 /**
  * How far back to mark, and what each one is for.
@@ -14,7 +14,10 @@ import { useMarkFeedRead } from "@app/queries/hooks";
  * four choices fit in a dialog, and nobody wants to pick a date to say "I have read the old
  * ones".
  */
-const SPANS: { value: MarkSpan; label: string; what: string }[] = [
+/** What the dialog can do: a span to mark read, or the whole thing the other way. */
+type Choice = MarkSpan | "unread";
+
+const SPANS: { value: Choice; label: string; what: string }[] = [
   {
     value: "day",
     label: "Older than a day",
@@ -33,7 +36,12 @@ const SPANS: { value: MarkSpan; label: string; what: string }[] = [
   {
     value: "",
     label: "Everything",
-    what: "The whole feed, including what no page has shown yet.",
+    what: "The whole feed.",
+  },
+  {
+    value: "unread",
+    label: "Mark it all unread",
+    what: "Forgets that any of it was read, and offers it again.",
   },
 ];
 
@@ -59,29 +67,38 @@ export function MarkReadDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [span, setSpan] = useState<MarkSpan>("week");
+  const [choice, setChoice] = useState<Choice>("week");
   const mark = useMarkFeedRead();
+  const unmark = useUnmarkFeedRead();
   const [marked, setMarked] = useState<number | null>(null);
 
+  const undoing = choice === "unread";
+  const busy = mark.isPending || unmark.isPending;
+  const failure = mark.error ?? unmark.error;
+
+  const done = (result: { marked: number }) => setMarked(result.marked);
   const apply = () =>
-    mark.mutate(
-      { id: feed.id, olderThan: span },
-      { onSuccess: (result) => setMarked(result.marked) },
-    );
+    undoing
+      ? unmark.mutate(feed.id, { onSuccess: done })
+      : mark.mutate({ id: feed.id, olderThan: choice }, { onSuccess: done });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={`Mark ${feed.title} read`}
+      // Not "…read": one of the choices below does the opposite, and a title that names
+      // only one of them is a title arguing with the option somebody just picked.
+      title={`Mark ${feed.title}`}
       footer={
         marked === null ? (
           <>
-            <Button onClick={onClose} disabled={mark.isPending}>
+            <Button onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={apply} disabled={mark.isPending}>
-              {mark.isPending ? "Marking…" : "Mark read"}
+            {/* The label follows the choice rather than staying "Mark read" over an option
+                that does the opposite. */}
+            <Button variant="primary" onClick={apply} disabled={busy}>
+              {busy ? "Marking…" : undoing ? "Mark unread" : "Mark read"}
             </Button>
           </>
         ) : (
@@ -108,8 +125,8 @@ export function MarkReadDialog({
                   type="radio"
                   name="span"
                   className="accent-accent"
-                  checked={span === option.value}
-                  onChange={() => setSpan(option.value)}
+                  checked={choice === option.value}
+                  onChange={() => setChoice(option.value)}
                 />
                 <span>
                   <span className="text-ink">{option.label}</span>{" "}
@@ -119,7 +136,7 @@ export function MarkReadDialog({
             ))}
           </div>
 
-          {mark.error ? <Alert>{mark.error.message}</Alert> : null}
+          {failure ? <Alert>{failure.message}</Alert> : null}
         </div>
       ) : (
         <p className="text-sm text-ink-muted">
@@ -130,8 +147,12 @@ export function MarkReadDialog({
               server counts rows rather than reasons: there was nothing that old, or what
               was that old had been read already. Either way there was nothing to do. */}
           {marked === 0
-            ? "Nothing to mark — nothing that old, or it had been read already."
-            : `Marked ${marked} ${marked === 1 ? "article" : "articles"} read.`}
+            ? undoing
+              ? "Nothing to forget — none of it was marked read."
+              : "Nothing to mark — nothing that old, or it had been read already."
+            : `Marked ${marked} ${marked === 1 ? "article" : "articles"} ${
+                undoing ? "unread" : "read"
+              }.`}
         </p>
       )}
     </Modal>

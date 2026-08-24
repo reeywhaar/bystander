@@ -586,3 +586,38 @@ func (s *Store) MarkFeedRead(ctx context.Context, principalID, feedID string, be
 
 	return marked, tx.Commit()
 }
+
+// UnmarkFeedRead forgets that one person read anything from one feed.
+//
+// The inverse of [MarkFeedRead], and it undoes both halves: the record that keeps an article
+// off a page it has not reached, and the marks greying the cards already on one.
+//
+// What it does not undo is [shown]. An article this page has already carried stays carried, so
+// unreading a feed does not make a page draw the same story twice — it makes the feed's
+// articles eligible again, which is what somebody wants when they marked too much read, or
+// want a publisher's backlog offered to them after all.
+func (s *Store) UnmarkFeedRead(ctx context.Context, principalID, feedID string) (int64, error) {
+	tx, err := s.derived.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE principal_id = ? AND feed_id = ?`, principalID, feedID)
+	if err != nil {
+		return 0, err
+	}
+	forgotten, _ := res.RowsAffected()
+
+	if _, err := tx.ExecContext(ctx, currentEditions+`
+		UPDATE edition_items SET read_at = NULL
+		 WHERE read_at IS NOT NULL
+		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)
+		   AND item_id IN (SELECT id FROM items WHERE feed_id = ?)`,
+		principalID, feedID); err != nil {
+		return 0, err
+	}
+
+	return forgotten, tx.Commit()
+}

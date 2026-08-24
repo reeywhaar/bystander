@@ -62,3 +62,10 @@ export function postFeedsByIdRead(
     }),
   );
 }
+
+/** `DELETE /api/feeds/{id}/read` — forget that anything from this feed was read. */
+export function deleteFeedsByIdRead(id: string): ApiAction<{ marked: number }> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: `/api/feeds/${seg(id)}/read` }),
+  );
+}

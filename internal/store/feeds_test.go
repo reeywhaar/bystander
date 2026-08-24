@@ -209,3 +209,55 @@ func TestMarkingAFeedReadLeavesEarlierMarksAlone(t *testing.T) {
 		t.Errorf("read_at moved to %s, want it left at %s", read[0].ReadAt, long)
 	}
 }
+
+// The inverse: forgetting that a feed was read, so its articles are offered again.
+func TestUnmarkingAFeedReadOffersItsArticlesAgain(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, _ := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	feed, _ := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	other, _ := s.UpsertFeed(ctx, "https://other.example.com/feed.xml", "Another", "")
+
+	now := s.Now()
+	if _, err := s.SaveItems(ctx, []*Item{
+		{FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+			PublishedAt: now.Add(-time.Hour), FetchedAt: now},
+		{FeedID: feed.ID, GUID: "g2", Title: "Two", Link: "https://example.com/2",
+			PublishedAt: now.Add(-2 * time.Hour), FetchedAt: now},
+		{FeedID: other.ID, GUID: "g3", Title: "Elsewhere", Link: "https://other.example.com/1",
+			PublishedAt: now.Add(-time.Hour), FetchedAt: now},
+	}); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+
+	for _, id := range []string{feed.ID, other.ID} {
+		if _, err := s.MarkFeedRead(ctx, p.ID, id, time.Time{}); err != nil {
+			t.Fatalf("MarkFeedRead(): %v", err)
+		}
+	}
+	if read, _ := s.ReadArticles(ctx, p.ID); len(read) != 3 {
+		t.Fatalf("%d read to begin with, want 3", len(read))
+	}
+
+	forgotten, err := s.UnmarkFeedRead(ctx, p.ID, feed.ID)
+	if err != nil {
+		t.Fatalf("UnmarkFeedRead(): %v", err)
+	}
+	if forgotten != 2 {
+		t.Errorf("forgot %d, want this feed's 2", forgotten)
+	}
+
+	read, _ := s.ReadArticles(ctx, p.ID)
+	if len(read) != 1 {
+		t.Fatalf("%d read after, want the other feed's 1", len(read))
+	}
+	if read[0].FeedID != other.ID {
+		t.Errorf("what survived is from %s, want the other feed", read[0].FeedID)
+	}
+
+	// And nothing to forget the second time.
+	if again, _ := s.UnmarkFeedRead(ctx, p.ID, feed.ID); again != 0 {
+		t.Errorf("forgot %d on a feed with nothing marked, want 0", again)
+	}
+}

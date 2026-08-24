@@ -29,6 +29,7 @@ import {
 } from "@app/api/actions/edition";
 import {
   deleteFeedsById,
+  deleteFeedsByIdRead,
   getFeeds,
   patchFeedsById,
   postFeeds,
@@ -372,6 +373,20 @@ export function useMarkFeedRead() {
   return useMutation({
     mutationFn: ({ id, olderThan }: { id: string; olderThan: MarkSpan }) =>
       callApi(postFeedsByIdRead(id, olderThan)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.edition });
+      void client.invalidateQueries({ queryKey: qk.read });
+      void client.invalidateQueries({ queryKey: qk.feeds });
+    },
+  });
+}
+
+/** Forgets that anything from a feed was read. The inverse of {@link useMarkFeedRead}. */
+export function useUnmarkFeedRead() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => callApi(deleteFeedsByIdRead(id)),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.edition });
       void client.invalidateQueries({ queryKey: qk.read });

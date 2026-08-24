@@ -335,3 +335,29 @@ func (s *Server) markFeedRead(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]int64{"marked": marked})
 }
+
+// unmarkFeedRead forgets that the caller read anything from a feed.
+//
+// A DELETE on the same place a POST marks read, because that is what it is: removing the read
+// state rather than setting a different one. It takes no span — "unread the last week" is a
+// question nobody has asked and one whose answer would be hard to predict, since the record
+// says when something was read rather than how old it was.
+func (s *Server) unmarkFeedRead(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	sub, err := s.store.SubscriptionByID(r.Context(), p.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	forgotten, err := s.store.UnmarkFeedRead(r.Context(), p.ID, sub.FeedID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("marked a feed unread",
+		"principal", p.ID, "feed", sub.FeedID, "articles", forgotten)
+
+	writeJSON(w, http.StatusOK, map[string]int64{"marked": forgotten})
+}
