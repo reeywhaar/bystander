@@ -22,21 +22,11 @@ type Scheduler struct {
 	store *store.Store
 	gen   *Generator
 	log   *slog.Logger
-
-	// afterSweep runs at the end of each sweep. See AfterSweep.
-	afterSweep func(context.Context)
 }
 
 func NewScheduler(st *store.Store, gen *Generator, log *slog.Logger) *Scheduler {
 	return &Scheduler{store: st, gen: gen, log: log}
 }
-
-// AfterSweep registers something to run at the end of the hourly sweep.
-//
-// The sweep is already the place where this program tidies up after itself once an hour, which
-// makes it the right hook for anything that needs a periodic second look — without a second
-// ticker to reason about.
-func (s *Scheduler) AfterSweep(fn func(context.Context)) { s.afterSweep = fn }
 
 // Run works until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
@@ -148,9 +138,5 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		s.log.Error("could not prune expired share links", "error", err)
 	} else if n > 0 {
 		s.log.Debug("pruned expired share links", "count", n)
-	}
-
-	if s.afterSweep != nil {
-		s.afterSweep(ctx)
 	}
 }

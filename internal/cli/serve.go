@@ -81,25 +81,21 @@ func serve(parent context.Context) error {
 	runner := jobs.New(st, log)
 	runner.Handle(feeds.MeasureImage, feeds.Measure(st, fetcher.UserAgent()))
 
-	// Two ways work reaches the queue, and they answer two different questions.
+	// What to do when the queue runs dry: look for pictures nothing has measured.
 	//
-	// A fetch that brought articles in queues their pictures: that is the moment work
-	// appears, and asking then rather than on a timer keeps an idle instance idle.
-	//
-	// The sweep is the safety net, once an hour. It catches everything the first path cannot
-	// know about — articles that were already here when this feature shipped, a queue lost to
-	// a restore, a hook that failed. Enqueueing is idempotent on the URL, so the two paths
-	// asking for the same picture is one row.
-	queuePictures := func(ctx context.Context) {
+	// Asked by the runner rather than announced by whoever created the work. Hooks were the
+	// first design — after a poll, after the sweep, at startup — and they still missed the
+	// commonest case, because adding a feed through the interface saves its articles without
+	// going near the poller. A question the runner asks cannot be forgotten by a code path
+	// that did not know it was supposed to answer.
+	refill := func(ctx context.Context) {
 		n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch)
 		if err != nil {
 			log.Error("could not queue picture measurements", "error", err)
 		} else if n > 0 {
-			log.Debug("queued picture measurements", "count", n)
+			log.Info("queued picture measurements", "count", n)
 		}
 	}
-	poller.AfterNewArticles(queuePictures)
-	scheduler.AfterSweep(queuePictures)
 
 	server := api.New(cfg, st, sessions, generator, fetcher, spa, log)
 
@@ -109,11 +105,7 @@ func serve(parent context.Context) error {
 	go sessions.Run(ctx)
 	go poller.Run(ctx)
 	go scheduler.Run(ctx)
-	// The queue is topped up at the start of each pass rather than by whoever created the
-	// work. A picture arrives through a poll, through somebody adding a feed, or through a
-	// database restored from a backup, and asking each of those to remember to enqueue is
-	// three places for the answer to be no.
-	go runner.Run(ctx)
+	go runner.Run(ctx, refill)
 
 	httpServer := &http.Server{
 		Addr:    app.ListenAddr,

@@ -32,22 +32,11 @@ type Poller struct {
 	fetcher  *Fetcher
 	interval time.Duration
 	log      *slog.Logger
-
-	// afterNew runs when a fetch brought new articles in. See AfterNewArticles.
-	afterNew func(context.Context)
 }
 
 func NewPoller(st *store.Store, fetcher *Fetcher, interval time.Duration, log *slog.Logger) *Poller {
 	return &Poller{store: st, fetcher: fetcher, interval: interval, log: log}
 }
-
-// AfterNewArticles registers something to run when a fetch brought anything in.
-//
-// A hook rather than the poller knowing about the job queue: fetching a feed is this file's
-// subject and what else a new article ought to set going is not. It is called only when a
-// fetch actually produced articles, which is the moment there is new work and the only moment
-// worth asking about it.
-func (p *Poller) AfterNewArticles(fn func(context.Context)) { p.afterNew = fn }
 
 // Run polls until ctx is cancelled.
 func (p *Poller) Run(ctx context.Context) {
@@ -154,13 +143,6 @@ func (p *Poller) fetchOne(ctx context.Context, feed *store.Feed) {
 	}
 	if added > 0 {
 		p.log.Debug("fetched a feed", "feed", feed.ID, "new", added, "seen", len(result.Parsed.Items))
-	}
-
-	// New articles mean new pictures to measure. Asked here rather than on a timer, because
-	// this is the moment work appears — an idle instance should not be querying for something
-	// to do every few seconds for the life of the process.
-	if added > 0 && p.afterNew != nil {
-		p.afterNew(ctx)
 	}
 	if feed.FailureCount > 0 {
 		p.log.Info("a feed is working again", "feed", feed.ID, "url", feed.CanonicalURL, "after", feed.FailureCount)
