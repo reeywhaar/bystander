@@ -21,15 +21,21 @@ type editionBody struct {
 // shows its source, the client would join every one of them anyway, and a page is sixty
 // rows.
 type articleBody struct {
-	ID          string   `json:"id"`
-	Rank        int      `json:"rank"`
-	Slot        string   `json:"slot"`
-	ReadAt      *int64   `json:"read_at"`
-	Title       string   `json:"title"`
-	Link        string   `json:"link"`
-	Author      string   `json:"author"`
-	Summary     string   `json:"summary"`
-	ImageURL    string   `json:"image_url"`
+	ID       string `json:"id"`
+	Rank     int    `json:"rank"`
+	Slot     string `json:"slot"`
+	ReadAt   *int64 `json:"read_at"`
+	Title    string `json:"title"`
+	Link     string `json:"link"`
+	Author   string `json:"author"`
+	Summary  string `json:"summary"`
+	ImageURL string `json:"image_url"`
+	// ImageWidth and ImageHeight are the picture's real size, or zero when nothing has
+	// measured it — which is the ordinary case for anything just published. The page falls
+	// back to a shape drawn from the article's id, so zero is not a missing value the client
+	// has to work around.
+	ImageWidth  int      `json:"image_width"`
+	ImageHeight int      `json:"image_height"`
 	PublishedAt int64    `json:"published_at"`
 	Feed        feedStub `json:"feed"`
 }
@@ -96,6 +102,8 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 			Author:      entry.Item.Author,
 			Summary:     entry.Item.Summary,
 			ImageURL:    entry.Item.ImageURL,
+			ImageWidth:  entry.Item.ImageWidth,
+			ImageHeight: entry.Item.ImageHeight,
 			PublishedAt: entry.Item.PublishedAt.Unix(),
 			Feed:        titles[entry.Item.FeedID],
 		}

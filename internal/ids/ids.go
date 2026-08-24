@@ -37,6 +37,7 @@ const (
 	Article      = "a_"
 	Edition      = "e_"
 	SMTP         = "m_"
+	Job          = "j_"
 )
 
 // crockford omits I, L, O and U, so an id cannot be misread between similar glyphs or

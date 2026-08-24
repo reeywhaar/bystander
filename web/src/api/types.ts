@@ -93,6 +93,9 @@ export interface Article {
   /** Sanitized on the server, at ingest. Never sanitized again here — see the reader. */
   summary: string;
   image_url: string;
+  /** The picture's real size, or zero when nothing has measured it yet — see internal/jobs. */
+  image_width: number;
+  image_height: number;
   published_at: number;
   feed: FeedStub;
 }

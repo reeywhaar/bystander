@@ -65,6 +65,11 @@ func NewFetcher(publicURL string) *Fetcher {
 	}
 }
 
+// UserAgent is how this instance introduces itself, so that anything else here making an
+// outbound request on a reader's behalf — measuring a picture, say — is recognisably the same
+// program to whoever is looking at their logs.
+func (f *Fetcher) UserAgent() string { return f.userAgent }
+
 // Result is one fetch.
 type Result struct {
 	Status       int

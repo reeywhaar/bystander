@@ -19,6 +19,8 @@ function article(overrides: Partial<Article> = {}): Article {
     author: "",
     summary: "<p>A standfirst</p>",
     image_url: "https://example.com/pic.png",
+    image_width: 0,
+    image_height: 0,
     published_at: 1_787_000_000,
     feed: { id: "f_1", title: "The Example", site_url: "https://example.com" },
     ...overrides,

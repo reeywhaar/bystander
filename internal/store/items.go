@@ -18,14 +18,18 @@ import (
 // so every reader of this table gets the safe form by construction and a bug in a renderer
 // cannot become an injection.
 type Item struct {
-	ID          string
-	FeedID      string
-	GUID        string
-	Title       string
-	Link        string
-	Author      string
-	Summary     string
-	ImageURL    string
+	ID       string
+	FeedID   string
+	GUID     string
+	Title    string
+	Link     string
+	Author   string
+	Summary  string
+	ImageURL string
+	// ImageWidth and ImageHeight are the picture's real size, or zero when it has not been
+	// measured — which is the ordinary case. See images.go.
+	ImageWidth  int
+	ImageHeight int
 	PublishedAt time.Time
 	FetchedAt   time.Time
 }
@@ -232,7 +236,7 @@ func renameByLink(ctx context.Context, tx *sql.Tx, item *Item, unshared map[stri
 	return true, nil
 }
 
-const itemColumns = `id, feed_id, guid, title, link, author, summary, image_url, published_at, fetched_at`
+const itemColumns = `id, feed_id, guid, title, link, author, summary, image_url, image_width, image_height, published_at, fetched_at`
 
 func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
 	var (
@@ -241,7 +245,8 @@ func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
 		fetched   int64
 	)
 	if err := row.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link, &item.Author,
-		&item.Summary, &item.ImageURL, &published, &fetched); err != nil {
+		&item.Summary, &item.ImageURL, &item.ImageWidth, &item.ImageHeight,
+		&published, &fetched); err != nil {
 		return nil, err
 	}
 	item.PublishedAt = time.Unix(published, 0).UTC()

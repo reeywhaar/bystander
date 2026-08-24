@@ -57,6 +57,9 @@ export function ArticleCard({
     ? `frame frame-${frame.line} frame-width-${frame.width} frame-ink-${frame.ink} frame-pad-${frame.pad}`
     : "";
   const showImage = article.image_url !== "" && article.slot !== "brief";
+  // Zero means nothing has measured it, which is the ordinary case for anything published in
+  // the last few minutes. See internal/jobs.
+  const measured = article.image_width > 0 && article.image_height > 0;
   const showSummary = article.summary !== "" && article.slot !== "brief";
 
   return (
@@ -89,8 +92,31 @@ export function ArticleCard({
             className={`mb-3 w-full rounded-sm border border-rule ${
               style.fit === "contain" ? "object-contain" : "object-cover"
             } ${
-              article.slot === "lead" ? "aspect-[21/9]" : `shot-${style.shot}`
+              article.slot === "lead"
+                ? "aspect-[21/9]"
+                : measured
+                  ? ""
+                  : `shot-${style.shot}`
             }`}
+            // The picture's own shape, when anything has measured it.
+            //
+            // The drawn ladder is what to do knowing nothing, and it is a good answer for
+            // that — but a photograph that is nearly square cut to five-by-three loses a
+            // third of itself, and nobody here has looked at it to know whether the third
+            // mattered. A measurement replaces the guess with the fact.
+            //
+            // Clamped to the ladder's own range. A publisher's banner at 4:1 would otherwise
+            // be a letterbox slot in a column of stories, and a tall product shot would push
+            // its own headline off the screen — the page's shape is still the page's.
+            style={
+              measured
+                ? {
+                    aspectRatio: clamp(
+                      article.image_width / article.image_height,
+                    ),
+                  }
+                : undefined
+            }
             // A publisher's image that 404s or hotlink-blocks would otherwise leave a
             // broken-image glyph in the middle of the page.
             onError={(event) => {
@@ -164,6 +190,18 @@ export function ArticleCard({
       </div>
     </article>
   );
+}
+
+/**
+ * Holds a measured picture inside the shapes the page is built for.
+ *
+ * The ladder runs from five-by-three to square, and those are the bounds a column of stories
+ * can carry: wider and a picture is a letterbox slot, taller and it pushes the story it
+ * belongs to off the screen. A publisher's banner is 4:1 and a product shot is 3:4, and
+ * neither is a shape this page has anywhere to put.
+ */
+function clamp(ratio: number): number {
+  return Math.min(5 / 3, Math.max(1, ratio));
 }
 
 function SourceLine({ article }: { article: Article }) {

@@ -17,6 +17,7 @@ import (
 	"bystander/internal/config"
 	"bystander/internal/edition"
 	"bystander/internal/feeds"
+	"bystander/internal/jobs"
 	"bystander/internal/session"
 	"bystander/internal/store"
 	"bystander/web"
@@ -69,6 +70,17 @@ func serve(parent context.Context) error {
 	generator := edition.NewGenerator(st, log)
 	scheduler := edition.NewScheduler(st, generator, log)
 
+	// Background work that is nobody's request: measuring the pictures a feed brought in, and
+	// whatever else grows to need the same treatment. Every handler is registered here so
+	// that one file lists everything this program does when nobody is looking at it.
+	// How many measurements to line up when the queue runs dry. Enough that the runner is not
+	// asking the database for more every few seconds, small enough that a first run against a
+	// full database does not write thousands of rows before doing any of them.
+	const queueBatch = 200
+
+	runner := jobs.New(st, log)
+	runner.Handle(feeds.MeasureImage, feeds.Measure(st, fetcher.UserAgent()))
+
 	server := api.New(cfg, st, sessions, generator, fetcher, spa, log)
 
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
@@ -77,6 +89,17 @@ func serve(parent context.Context) error {
 	go sessions.Run(ctx)
 	go poller.Run(ctx)
 	go scheduler.Run(ctx)
+	// The queue is topped up at the start of each pass rather than by whoever created the
+	// work. A picture arrives through a poll, through somebody adding a feed, or through a
+	// database restored from a backup, and asking each of those to remember to enqueue is
+	// three places for the answer to be no.
+	go runner.Run(ctx, func(ctx context.Context) {
+		if n, err := feeds.QueueImageMeasurements(ctx, st, runner, queueBatch); err != nil {
+			log.Error("could not queue picture measurements", "error", err)
+		} else if n > 0 {
+			log.Debug("queued picture measurements", "count", n)
+		}
+	})
 
 	httpServer := &http.Server{
 		Addr:    app.ListenAddr,

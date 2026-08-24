@@ -25,6 +25,8 @@ function article(id: string, overrides: Partial<Article> = {}): Article {
     author: "",
     summary: "<p>A standfirst</p>",
     image_url: "",
+    image_width: 0,
+    image_height: 0,
     published_at: 1_787_000_000,
     feed: { id: "f_1", title: "The Example", site_url: "https://example.com" },
     ...overrides,
