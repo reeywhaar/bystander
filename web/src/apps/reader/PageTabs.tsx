@@ -27,7 +27,7 @@ export function PageTabs() {
   if (all.length < 2) return null;
 
   return (
-    <nav aria-label="Your pages" className="border-b border-rule">
+    <nav aria-label="Your front pages" className="border-b border-rule">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-5 gap-y-1 px-6 py-2 text-sm">
         {all.map((page) => (
           <NavLink

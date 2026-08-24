@@ -10,7 +10,7 @@ import { PageTabs } from "@app/apps/reader/PageTabs";
 function page(overrides: Partial<Page> = {}): Page {
   return {
     id: "pg_1",
-    name: "Your page",
+    name: "Front Page",
     slug: "",
     is_main: true,
     edition_interval: 86400,
@@ -51,7 +51,7 @@ describe("PageTabs", () => {
       { "GET /api/pages": { body: [page(), art] } },
     );
 
-    const main = await screen.findByRole("link", { name: "Your page" });
+    const main = await screen.findByRole("link", { name: "Front Page" });
     const second = screen.getByRole("link", { name: "Art" });
 
     // The main page is at the root; the rest carry their slug.
@@ -70,7 +70,7 @@ describe("PageTabs", () => {
     );
 
     const second = await screen.findByRole("link", { name: "Art" });
-    const main = screen.getByRole("link", { name: "Your page" });
+    const main = screen.getByRole("link", { name: "Front Page" });
 
     expect(second.className).toContain("border-accent");
     expect(main.className).not.toContain("border-accent");

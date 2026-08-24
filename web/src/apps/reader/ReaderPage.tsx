@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useParams } from "react-router";
 
 import { ApiError } from "@app/api/error";
-import type { Me } from "@app/api/types";
+import type { Me, Page } from "@app/api/types";
 import { Masthead } from "@app/components/Masthead";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
@@ -13,6 +13,7 @@ import { assignVoices, styleFor } from "@app/lib/voice";
 import {
   useEdition,
   useFeeds,
+  usePages,
   useRegenerate,
   useSetRead,
 } from "@app/queries/hooks";
@@ -28,6 +29,9 @@ export function ReaderPage({ me }: { me: Me }) {
   const edition = useEdition(slug);
   const setRead = useSetRead();
   const regenerate = useRegenerate(slug);
+  // Which page this is, for the empty state: a page filtered to nothing is empty for a
+  // completely different reason from an account with no feeds.
+  const pages = usePages();
   // Only to tell the two empty states apart: somebody with no feeds needs a different
   // sentence from somebody whose feeds have not been fetched yet.
   const feeds = useFeeds();
@@ -39,7 +43,7 @@ export function ReaderPage({ me }: { me: Me }) {
   // the grid, and a fresh set of cards is a fresh set of heights to measure.
   useMasonry(grid, [edition.data?.id, edition.data?.items.length]);
 
-  if (edition.isPending) return <Spinner label="Fetching your page" />;
+  if (edition.isPending) return <Spinner label="Fetching your front page" />;
   if (edition.error) throw edition.error;
 
   const page = edition.data;
@@ -124,6 +128,11 @@ export function ReaderPage({ me }: { me: Me }) {
         ) : (
           <EmptyPage
             hasFeeds={(feeds.data?.length ?? 0) > 0}
+            filtered={isFiltered(
+              (pages.data ?? []).find((p) =>
+                slug ? p.slug === slug : p.is_main,
+              ),
+            )}
             onCompose={() => regenerate.mutate()}
             composing={regenerate.isPending}
           />
@@ -174,23 +183,56 @@ export function ReaderPage({ me }: { me: Me }) {
   );
 }
 
+/** Whether a page draws from less than everything. */
+function isFiltered(page: Page | undefined): boolean {
+  return Boolean(
+    page && (page.tag_filter !== "no" || page.feed_filter !== "all"),
+  );
+}
+
 /**
- * What somebody sees before their first page exists.
+ * What somebody sees when a page has nothing on it.
  *
- * Two situations, and they need different sentences. With no feeds there is nothing to do
- * but add one. With feeds but no page — the ordinary state for the first minute or two,
- * while the poller fetches — what they want is to stop waiting, so the button belongs
- * right here rather than in a footer that only appears once there is a page to sit under.
+ * Three situations, and they need three different sentences — the point being that only one of
+ * them is a problem and the other two are ordinary.
+ *
+ * With no feeds there is nothing to do but add one. With feeds but no page — the ordinary state
+ * for the first minute or two, while the poller fetches — what they want is to stop waiting, so
+ * the button belongs right here rather than in a footer that only appears once there is a page
+ * to sit under. And a filtered page with nothing on it has feeds and is not waiting: its filter
+ * matches nothing, which is a thing to go and widen rather than a thing to compose again.
  */
 function EmptyPage({
   hasFeeds,
+  filtered,
   onCompose,
   composing,
 }: {
   hasFeeds: boolean;
+  filtered: boolean;
   onCompose: () => void;
   composing: boolean;
 }) {
+  if (hasFeeds && filtered) {
+    return (
+      <div className="mx-auto max-w-lg py-20 text-center">
+        <h1 className="font-serif text-3xl text-ink">Nothing matches</h1>
+        <p className="mt-3 text-ink-muted">
+          Nothing you follow fits what this page draws from — or nothing that
+          does has published lately. Widen it, or give it time.
+        </p>
+        <div className="mt-6">
+          <a
+            href="/manage/pages"
+            className="inline-flex rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/85"
+          >
+            Edit this page
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-lg py-20 text-center">
       <h1 className="font-serif text-3xl text-ink">Nothing on the page yet</h1>

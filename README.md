@@ -20,7 +20,7 @@ are not all in one face; that is [Typography](#typography), below.
 | --- | --- |
 | [![The feeds you follow](docs/screenshots/feeds.png)](docs/screenshots/feeds.png) | [![One feed's settings](docs/screenshots/feed.png)](docs/screenshots/feed.png) |
 | The feeds you follow, and what each is worth to you | Everything about one feed, behind its name |
-| [![Your page](docs/screenshots/settings.png)](docs/screenshots/settings.png) | [![Recently read](docs/screenshots/read.png)](docs/screenshots/read.png) |
+| [![Front pages](docs/screenshots/settings.png)](docs/screenshots/settings.png) | [![Recently read](docs/screenshots/read.png)](docs/screenshots/read.png) |
 | How often a page turns, and how much is on it | What you have already read — the only list here |
 
 Real captures of the real reader; only the publications are invented. They are regenerated
@@ -154,7 +154,7 @@ window anybody set needs, so choosing a year means a year is there to reach into
 
 ### Making a page yourself
 
-**Make a different page** in the reader's footer — and **Your page** under Settings — composes
+**Make a different page** in the reader's footer — and **Front pages** under Settings — composes
 one now rather than waiting for the schedule. It is a *re-roll*, not a page turn: articles
 you have not read go back in the pool first, so you can press it as often as you like while
 settling on your priorities and watch what actually changes. Only the scheduled turn spends

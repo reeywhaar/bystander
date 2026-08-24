@@ -475,3 +475,14 @@ func (s *Store) PruneOldEditions(ctx context.Context) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// DropEditions removes everything one page has composed.
+//
+// For a page whose filter has changed to something nothing matches. Its edition was chosen
+// under the old filter and may hold nothing the new one would have picked, so leaving it up
+// would be showing somebody a page they have just told the program not to want. Empty is the
+// honest answer, and it is the same empty a page has before its first composition.
+func (s *Store) DropEditions(ctx context.Context, pageID string) error {
+	_, err := s.derived.ExecContext(ctx, `DELETE FROM editions WHERE page_id = ?`, pageID)
+	return err
+}

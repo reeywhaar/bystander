@@ -223,3 +223,106 @@ func TestTheEditionEndpointAnswersForOnePage(t *testing.T) {
 		t.Errorf("GET a page that does not exist = %d, want 404", res.StatusCode)
 	}
 }
+
+// Editing a filter changes what a page is made of, so it is composed again at once.
+//
+// The alternative is a page that says it draws from one thing and shows another until its next
+// turn — six days of looking broken, on a weekly page.
+func TestChangingAFilterComposesThePageAgain(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	var page pageBody
+	h.expect(h.do(http.MethodPost, "/api/pages",
+		map[string]any{"name": "Everything", "slug": "everything"}), http.StatusCreated, &page)
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate?page=everything", nil), http.StatusOK, nil)
+
+	var before editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition?page=everything", nil), http.StatusOK, &before)
+	if len(before.Items) == 0 {
+		t.Fatal("the page composed nothing to begin with")
+	}
+
+	// A tag nothing carries. The page can no longer draw from anything.
+	var tag struct {
+		ID string `json:"id"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/tags", map[string]any{"name": "Nobody"}),
+		http.StatusCreated, &tag)
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
+		"tag_filter": "including", "tag_ids": []string{tag.ID},
+	}), http.StatusOK, nil)
+
+	// Empty, not the articles it was showing under the old filter. This is the case that
+	// looks like a conflict from the generator — the page has an edition and cannot better
+	// it — and treating that as "leave it alone" keeps the stale page up.
+	var after editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition?page=everything", nil), http.StatusOK, &after)
+	if len(after.Items) != 0 {
+		t.Errorf("the page still shows %d articles chosen under the old filter", len(after.Items))
+	}
+}
+
+// And back again: a filter that matches things composes something.
+func TestWideningAFilterFillsThePageAgain(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	var tag struct {
+		ID string `json:"id"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/tags", map[string]any{"name": "Nobody"}),
+		http.StatusCreated, &tag)
+
+	var page pageBody
+	h.expect(h.do(http.MethodPost, "/api/pages",
+		map[string]any{"name": "Narrow", "slug": "narrow"}), http.StatusCreated, &page)
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID, map[string]any{
+		"tag_filter": "including", "tag_ids": []string{tag.ID},
+	}), http.StatusOK, nil)
+
+	var empty editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition?page=narrow", nil), http.StatusOK, &empty)
+	if len(empty.Items) != 0 {
+		t.Fatalf("a page filtered to an unused tag holds %d articles", len(empty.Items))
+	}
+
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+page.ID,
+		map[string]any{"tag_filter": "no"}), http.StatusOK, nil)
+
+	var filled editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition?page=narrow", nil), http.StatusOK, &filled)
+	if len(filled.Items) == 0 {
+		t.Error("widening the filter left the page empty")
+	}
+}
+
+// Renaming a page, or changing how often it is composed, must not spend the page somebody is
+// reading. Those describe the next composition, not this one.
+func TestChangingTheCadenceLeavesThePageAlone(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, nil)
+
+	var before editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &before)
+
+	h.expect(h.do(http.MethodPatch, "/api/pages/"+h.mainPage(), map[string]any{
+		"edition_interval": 3600, "edition_size": 25,
+	}), http.StatusOK, nil)
+
+	var after editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &after)
+	if after.ID != before.ID {
+		t.Error("changing the cadence composed a new page over the one being read")
+	}
+}

@@ -33,9 +33,16 @@ const (
 	FeedsExcluding FeedFilter = "excluding"
 )
 
-// MainPageName is what a person's first page is called until they rename it — which they
-// cannot, because it is the one page whose name and address are fixed.
-const MainPageName = "Your page"
+// MainPageName is what the one page everybody has is called.
+//
+// A name rather than a description, and capitalised for it. "Your page" was neither: it read as
+// a label on a settings screen, and once a person had several it stopped being true — they are
+// all your pages. A newspaper's front page is *the* front page and its other sections are
+// called something, which is exactly the shape of this.
+//
+// See private/docs/conventions.md for front page, Front Page and edition, which are three
+// different things.
+const MainPageName = "Front Page"
 
 // MaxPageName is a limit on the tab, not on the idea. A name that does not fit in a tab strip
 // is a name nobody can read anyway.

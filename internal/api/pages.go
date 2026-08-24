@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"bystander/internal/store"
@@ -180,7 +182,68 @@ func (s *Server) patchPage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+
+	// A filter change is a change to what the page is made of, so it is composed again now.
+	//
+	// The alternative is a page that says it draws from one thing and displays another until
+	// its next turn — which for a weekly page is six days of looking broken. Cadence and size
+	// do not do this: they describe the next composition rather than this one, and recomposing
+	// on a slider would spend the page somebody is reading.
+	if drawsFromSomethingElse(page, updated) {
+		s.recompose(r, updated)
+	}
+
 	writeJSON(w, http.StatusOK, pageOf(updated))
+}
+
+// drawsFromSomethingElse reports whether a save changed what a page may draw from.
+//
+// Only the filter and the window. A rename or a new address changes where a page is, not what
+// is on it, and a cadence changed is a statement about the next composition rather than this
+// one.
+func drawsFromSomethingElse(before, after *store.Page) bool {
+	return before.TagFilter != after.TagFilter ||
+		before.FeedFilter != after.FeedFilter ||
+		before.ArticleWindow != after.ArticleWindow ||
+		!slices.Equal(before.TagIDs, after.TagIDs) ||
+		!slices.Equal(before.FeedIDs, after.FeedIDs)
+}
+
+// recompose composes a page again after its filter changed, and never fails the save.
+//
+// The save has already happened and is what the caller asked for; composing is a consequence of
+// it. A page that could not be composed is not a page that was not saved.
+//
+// When nothing can be composed, the old edition is thrown away rather than left up. It was
+// chosen under the old filter and may hold nothing the new one would have picked, so keeping it
+// would show somebody exactly what they have just said they do not want. Empty is the honest
+// answer, and it is the same empty a page has before its first composition.
+//
+// Both of the ways composing declines mean the same thing here, which is worth being explicit
+// about because they do not look alike. Regenerate says not-found when the page has no edition
+// and nothing to make one from, and conflict when it *has* one and could not better it — and
+// the second is the case this exists for: a filter narrowed to something that matches nothing,
+// on a page that is currently showing yesterday's articles. Treating conflict as "leave it
+// alone" would keep the stale page in precisely the situation the recompose was for.
+func (s *Server) recompose(r *http.Request, page *store.Page) {
+	_, err := s.gen.Regenerate(r.Context(), page.ID, s.store.Now())
+	switch {
+	case err == nil:
+		return
+	case !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict):
+		// Something actually went wrong. Leave the page alone: emptying it on a database
+		// error would turn a transient fault into lost reading.
+		s.log.Error("could not compose a page after its filter changed",
+			"page", page.ID, "error", err)
+		return
+	}
+
+	if err := s.store.DropEditions(r.Context(), page.ID); err != nil {
+		s.log.Error("could not clear a page that has nothing to show",
+			"page", page.ID, "error", err)
+		return
+	}
+	s.log.Debug("a page's filter now matches nothing, so it was cleared", "page", page.ID)
 }
 
 func (s *Server) deletePage(w http.ResponseWriter, r *http.Request) {
