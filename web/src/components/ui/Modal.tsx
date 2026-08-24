@@ -1,4 +1,25 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import { lockScroll } from "@app/components/ui/scrollLock";
+
+/**
+ * The dialog a piece of the tree is inside, if it is inside one.
+ *
+ * Only so that a dialog opened from within another dialog can hold that one still — see the
+ * effect below. A ref rather than the element, because the provider is the dialog itself and
+ * its element does not exist until after the first render; by the time a child's effect runs
+ * and reads `.current`, it does.
+ */
+const DialogContext = createContext<RefObject<HTMLDialogElement | null> | null>(
+  null,
+);
 
 /**
  * A modal dialog, on the native `<dialog>` element.
@@ -35,6 +56,7 @@ export function Modal({
   footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const parent = useContext(DialogContext);
   // Where the press started. A click on the backdrop targets the <dialog> itself, but so
   // does one that began on the text inside and finished outside it — which is what
   // selecting a URL and dragging past the edge looks like. Requiring both ends to be on
@@ -49,9 +71,39 @@ export function Modal({
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
     } else if (!open && dialog.open) {
-      dialog.close();
+      // Guarded the same way, and for the same reason. Only `showModal` was, which held for
+      // as long as nothing closed a dialog by toggling `open` — the attribute fallback opens
+      // it and then there is no `close` to undo that.
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
     }
   }, [open]);
+
+  /**
+   * Nothing behind this scrolls while it is open — not the page, and not the dialog this one
+   * was opened from.
+   *
+   * Both are needed and neither covers the other. Holding the page still leaves a parent
+   * dialog free to scroll away underneath; holding the parent still leaves the page free to
+   * scroll behind both. Measured in Chromium: with only the page held, a wheel over the
+   * parent moved it eight hundred pixels.
+   *
+   * Separate from the effect that opens the dialog, because this one has to undo itself. An
+   * unmount while open — a route change, a parent deciding to stop rendering it — would
+   * otherwise leave the page locked with nothing on screen to explain why.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const releasePage = lockScroll(document.body);
+    const above = parent?.current;
+    const releaseParent = above ? lockScroll(above) : undefined;
+
+    return () => {
+      releaseParent?.();
+      releasePage();
+    };
+  }, [open, parent]);
 
   return (
     <dialog
@@ -77,19 +129,26 @@ export function Modal({
       //
       // `max-h` and the scroll are for the picker: a site can name a dozen feeds, and a
       // list that runs off the bottom of the screen has no way back.
+      // `overscroll-contain` stops a scroll that has reached the end of this dialog carrying
+      // on into whatever is behind it. Holding the page still already covers that for a
+      // wheel; this is for touch, where `overflow: hidden` on the body is not reliably
+      // enough on its own and the gesture becomes a rubber-band or a pull-to-refresh.
       className="m-auto max-h-[85dvh] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto
-        rounded-md border border-rule bg-paper-raised p-0 text-ink backdrop:bg-black/50"
+        overscroll-contain rounded-md border border-rule bg-paper-raised p-0 text-ink
+        backdrop:bg-black/50"
     >
       {open ? (
-        <div className="flex flex-col gap-4 p-5">
-          <h2 className="font-serif text-xl text-ink">{title}</h2>
-          {children}
-          {footer ? (
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
-              {footer}
-            </div>
-          ) : null}
-        </div>
+        <DialogContext.Provider value={ref}>
+          <div className="flex flex-col gap-4 p-5">
+            <h2 className="font-serif text-xl text-ink">{title}</h2>
+            {children}
+            {footer ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
+                {footer}
+              </div>
+            ) : null}
+          </div>
+        </DialogContext.Provider>
       ) : null}
     </dialog>
   );
