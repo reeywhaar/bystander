@@ -133,7 +133,13 @@ export function ArticleCard({
           the tallest card in its row, so pinning this to the bottom left it stranded an
           inch below a short summary with nothing in between — tidy in a mockup where every
           card is the same length, and a hunt for the control on a real page. */}
-      <div className="pt-3">
+      {/* Close to its own story, not floating between two.
+          
+          Cards hug their content now, so the only thing under this control is the grid's
+          gap and then the next card — and at twelve pixels above against twenty-eight
+          below it read as belonging to neither. Six is unambiguous: it is nearer to the
+          article it marks than that article is to anything else. */}
+      <div className="pt-1.5">
         <button
           type="button"
           onClick={() => onRead(article.id, !read)}
