@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 import { ApiError } from "@app/api/error";
 import type { Me } from "@app/api/types";
 import { Masthead } from "@app/components/Masthead";
@@ -5,6 +7,7 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute, until } from "@app/lib/time";
+import { useMasonry } from "@app/lib/masonry";
 import { assignVoices, styleFor } from "@app/lib/voice";
 import {
   useEdition,
@@ -22,6 +25,11 @@ export function ReaderPage({ me }: { me: Me }) {
   // Only to tell the two empty states apart: somebody with no feeds needs a different
   // sentence from somebody whose feeds have not been fetched yet.
   const feeds = useFeeds();
+
+  // Above the early returns, because hooks cannot be called conditionally. It does nothing
+  // until the grid is on the page.
+  const grid = useRef<HTMLDivElement>(null);
+  useMasonry(grid, [edition.data?.id, edition.data?.items.length]);
 
   if (edition.isPending) return <Spinner label="Fetching your page" />;
   if (edition.error) throw edition.error;
@@ -61,7 +69,7 @@ export function ReaderPage({ me }: { me: Me }) {
         ) : null}
 
         {hasPage ? (
-          <div className="page-grid">
+          <div className="page-grid" ref={grid}>
             {/* One seeded stream per card, keyed on the edition and the article together —
                 so the page is identical on reload and different tomorrow. The voices are
                 then settled over the whole page, because "no two headlines in a row share a

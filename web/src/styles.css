@@ -80,9 +80,14 @@ body {
 /*
  * The page grid.
  *
- * Slots were decided on the server and stored, so this is a static declaration rather than
- * a measurement pass: no masonry library, no reflow after paint, and two loads of one
- * edition are identical.
+ * Slots — how wide each card is — are decided on the server and stored, so a reload cannot
+ * change them. The heights are packed after paint by lib/masonry.ts, which is a measurement
+ * pass and unavoidably one: nothing has a height until the browser has laid it out once.
+ *
+ * That is not a loss of determinism, which is how this comment used to have it. The same page
+ * at the same width packs identically every time, because the packing is a function of
+ * heights and the heights are a function of the content. What a measurement pass costs is a
+ * frame, not repeatability.
  *
  * `dense` currently does nothing, and the comment here used to claim otherwise. The spans
  * are 4, 2 and 1 in a four-track grid, and all three divide four exactly — so every row
@@ -110,6 +115,19 @@ body {
     grid-template-columns: repeat(16, minmax(0, 1fr));
     grid-auto-flow: dense;
     /*
+     * Eight-pixel rows, with every card told how many it spans — see lib/masonry.ts.
+     *
+     * This is what makes the page pack vertically. An ordinary grid row is as tall as the
+     * tallest card in it, so a short story beside a long one leaves the difference empty, and
+     * that was nearly a third of the page. Rows this fine let `dense` fill the space under a
+     * short card with a later one, which is masonry, done inside the grid rather than by
+     * something standing outside it holding cards in place.
+     *
+     * There is no CSS for masonry yet — `grid-template-rows: masonry`, `display: masonry` and
+     * `item-pack` are all unsupported in current Chromium, checked rather than assumed.
+     */
+    grid-auto-rows: 8px;
+    /*
      * More room between rows than between columns.
      *
      * They were the same, and that is what a grid of tiles wants rather than what a page of
@@ -119,7 +137,14 @@ body {
      * sits under its story and needs the next story to be further away than it is.
      */
     column-gap: 1.75rem;
-    row-gap: 2.75rem;
+    /*
+     * Zero, and the space between rows is a margin on the cards instead.
+     *
+     * A row gap applies between every one of the eight-pixel rows a card spans, so at
+     * 2.75rem a card forty rows tall would carry forty gaps inside it. The gap has to live
+     * on the card for the fine rows to mean anything.
+     */
+    row-gap: 0;
     /*
      * Cards hug their content instead of stretching to the tallest in their row.
      *
@@ -166,9 +191,11 @@ body {
   @media (max-width: 820px) {
     .page-grid {
       column-gap: 1.25rem;
-      /* Proportionally more here than on a wide screen: one column of stories has nothing
-         but the gap to separate them, where four columns at least have their edges. */
-      row-gap: 2.5rem;
+    }
+    /* Proportionally more here than on a wide screen: one column of stories has nothing but
+       the space to separate them, where four columns at least have their edges. */
+    .page-grid > * {
+      margin-bottom: 2.5rem;
     }
     .slot-wide,
     .slot-feature {
@@ -202,6 +229,12 @@ body {
    * Drawn in the paper's own hairline, at the weight everything else here is separated by. A
    * heavier rule would make the bands the subject of the page rather than the stories.
    */
+  /* The space between rows, carried by the cards because the grid's own row gap has to be
+     zero for the fine rows to work. */
+  .page-grid > * {
+    margin-bottom: 2.75rem;
+  }
+
   .page-rule {
     grid-column: span 16;
     border-top: 1px solid var(--rule);
