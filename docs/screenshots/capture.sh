@@ -214,7 +214,30 @@ done
 # shape the grid was designed around. Eight per cent of the page is features, so anything
 # under twenty-five gets exactly one and the second row never appears.
 echo "==> setting the page size"
-api -X PATCH "$BASE/api/settings" -d '{"edition_size":28}' -o /dev/null
+front=$(api "$BASE/api/pages" | jget "d.find(p => p.is_main).id")
+api -X PATCH "$BASE/api/pages/$front" -d '{"edition_size":28}' -o /dev/null
+
+# A second front page, so the screenshots show the thing rather than describing it.
+#
+# Culture weekly and short, which is the case the feature is for: a section worth reading
+# through on a Sunday, kept out of the daily page's way without being unfollowed. The tag
+# ids were created and discarded above — bash 3.2 has no associative arrays — so it is
+# fetched back by name.
+#
+# Saving a filter composes the page, so this needs no separate re-roll: see the API's
+# patchPage, which recomposes when what a page draws from changes.
+echo "==> making a second front page"
+culture_tag=$(api "$BASE/api/tags" | jget "d.find(t => t.name === 'Culture').id")
+culture=$(api -X POST "$BASE/api/pages" -d '{"name":"Culture","slug":"culture"}' | jget "d.id")
+api -X PATCH "$BASE/api/pages/$culture" \
+  -d "{\"tag_filter\":\"including\",\"tag_ids\":[\"$culture_tag\"],\"edition_interval\":604800,\"edition_size\":12}" \
+  -o /dev/null
+culture_items=$(api "$BASE/api/edition?page=culture" | jget "d.items.length")
+[ "$culture_items" -gt 0 ] || {
+  echo "the Culture page composed nothing; the tab strip would show an empty page" >&2
+  exit 1
+}
+printf '  Culture: %s articles\n' "$culture_items"
 
 # Re-rolled until the first article is an actual lead, which is a real thing to insist on
 # rather than a cheat. An article with no picture and no standfirst is laid out as a brief

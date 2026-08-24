@@ -8,9 +8,10 @@ behind them are invented.
 | `frontpage.png` | a front page: four slots, six headline faces, two read cards |
 | `feeds.png` | the feeds somebody follows, and what each is worth to them |
 | `feed.png` | one feed's dialog: its name, its sections, how far back a page reaches |
-| `settings.png` | how often a page turns and how much is on it |
+| `pages.png` | the front pages somebody keeps, and the controls belonging to one of them |
+| `page.png` | one front page's dialog: what it is called, where it lives, what it draws from |
 | `read.png` | what has already been read, which is the only list in the product |
-| `login.png` | the sign-in screen |
+| `login.png` | the sign-in screen: an invitation, never a default password |
 
 ## Regenerating
 
@@ -19,9 +20,9 @@ docs/screenshots/capture.sh
 ```
 
 That builds the frontend and the binary, starts eight stand-in publishers and a reader
-against them, subscribes to all eight through the reader's own API, composes a page, marks
-a few articles read, drives headless Chromium over the DevTools protocol, and overwrites
-the PNGs here. Everything it starts is stopped again on the way out, including on failure.
+against them, subscribes to all eight through the reader's own API, makes a second front page
+filtered to one section, composes both, marks a few articles read, drives headless Chromium
+over the DevTools protocol, and overwrites the PNGs here. Everything it starts is stopped again on the way out, including on failure.
 
 Needs `go`, `node`, and Chromium or Chrome. No Docker, no npm packages beyond the
 frontend's own, and no Playwright — Chromium has a headless mode and Node has a WebSocket
@@ -48,6 +49,11 @@ set: `THEME=dark OUT=/tmp/shots docs/screenshots/capture.sh`.
 four columns to three, and again at 820 to two — and a set of screenshots in which the
 front page is two columns wide sells the whole idea short, because the layout *is* the
 product.
+
+The second front page is not decoration. Without it the reader shows no tab strip at all —
+one page is not a set of tabs — so a capture with a single page would quietly photograph the
+feature as though it did not exist. `capture.sh` fails rather than continuing if that page
+composes nothing.
 
 The front page is the one shot taken at a fixed height rather than fitted to its content.
 Twenty-eight articles is several thousand pixels of page; captured whole it becomes a
@@ -89,9 +95,12 @@ on a newspaper page does.
 - `fitHeight` shrinks the viewport *before* measuring, because a shell with a minimum
   height never reports a `scrollHeight` below the current viewport — measure at the height
   you are already at and you get that height back, padded with blank paper.
-- `fitDialogHeight` measures the dialog's children rather than its `scrollHeight`. Once the
-  viewport is tall enough the content stops overflowing and `scrollHeight` collapses to the
-  viewport height.
+- `fitDialogHeight` measures the `<dialog>` itself and divides by `0.85`, because that is
+  what its `max-h-[85dvh]` means: to show content of a given height whole, the viewport has
+  to be taller than it by that factor. It used to look for the first descendant that scrolls
+  and measure to the bottom of *its* children, which worked only while the sole such element
+  was the last thing in the dialog — the page dialog has a tag picker capped at twelve rem in
+  the middle of it, and everything below that, Save included, was cut off.
 - Selectors are passed into the page as variables, never interpolated into a string. One
   containing a double quote turns the whole expression into a parse error, which surfaces
   as an immediate failure rather than a timeout.

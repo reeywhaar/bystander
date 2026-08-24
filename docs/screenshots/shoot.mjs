@@ -153,16 +153,20 @@ async function fitDialogHeight(width, max = 2000) {
   await setViewport(width, max);
   await sleep(350);
 
+  // The dialog is itself the scroller — see Modal.tsx, where `overflow-y-auto` and
+  // `max-h-[85dvh]` are on the <dialog> — so its own scrollHeight is the whole of what there
+  // is to show, and the viewport has to be taller than that by the same factor for all of it
+  // to fit.
+  //
+  // Not the first descendant that scrolls, which is what this looked for and is a different
+  // thing entirely. A dialog can hold a list that scrolls *inside* it on purpose — the tag
+  // picker is capped at twelve rem — and measuring to the bottom of that one cuts off
+  // everything below it, including the Save button. It happened to work while the only such
+  // list was the last thing in the dialog.
   const h = await evaluate(`(() => {
     const dialog = document.querySelector("dialog[open]");
     if (!dialog) return 0;
-    const scroller = [...dialog.querySelectorAll("*")]
-      .find(el => getComputedStyle(el).overflowY === "auto");
-    if (!scroller || !scroller.children.length) return dialog.scrollHeight;
-
-    const bottom = Math.max(...[...scroller.children].map(el => el.getBoundingClientRect().bottom));
-    const padding = parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
-    return Math.ceil(bottom - dialog.getBoundingClientRect().top + padding);
+    return Math.ceil(dialog.scrollHeight / 0.85);
   })()`);
 
   await setViewport(width, Math.min(max, Math.max(420, h + 48)));
@@ -247,14 +251,32 @@ await shot("feed");
 await evaluate(`document.querySelector("dialog[open]")?.close()`);
 await sleep(200);
 
-// --- 5. how often a page turns, and how much is on it ---
-await navigate("/manage/settings");
+// --- 5. the front pages somebody keeps ---
+//
+// The tab strip, and the three controls that belong to whichever page is selected: how often
+// it is composed, how much is on it, and how current it has to be.
+await navigate("/manage/pages");
 await waitFor('main input[type="range"]');
 await sleep(400);
 await fitHeight(NARROW);
-await shot("settings");
+await shot("pages");
 
-// --- 6. what has already been read ---
+// --- 6. what a front page draws from ---
+//
+// The filter, which is the whole of what makes a second page worth having. It is a dialog with
+// one save rather than controls that apply as they are touched, because a mode changed without
+// its list is a page drawing from the wrong things — briefly, and then for a week.
+await clickText("main nav button", "Culture");
+await sleep(300);
+await clickText("main button", "Edit");
+await waitFor("dialog[open] input");
+await sleep(400);
+await fitDialogHeight(NARROW);
+await shot("page");
+await evaluate(`document.querySelector("dialog[open]")?.close()`);
+await sleep(200);
+
+// --- 7. what has already been read ---
 //
 // The one list in the product, and the argument for why it is not an unread count in
 // disguise: it counts nothing, it holds only what somebody has finished with, and it

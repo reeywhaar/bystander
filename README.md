@@ -6,6 +6,9 @@ It fetches your feeds on a schedule and composes a **front page** from them — 
 of articles, in fixed positions, laid out like a newspaper. When the next page is made, the
 previous one is gone for good.
 
+You can keep more than one. A daily page of everything, a finance page that turns hourly, a
+long read for the weekend — each drawing from the feeds you choose, on a schedule of its own.
+
 Nothing accumulates. Nothing is owed. A feed that publishes forty items a day contributes
 the same handful as one that publishes two.
 
@@ -20,8 +23,10 @@ are not all in one face; that is [Typography](#typography), below.
 | --- | --- |
 | [![The feeds you follow](docs/screenshots/feeds.png)](docs/screenshots/feeds.png) | [![One feed's settings](docs/screenshots/feed.png)](docs/screenshots/feed.png) |
 | The feeds you follow, and what each is worth to you | Everything about one feed, behind its name |
-| [![Front pages](docs/screenshots/settings.png)](docs/screenshots/settings.png) | [![Recently read](docs/screenshots/read.png)](docs/screenshots/read.png) |
-| How often a page turns, and how much is on it | What you have already read — the only list here |
+| [![The front pages you keep](docs/screenshots/pages.png)](docs/screenshots/pages.png) | [![What a front page draws from](docs/screenshots/page.png)](docs/screenshots/page.png) |
+| Each front page: how often it turns, how much is on it, how current it has to be | And what it is allowed to draw from |
+| [![Recently read](docs/screenshots/read.png)](docs/screenshots/read.png) | [![Signing in](docs/screenshots/login.png)](docs/screenshots/login.png) |
+| What you have already read — the only list here | The way in, which is an invitation and never a default password |
 
 Real captures of the real reader; only the publications are invented. They are regenerated
 by [`docs/screenshots/capture.sh`](docs/screenshots/), which builds the thing, runs it
@@ -112,7 +117,37 @@ Marking an article read greys it **in place**. It does not move, collapse or dis
 where an article sits is how you remember where you were, and rearranging under you would
 be the unread-count problem wearing a different hat.
 
-Read marks belong to the page they were made on. When the page goes, they go with it.
+A read mark belongs to the composition it was made on, and goes when that page turns. Reading
+is still about you rather than about the tab you were looking at, so marking an article read
+marks it on every front page it is currently on — and the month-long record below outlives all
+of them.
+
+### More than one front page
+
+The page at `/` is your **Front Page**. It cannot be removed or renamed, and until you make a
+second one there is nothing else to see.
+
+A second page is a **name, an address and a filter** — it lives at `/f/its-address`, and the
+reader grows a strip of tabs to move between them. Each carries its own answers to the three
+questions the Front Page already answered: how often it is composed, how much is on it, and how
+far back it reaches. A finance page turning hourly with fifteen articles and a day's reach is a
+different object from a Sunday page of long reads turning weekly.
+
+The filter is two controls that compose. **Tags**: any, only these, or all but these. **Feeds**:
+the same, and the second control offers only the direction the first did not — a page already
+held to a set of tags does not also need "only these feeds", because the tags already chose
+them; what is useful is dropping one. Everything is saved in one gesture, because a mode changed
+without its list is a page drawing from the wrong things — briefly, and then for a week.
+
+**Pages are views, not shares.** An article that belongs on two of them appears on both. What
+each page remembers separately is what *it* has shown, so a weekly page is not quietly emptied
+by a daily one that got there first. What you have **read** is the opposite: that is a fact
+about you and an article, so reading it on one page reads it on every page it is on.
+
+Editing a filter composes the page again straight away — it changes what the page is made of,
+and a page that says it draws from one thing while showing another is a page that looks broken
+until its next turn. Changing how often it turns does not: that describes the next composition,
+not the one you are reading.
 
 ### Typography
 
@@ -198,7 +233,7 @@ does not require an account already.
 
 ```
 /data/main.db      accounts, sessions, invitations, feeds, tags, subscriptions   back this up
-/data/derived.db   fetched articles, the live pages, what has been shown         delete it freely
+/data/derived.db   fetched articles, the live pages, what each has shown         delete it freely
 ```
 
 That asymmetry is the point of the split. Losing `derived.db` costs one fetch cycle;
@@ -212,9 +247,9 @@ moment.
 
 Articles are kept for as long as the longest window anybody set needs — a month at least,
 a year at most, since unbounded growth is not a setting anybody meant to choose. The record
-of what you have been *shown* is kept three times longer than that, so it always outlives
-the article it refers to and a long-dormant feed cannot resurface something you have already
-seen.
+of what a page has *shown* is kept three times longer than that, so it always outlives the
+article it refers to and a long-dormant feed cannot resurface something that page has already
+carried.
 
 ## What it deliberately does not do
 

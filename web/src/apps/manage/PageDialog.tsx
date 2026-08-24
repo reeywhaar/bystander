@@ -126,6 +126,9 @@ function Picker({
             type="checkbox"
             checked={chosen.includes(item.id)}
             onChange={() => onToggle(item.id)}
+            // Otherwise the browser draws its own blue, which is the only blue anywhere in
+            // this product and lands in the middle of a page that is otherwise ink on paper.
+            className="accent-accent"
           />
           {item.label}
         </label>
