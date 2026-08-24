@@ -378,7 +378,7 @@ func (s *Store) DeletePage(ctx context.Context, id string) error {
 // or not anybody may still look at it and this is the only query that knows about both.
 func (s *Store) DuePages(ctx context.Context) ([]*Page, error) {
 	rows, err := s.main.QueryContext(ctx,
-		`SELECT `+qualify(pageColumns, "g")+`
+		`SELECT `+prefixed(pageColumns, "g")+`
 		   FROM pages g
 		   JOIN principals p ON p.id = g.principal_id
 		  WHERE g.next_edition_at <= ? AND p.disabled_at IS NULL
@@ -512,15 +512,6 @@ func replacePageList(ctx context.Context, tx *sql.Tx, table, column, pageID stri
 		}
 	}
 	return nil
-}
-
-// qualify prefixes a column list with a table alias, for a query that joins.
-func qualify(columns, alias string) string {
-	parts := strings.Split(columns, ", ")
-	for i, part := range parts {
-		parts[i] = alias + "." + part
-	}
-	return strings.Join(parts, ", ")
 }
 
 func checkPageName(name string) error {

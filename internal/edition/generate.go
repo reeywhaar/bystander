@@ -81,7 +81,7 @@ func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition
 			notOlderThan[sub.FeedID] = now.Add(-window)
 		}
 	}
-	candidates, err := g.store.Candidates(ctx, principalID, feedIDs, candidateDepth, notOlderThan)
+	candidates, err := g.store.Candidates(ctx, page.ID, feedIDs, candidateDepth, notOlderThan)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition
 	//
 	// Fetched with no exclusions: Select draws from one pool at a time and will not offer
 	// an article it has already placed.
-	seenBefore, err := g.store.Backfill(ctx, principalID, feedIDs, candidateDepth, notOlderThan, nil)
+	seenBefore, err := g.store.Backfill(ctx, page.ID, principalID, feedIDs, candidateDepth, notOlderThan, nil)
 	if err != nil {
 		return nil, err
 	}

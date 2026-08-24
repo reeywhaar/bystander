@@ -120,7 +120,7 @@ func TestAnEditedArticleIsNotShownAgain(t *testing.T) {
 		t.Fatalf("AddEdition(): %v", err)
 	}
 
-	seen, err := s.shownHashes(ctx, p.ID, feed.ID)
+	seen, err := s.shownHashes(ctx, page.ID, feed.ID)
 	if err != nil {
 		t.Fatalf("shownHashes(): %v", err)
 	}
@@ -137,7 +137,7 @@ func TestAnEditedArticleIsNotShownAgain(t *testing.T) {
 	// The record of having shown it is kept against the guid, so a rename has to carry it
 	// across. Otherwise the article is handed back to the sampler as something nobody has
 	// seen — which is the duplicate again, one cycle later.
-	seen, err = s.shownHashes(ctx, p.ID, feed.ID)
+	seen, err = s.shownHashes(ctx, page.ID, feed.ID)
 	if err != nil {
 		t.Fatalf("shownHashes(): %v", err)
 	}

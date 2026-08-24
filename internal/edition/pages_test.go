@@ -219,3 +219,79 @@ func TestReadingAnArticleReadsItOnEveryPageItIsOn(t *testing.T) {
 		}
 	}
 }
+
+// The point of a page being a view rather than a share.
+//
+// An art story belongs on a page of everything and on a page of art, and both should show it.
+// This was the other way round to begin with: one record of what had been shown, per person, so
+// whichever page composed first took the article and the rest could never see it. Measured on
+// real feeds, a main page composed after an art page held zero art articles — not a few.
+func TestOneArticleReachesEveryPageItBelongsOn(t *testing.T) {
+	in, _, tag := twoFeeds(t)
+	ctx := context.Background()
+
+	including := store.TagsIncluding
+	finances := in.page(t, "finances", store.PagePatch{
+		TagFilter: &including, TagIDs: []string{tag.ID},
+	})
+
+	// The filtered page first, so if anything were being taken rather than shared, the main
+	// page would be the one to come up short.
+	if _, err := in.gen.Generate(ctx, finances.ID); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+
+	onFiltered := titlesOf(t, in.store, finances.ID)
+	onMain := titlesOf(t, in.store, in.pageID())
+	if len(onFiltered) == 0 || len(onMain) == 0 {
+		t.Fatalf("pages hold %d and %d articles; both should hold some", len(onFiltered), len(onMain))
+	}
+
+	// The main page filters nothing, so everything the filtered page found should be on it too.
+	main := map[string]bool{}
+	for _, title := range onMain {
+		main[title] = true
+	}
+	for _, title := range onFiltered {
+		if !main[title] {
+			t.Errorf("%q is on the filtered page but not on the page of everything", title)
+		}
+	}
+}
+
+// Each page keeps its own memory, so composing one twice still spends what it showed.
+func TestAPageDoesNotShowItsOwnArticlesTwice(t *testing.T) {
+	in, _, _ := twoFeeds(t)
+	ctx := context.Background()
+
+	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+	first := titlesOf(t, in.store, in.pageID())
+
+	// A scheduled turn, which spends what it showed — unlike Regenerate, which hands the
+	// unread back first.
+	if _, err := in.gen.Generate(ctx, in.pageID()); err != nil {
+		t.Fatalf("Generate(): %v", err)
+	}
+	second := titlesOf(t, in.store, in.pageID())
+
+	seen := map[string]bool{}
+	for _, title := range first {
+		seen[title] = true
+	}
+	// Everything these feeds have published fits on one page here, so the first turn spent all
+	// of it and the second has nothing fresh left. What comes back is backfill — repeats, which
+	// is correct and is the only thing left to show.
+	for _, title := range second {
+		if !seen[title] {
+			t.Errorf("%q is new on the second turn, but everything had already been shown", title)
+		}
+	}
+	if len(second) == 0 {
+		t.Error("the second turn produced nothing at all")
+	}
+}

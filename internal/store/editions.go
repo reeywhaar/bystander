@@ -135,7 +135,7 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 	// INSERT OR REPLACE rather than INSERT: an article can legitimately be shown again
 	// after its previous record was pruned, and re-stamping the date is exactly right.
 	shown, err := tx.PrepareContext(ctx,
-		`INSERT OR REPLACE INTO shown (principal_id, feed_id, guid_hash, shown_at) VALUES (?, ?, ?, ?)`)
+		`INSERT OR REPLACE INTO shown (page_id, feed_id, guid_hash, shown_at) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 			principalID, pick.Item.ID); err != nil {
 			return nil, fmt.Errorf("place article %s: %w", pick.Item.ID, err)
 		}
-		if _, err := shown.ExecContext(ctx, principalID, pick.Item.FeedID, GUIDHash(pick.Item.GUID), unix(now)); err != nil {
+		if _, err := shown.ExecContext(ctx, page.ID, pick.Item.FeedID, GUIDHash(pick.Item.GUID), unix(now)); err != nil {
 			return nil, fmt.Errorf("record article %s as shown: %w", pick.Item.ID, err)
 		}
 	}
@@ -183,7 +183,7 @@ func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []
 	// The item's own columns come from the one list in items.go rather than a copy here. A
 	// copy is what this was, and it silently went stale — see [itemColumnsFrom].
 	rows, err := s.derived.QueryContext(ctx,
-		`SELECT `+itemColumnsFrom("i")+`, e.rank, e.slot, e.read_at
+		`SELECT `+prefixed(itemColumns, "i")+`, e.rank, e.slot, e.read_at
 		   FROM edition_items e JOIN items i ON i.id = e.item_id
 		  WHERE e.edition_id = ?
 		  ORDER BY e.rank`, ed.ID)
@@ -353,32 +353,28 @@ func readAt(now time.Time, read bool) time.Time {
 // so reading them and deleting by computed hash is a couple of hundred statements at the
 // very worst.
 func (s *Store) ReleaseUnread(ctx context.Context, pageID string) (int64, error) {
-	// Not an article that is also sitting on another of this person's pages.
+	// This page's unread articles, and only this page's record of having shown them.
 	//
-	// The record of having been shown is one per person, so releasing it here would make the
-	// article eligible everywhere — including on the page that is still displaying it, which
-	// would then be free to draw it a second time. Still on a page means still shown.
+	// Each page keeps its own memory, so releasing here says nothing about anywhere else: an
+	// article still sitting on another page stays shown there, because that page's row is a
+	// different row.
 	rows, err := s.derived.QueryContext(ctx, currentEditions+`
-		SELECT ed.principal_id, i.feed_id, i.guid
+		SELECT i.feed_id, i.guid
 		  FROM current ed
 		  JOIN edition_items e ON e.edition_id = ed.id
 		  JOIN items i         ON i.id = e.item_id
 		 WHERE ed.page_id = ?
-		   AND e.read_at IS NULL
-		   AND NOT EXISTS (
-		         SELECT 1 FROM edition_items o
-		           JOIN current oe ON oe.id = o.edition_id
-		          WHERE o.item_id = e.item_id AND oe.page_id <> ed.page_id)`,
+		   AND e.read_at IS NULL`,
 		pageID)
 	if err != nil {
 		return 0, err
 	}
 
-	type article struct{ principalID, feedID, guid string }
+	type article struct{ feedID, guid string }
 	var unread []article
 	for rows.Next() {
 		var a article
-		if err := rows.Scan(&a.principalID, &a.feedID, &a.guid); err != nil {
+		if err := rows.Scan(&a.feedID, &a.guid); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -399,7 +395,7 @@ func (s *Store) ReleaseUnread(ctx context.Context, pageID string) (int64, error)
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx,
-		`DELETE FROM shown WHERE principal_id = ? AND feed_id = ? AND guid_hash = ?`)
+		`DELETE FROM shown WHERE page_id = ? AND feed_id = ? AND guid_hash = ?`)
 	if err != nil {
 		return 0, err
 	}
@@ -407,7 +403,7 @@ func (s *Store) ReleaseUnread(ctx context.Context, pageID string) (int64, error)
 
 	var released int64
 	for _, a := range unread {
-		res, err := stmt.ExecContext(ctx, a.principalID, a.feedID, GUIDHash(a.guid))
+		res, err := stmt.ExecContext(ctx, pageID, a.feedID, GUIDHash(a.guid))
 		if err != nil {
 			return 0, err
 		}
@@ -449,12 +445,18 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePageIDs, livePrinc
 	}
 	removed, _ := res.RowsAffected()
 
+	// shown belongs to a page and read_articles to a person, so they are collected against
+	// different lists. A page removed on its own should lose what it had shown — that page is
+	// gone — while what somebody read outlives any page they read it on.
+	if _, err := s.derived.ExecContext(ctx,
+		`DELETE FROM shown WHERE page_id NOT IN (`+pagePlaceholders+`)`, pageArgs...); err != nil {
+		return removed, err
+	}
+
 	args, placeholders := inList(livePrincipalIDs)
-	for _, table := range []string{"shown", "read_articles"} {
-		if _, err := s.derived.ExecContext(ctx,
-			`DELETE FROM `+table+` WHERE principal_id NOT IN (`+placeholders+`)`, args...); err != nil {
-			return removed, err
-		}
+	if _, err := s.derived.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE principal_id NOT IN (`+placeholders+`)`, args...); err != nil {
+		return removed, err
 	}
 	return removed, nil
 }

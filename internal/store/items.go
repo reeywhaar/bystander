@@ -238,23 +238,6 @@ func renameByLink(ctx context.Context, tx *sql.Tx, item *Item, unshared map[stri
 
 const itemColumns = `id, feed_id, guid, title, link, author, summary, image_url, image_width, image_height, published_at, fetched_at`
 
-// itemColumnsFrom is [itemColumns] qualified with a table alias, for a query that joins items
-// to something else.
-//
-// Derived rather than written out a second time. A second copy is a second thing to remember,
-// and forgetting it is silent: the edition query had its own list, so when image_width and
-// image_height were added here they were not added there, and every article on the front page
-// arrived with a measured picture reported as unmeasured. Nothing failed — the rows were read,
-// the zeroes were the column default, and the page simply drew the shape it draws when it
-// knows nothing.
-func itemColumnsFrom(alias string) string {
-	parts := strings.Split(itemColumns, ", ")
-	for i, part := range parts {
-		parts[i] = alias + "." + part
-	}
-	return strings.Join(parts, ", ")
-}
-
 // scanItem reads one item from a row.
 //
 // rest is scanned after the item's own columns, for a query that selects more than an item —
@@ -286,7 +269,7 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 	return item, err
 }
 
-// Candidates returns, per feed, the newest articles this principal has not been shown.
+// Candidates returns, per feed, the newest articles this page has not shown.
 //
 // The exclusion is done in Go rather than in SQL because the shown table stores a digest
 // of the guid and SQLite has no sha256: there is nothing to join on. Reading one feed's
@@ -294,10 +277,10 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 // that holds at most a few thousand entries per person.
 // notOlderThan bounds how far back a candidate may be published, per feed — the window is
 // the feed's, not the reader's. A missing or zero entry is no bound.
-func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
+func (s *Store) Candidates(ctx context.Context, pageID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 	for _, feedID := range feedIDs {
-		seen, err := s.shownHashes(ctx, principalID, feedID)
+		seen, err := s.shownHashes(ctx, pageID, feedID)
 		if err != nil {
 			return nil, err
 		}
@@ -356,11 +339,11 @@ func (s *Store) Candidates(ctx context.Context, principalID string, feedIDs []st
 // going to be pruned unread either way.
 //
 // exclude is what the page already holds, so an article drawn fresh is not offered back.
-func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time, exclude map[string]bool) (map[string][]*Item, error) {
+func (s *Store) Backfill(ctx context.Context, pageID, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time, exclude map[string]bool) (map[string][]*Item, error) {
 	out := make(map[string][]*Item, len(feedIDs))
 
 	for _, feedID := range feedIDs {
-		seen, err := s.shownHashes(ctx, principalID, feedID)
+		seen, err := s.shownHashes(ctx, pageID, feedID)
 		if err != nil {
 			return nil, err
 		}
@@ -418,9 +401,9 @@ func (s *Store) Backfill(ctx context.Context, principalID string, feedIDs []stri
 }
 
 // shownHashes is what this principal has already been shown from one feed.
-func (s *Store) shownHashes(ctx context.Context, principalID, feedID string) (map[string]bool, error) {
+func (s *Store) shownHashes(ctx context.Context, pageID, feedID string) (map[string]bool, error) {
 	rows, err := s.derived.QueryContext(ctx,
-		`SELECT guid_hash FROM shown WHERE principal_id = ? AND feed_id = ?`, principalID, feedID)
+		`SELECT guid_hash FROM shown WHERE page_id = ? AND feed_id = ?`, pageID, feedID)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +421,12 @@ func (s *Store) shownHashes(ctx context.Context, principalID, feedID string) (ma
 }
 
 // prefixed qualifies a column list for a join, so "id, feed_id" becomes "i.id, i.feed_id".
-// The alternative is a second copy of the list that drifts from the first.
+//
+// The alternative is a second copy of the list that drifts from the first, and drifting is
+// silent. The edition query kept its own copy, so when a picture's measured size was added to
+// items it was added here and not there — and every article on every front page arrived with a
+// measured picture reported as unmeasured. Nothing failed: the rows were read, the zeroes were
+// the column default, and the page drew the shape it draws when it knows nothing.
 func prefixed(columns, table string) string {
 	parts := strings.Split(columns, ", ")
 	for i, part := range parts {
