@@ -3,7 +3,6 @@ package config
 import (
 	"log/slog"
 	"testing"
-	"time"
 )
 
 func TestLoadRequiresPublicURL(t *testing.T) {
@@ -22,9 +21,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.DataDir != DefaultDataDir {
 		t.Errorf("DataDir = %q, want %q", cfg.DataDir, DefaultDataDir)
-	}
-	if cfg.FetchInterval != DefaultFetchInterval {
-		t.Errorf("FetchInterval = %s, want %s", cfg.FetchInterval, DefaultFetchInterval)
 	}
 	if cfg.LogLevel != slog.LevelInfo {
 		t.Errorf("LogLevel = %s, want info", cfg.LogLevel)
@@ -74,23 +70,5 @@ func TestLink(t *testing.T) {
 	}
 	if got := cfg.Link("invite/i_abc"); got != want {
 		t.Errorf("Link(%q) = %q, want %q", "invite/i_abc", got, want)
-	}
-}
-
-func TestFetchIntervalFloor(t *testing.T) {
-	t.Setenv(PublicURLEnv, "https://read.example.com")
-
-	t.Setenv(FetchIntervalEnv, "10s")
-	if _, err := Load(); err == nil {
-		t.Error("Load() accepted a ten-second fetch interval")
-	}
-
-	t.Setenv(FetchIntervalEnv, "2h")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load(): %v", err)
-	}
-	if cfg.FetchInterval != 2*time.Hour {
-		t.Errorf("FetchInterval = %s, want 2h", cfg.FetchInterval)
 	}
 }

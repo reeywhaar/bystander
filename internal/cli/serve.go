@@ -66,7 +66,7 @@ func serve(parent context.Context) error {
 
 	sessions := session.New(st, cfg.Secure, log)
 	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
-	poller := feeds.NewPoller(st, fetcher, cfg.FetchInterval, log)
+	poller := feeds.NewPoller(st, fetcher, log)
 	generator := edition.NewGenerator(st, log)
 	scheduler := edition.NewScheduler(st, generator, log)
 

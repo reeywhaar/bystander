@@ -33,6 +33,9 @@ type Feed struct {
 	// never reached one — LastStatus being zero is what says that.
 	LastErrorBody string
 	FailureCount  int
+	// FetchInterval is how often this feed is worth fetching, worked out from what it
+	// publishes. Zero when it has never been worked out.
+	FetchInterval time.Duration
 	NextFetchAt   time.Time
 
 	CreatedAt time.Time
@@ -160,7 +163,7 @@ func (s *Store) UpsertFeed(ctx context.Context, rawURL, title, siteURL string) (
 }
 
 const feedColumns = `id, url, canonical_url, title, site_url, etag, last_modified,
-	last_fetch_at, last_success_at, last_status, last_error, last_error_body, failure_count, next_fetch_at, created_at`
+	last_fetch_at, last_success_at, last_status, last_error, last_error_body, failure_count, next_fetch_at, fetch_interval, created_at`
 
 func scanFeed(row interface{ Scan(...any) error }) (*Feed, error) {
 	var (
@@ -169,16 +172,18 @@ func scanFeed(row interface{ Scan(...any) error }) (*Feed, error) {
 		lastOK    sql.NullInt64
 		status    sql.NullInt64
 		next      int64
+		interval  int64
 		created   int64
 	)
 	if err := row.Scan(&f.ID, &f.URL, &f.CanonicalURL, &f.Title, &f.SiteURL, &f.ETag, &f.LastModified,
-		&lastFetch, &lastOK, &status, &f.LastError, &f.LastErrorBody, &f.FailureCount, &next, &created); err != nil {
+		&lastFetch, &lastOK, &status, &f.LastError, &f.LastErrorBody, &f.FailureCount, &next, &interval, &created); err != nil {
 		return nil, err
 	}
 	f.LastFetchAt = timeFrom(lastFetch)
 	f.LastSuccessAt = timeFrom(lastOK)
 	f.LastStatus = int(status.Int64)
 	f.NextFetchAt = time.Unix(next, 0).UTC()
+	f.FetchInterval = time.Duration(interval) * time.Second
 	f.CreatedAt = time.Unix(created, 0).UTC()
 	return &f, nil
 }
@@ -218,7 +223,9 @@ func (s *Store) DueFeeds(ctx context.Context, limit int) ([]*Feed, error) {
 }
 
 // RecordSuccess stamps a fetch that worked and clears the failure state.
-func (s *Store) RecordSuccess(ctx context.Context, feedID, title, siteURL, etag, lastModified string, status int, next time.Time) error {
+// interval is how often this feed is worth fetching, remembered so that a fetch answering 304
+// — which carries no articles to work it out from — can keep using it.
+func (s *Store) RecordSuccess(ctx context.Context, feedID, title, siteURL, etag, lastModified string, status int, interval time.Duration, next time.Time) error {
 	now := unix(s.Now())
 	_, err := s.main.ExecContext(ctx,
 		`UPDATE feeds SET
@@ -226,9 +233,11 @@ func (s *Store) RecordSuccess(ctx context.Context, feedID, title, siteURL, etag,
 		   site_url = CASE WHEN ? <> '' THEN ? ELSE site_url END,
 		   etag = ?, last_modified = ?,
 		   last_fetch_at = ?, last_success_at = ?, last_status = ?,
-		   last_error = '', last_error_body = '', failure_count = 0, next_fetch_at = ?
+		   last_error = '', last_error_body = '', failure_count = 0,
+		   fetch_interval = ?, next_fetch_at = ?
 		 WHERE id = ?`,
-		title, title, siteURL, siteURL, etag, lastModified, now, now, status, unix(next), feedID)
+		title, title, siteURL, siteURL, etag, lastModified, now, now, status,
+		int64(interval.Seconds()), unix(next), feedID)
 	return err
 }
 
@@ -361,12 +370,13 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 		lastOK    sql.NullInt64
 		status    sql.NullInt64
 		next      int64
+		interval  int64
 		feedMade  int64
 	)
 	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Priority,
 		&window, &created,
 		&feed.ID, &feed.URL, &feed.CanonicalURL, &feed.Title, &feed.SiteURL, &feed.ETag, &feed.LastModified,
-		&lastFetch, &lastOK, &status, &feed.LastError, &feed.LastErrorBody, &feed.FailureCount, &next, &feedMade); err != nil {
+		&lastFetch, &lastOK, &status, &feed.LastError, &feed.LastErrorBody, &feed.FailureCount, &next, &interval, &feedMade); err != nil {
 		return nil, err
 	}
 	sub.ArticleWindow = time.Duration(window) * time.Second
@@ -375,6 +385,7 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 	feed.LastSuccessAt = timeFrom(lastOK)
 	feed.LastStatus = int(status.Int64)
 	feed.NextFetchAt = time.Unix(next, 0).UTC()
+	feed.FetchInterval = time.Duration(interval) * time.Second
 	feed.CreatedAt = time.Unix(feedMade, 0).UTC()
 	sub.Feed = &feed
 	return &sub, nil
@@ -382,7 +393,7 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 
 const subscriptionSelect = `SELECT ` + subscriptionColumns + `,
 	f.id, f.url, f.canonical_url, f.title, f.site_url, f.etag, f.last_modified,
-	f.last_fetch_at, f.last_success_at, f.last_status, f.last_error, f.last_error_body, f.failure_count,
+	f.last_fetch_at, f.last_success_at, f.last_status, f.last_error, f.last_error_body, f.failure_count, f.fetch_interval,
 	f.next_fetch_at, f.created_at
 	FROM subscriptions s JOIN feeds f ON f.id = s.feed_id`
 

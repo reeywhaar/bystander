@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 // Environment variables read by this package.
@@ -29,17 +28,13 @@ const (
 	// DataDirEnv is where main.db and derived.db live.
 	DataDirEnv = "BYSTANDER_DATA_DIR"
 
-	// FetchIntervalEnv is how often due feeds are polled.
-	FetchIntervalEnv = "BYSTANDER_FETCH_INTERVAL"
-
 	// LogLevelEnv sets the slog level: debug, info, warn or error.
 	LogLevelEnv = "BYSTANDER_LOG_LEVEL"
 )
 
 // Defaults for everything that has one.
 const (
-	DefaultDataDir       = "/data"
-	DefaultFetchInterval = 30 * time.Minute
+	DefaultDataDir = "/data"
 )
 
 // Config is everything the process was told at startup.
@@ -48,9 +43,8 @@ type Config struct {
 	// or fragment. A path is kept, so bystander can live under a prefix.
 	PublicURL *url.URL
 
-	DataDir       string
-	FetchInterval time.Duration
-	LogLevel      slog.Level
+	DataDir  string
+	LogLevel slog.Level
 
 	// Secure is whether the session cookie carries the Secure attribute, which is
 	// PublicURL being https and nothing else. Derived here rather than re-decided at
@@ -71,28 +65,14 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		PublicURL:     public,
-		DataDir:       DefaultDataDir,
-		FetchInterval: DefaultFetchInterval,
-		LogLevel:      slog.LevelInfo,
-		Secure:        public.Scheme == "https",
+		PublicURL: public,
+		DataDir:   DefaultDataDir,
+		LogLevel:  slog.LevelInfo,
+		Secure:    public.Scheme == "https",
 	}
 
 	if dir := strings.TrimSpace(os.Getenv(DataDirEnv)); dir != "" {
 		cfg.DataDir = dir
-	}
-
-	if v := strings.TrimSpace(os.Getenv(FetchIntervalEnv)); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %q is not a duration (try 30m, 1h): %w", FetchIntervalEnv, v, err)
-		}
-		// A minute is already far more often than any feed publishes. Below that this
-		// stops being a poller and starts being a problem for the publishers.
-		if d < time.Minute {
-			return nil, fmt.Errorf("%s: %s is too short; one minute is the floor", FetchIntervalEnv, d)
-		}
-		cfg.FetchInterval = d
 	}
 
 	if v := strings.TrimSpace(os.Getenv(LogLevelEnv)); v != "" {

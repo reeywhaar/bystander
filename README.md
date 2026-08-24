@@ -205,6 +205,26 @@ Per feed and not per person, because a news site worth a day and a blog that pos
 are exactly the pair one number cannot serve. Articles are kept for as long as the longest
 window anybody set needs, so choosing a year means a year is there to reach into.
 
+### How often a feed is fetched
+
+Not on a timer you set. Each feed is fetched as often as it publishes — the median gap between
+its recent articles — held between **half an hour and a week**.
+
+The point is the slow end. A comic published every three weeks polled every half hour is three
+hundred and thirty-six requests between articles; measured against nineteen real feeds, following
+the publishing rate cuts fetches by about four fifths, and nearly all of that saving is there. A
+news wire still gets looked at every half hour.
+
+One bound is worth naming because it is easy to get wrong. A feed carries a fixed number of
+items and the oldest falls off as new ones arrive, so waiting longer than that window loses
+articles **permanently** — there is nowhere else to get them. The interval is therefore also
+held under half the span between the oldest and newest article the feed is carrying, measured
+rather than assumed. A feed that publishes ten items in an hour and then nothing for a month has
+a median of weeks and a window of one hour, and this is what catches it.
+
+A feed with fewer than three articles says nothing about its own rate, and is fetched daily
+until it does.
+
 ### Making a page yourself
 
 **Make a different page** in the reader's footer — and **Front pages** under Settings — composes
@@ -222,7 +242,6 @@ a day away.
 | --- | --- | --- |
 | `BYSTANDER_PUBLIC_URL` | *required* | The address you open in a browser, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where the two databases live |
-| `BYSTANDER_FETCH_INTERVAL` | `30m` | How often due feeds are polled |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
@@ -233,7 +252,7 @@ rather than guessing. It also decides whether the session cookie carries `Secure
 
 The listen port is `:80` inside the container and is not configurable. Remap it with `-p`.
 
-There is no config file. Four variables do not need one.
+There is no config file. Three variables do not need one.
 
 ## Command line
 

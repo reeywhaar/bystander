@@ -69,14 +69,13 @@ func (t *cycleTally) any() bool { return t.fetched+t.unchanged+t.failed > 0 }
 
 // Poller keeps feeds fetched.
 type Poller struct {
-	store    *store.Store
-	fetcher  *Fetcher
-	interval time.Duration
-	log      *slog.Logger
+	store   *store.Store
+	fetcher *Fetcher
+	log     *slog.Logger
 }
 
-func NewPoller(st *store.Store, fetcher *Fetcher, interval time.Duration, log *slog.Logger) *Poller {
-	return &Poller{store: st, fetcher: fetcher, interval: interval, log: log}
+func NewPoller(st *store.Store, fetcher *Fetcher, log *slog.Logger) *Poller {
+	return &Poller{store: st, fetcher: fetcher, log: log}
 }
 
 // Run polls until ctx is cancelled.
@@ -89,7 +88,8 @@ func (p *Poller) Run(ctx context.Context) {
 	// Without it an instance whose feeds are all up to date prints nothing about fetching at
 	// all, and "quiet because there is nothing due" is indistinguishable from "not running" —
 	// which is exactly the question somebody restarting a server is asking.
-	p.log.Info("feed poller open", "every", p.interval, "looks", time.Minute)
+	p.log.Info("feed poller open",
+		"looks", time.Minute, "fastest", MinFetchInterval, "slowest", MaxFetchInterval)
 
 	// Once at startup: a feed added while the service was down, or one whose retry came
 	// due, should not wait for the first tick.
@@ -212,13 +212,19 @@ func (p *Poller) fetchOne(ctx context.Context, feed *store.Feed) (outcome, int) 
 		return failed, 0
 	}
 
-	next := now.Add(p.interval)
-
 	if result.NotModified {
-		if err := p.store.RecordSuccess(ctx, feed.ID, "", "", result.ETag, result.LastModified, result.Status, next); err != nil {
+		// Nothing came back to work a cadence out from, so the one from the last fetch that
+		// did bring articles stands. A publisher saying "unchanged" is not telling us they
+		// have changed how often they publish.
+		interval := feed.FetchInterval
+		if interval <= 0 {
+			interval = UnknownFetchInterval
+		}
+		if err := p.store.RecordSuccess(ctx, feed.ID, "", "", result.ETag, result.LastModified,
+			result.Status, interval, now.Add(interval)); err != nil {
 			p.log.Error("could not record an unchanged fetch", "feed", feed.ID, "error", err)
 		}
-		p.log.Debug("a feed is unchanged", "feed", feed.ID, "took", took)
+		p.log.Debug("a feed is unchanged", "feed", feed.ID, "took", took, "again_in", interval)
 		return unchanged, 0
 	}
 
@@ -234,16 +240,26 @@ func (p *Poller) fetchOne(ctx context.Context, feed *store.Feed) (outcome, int) 
 		return failed, 0
 	}
 
+	// How often to come back, from what this feed has just published — see Cadence. Worked
+	// out on every fetch that brings articles, so a publisher who speeds up or goes quiet is
+	// followed rather than assumed.
+	published := make([]time.Time, 0, len(result.Parsed.Items))
+	for _, item := range result.Parsed.Items {
+		published = append(published, item.PublishedAt)
+	}
+	interval := Cadence(published)
+
 	if err := p.store.RecordSuccess(ctx, feed.ID,
-		result.Parsed.Title, result.Parsed.SiteURL, result.ETag, result.LastModified, result.Status, next); err != nil {
+		result.Parsed.Title, result.Parsed.SiteURL, result.ETag, result.LastModified,
+		result.Status, interval, now.Add(interval)); err != nil {
 		p.log.Error("could not record a fetch", "feed", feed.ID, "error", err)
 		return failed, 0
 	}
 	// Every fetch leaves a line at Debug now, not only the ones that brought something. How
 	// long a publisher took is the thing a count cannot tell you, and "the poller is slow" and
 	// "one publisher is slow" look identical in a total.
-	p.log.Debug("fetched a feed",
-		"feed", feed.ID, "new", added, "seen", len(result.Parsed.Items), "took", took)
+	p.log.Debug("fetched a feed", "feed", feed.ID, "new", added,
+		"seen", len(result.Parsed.Items), "took", took, "again_in", interval)
 
 	if feed.FailureCount > 0 {
 		p.log.Info("a feed is working again", "feed", feed.ID, "url", feed.CanonicalURL, "after", feed.FailureCount)
@@ -253,11 +269,12 @@ func (p *Poller) fetchOne(ctx context.Context, feed *store.Feed) (outcome, int) 
 
 // backoff is how long to wait before retrying a feed that has failed.
 //
-// Exponential from the ordinary interval, capped. Doubling from the interval rather than
-// from a fixed base means a service polling hourly does not retry a broken feed every
-// thirty seconds, and one polling every five minutes does not wait a day.
+// Exponential from the fastest this program polls anything, capped. Deliberately not from the
+// feed's own cadence: a weekly comic that stops answering should be checked again in an hour,
+// not in a fortnight. How often a publisher writes and how long they have been unreachable are
+// different questions.
 func (p *Poller) backoff(failures int) time.Duration {
-	delay := p.interval
+	delay := time.Duration(MinFetchInterval)
 	for range failures {
 		delay *= 2
 		if delay >= maxBackoff {
