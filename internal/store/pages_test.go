@@ -231,6 +231,14 @@ func TestOnlyDuePagesAreDue(t *testing.T) {
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	s.SetClock(func() time.Time { return now })
 
+	// The main page was stamped from the real clock when the account was made, and this test
+	// then moves the clock to a fixed date. Without restamping it, whether the main page is
+	// due depends on whether the real time of day is before or after noon UTC — which is a
+	// test that passes all morning and fails all afternoon.
+	if err := s.ScheduleNextEdition(t.Context(), MainPageID(p.ID), now); err != nil {
+		t.Fatalf("ScheduleNextEdition(): %v", err)
+	}
+
 	later, _ := s.CreatePage(t.Context(), p.ID, "Later", "later")
 	if err := s.ScheduleNextEdition(t.Context(), later.ID, now.Add(time.Hour)); err != nil {
 		t.Fatalf("ScheduleNextEdition(): %v", err)
