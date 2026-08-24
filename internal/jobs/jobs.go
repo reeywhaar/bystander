@@ -217,6 +217,15 @@ func (r *Runner) run(ctx context.Context, job *store.Job) Outcome {
 // the work simply stops, with nothing to notice. A ticker starts again on its own every time.
 const Interval = 3 * time.Second
 
+// ReportInterval is how often a queue that is still working says so.
+//
+// A minute. The summary used to be written only when the queue went quiet, which reads fine
+// on paper and is useless in practice: this queue runs one job every three seconds on purpose,
+// so two hundred pictures is ten minutes during which a log at the default level says nothing
+// at all. Ten minutes of silence and "it is not running" look identical, and the whole reason
+// to log a background queue is to tell those two apart.
+const ReportInterval = time.Minute
+
 // RefillInterval is how often the runner looks for work nobody has queued yet.
 //
 // A minute, and only when the queue is empty. That is slow enough that an idle instance is
@@ -241,27 +250,35 @@ func (r *Runner) Run(ctx context.Context, refill func(context.Context)) {
 	defer ticker.Stop()
 
 	var run tally
-	// Zero, so the first empty tick refills rather than waiting a minute to find work that
-	// was already in the table when this started.
-	var lastRefill time.Time
+	// Both zero, so the first tick refills rather than waiting a minute to find work that was
+	// already in the table when this started, and so a long drain reports a minute in rather
+	// than a minute after it began.
+	var lastRefill, lastReport time.Time
 
 	for {
 		select {
 		case <-ctx.Done():
 			// A shutdown mid-run should still say what the run did, or a container that
 			// restarts often is a container whose queue is invisible.
-			r.report(ctx, run)
+			r.report(ctx, "worked the queue", run)
 			return
 		case <-ticker.C:
 			outcome, err := r.Sweep(ctx)
 			if err == nil && outcome != Waiting {
 				run.add(outcome)
+				// Still going. Said once a minute rather than once a job — two hundred
+				// pictures should read as a few sentences, not as two hundred of them, and
+				// not as nothing until it is over.
+				if time.Since(lastReport) >= ReportInterval {
+					lastReport = time.Now()
+					r.report(ctx, "working the queue", run)
+				}
 				continue
 			}
-			// The queue has gone quiet. One line for the whole run rather than one per job:
-			// a hundred pictures should read as a sentence, not as a hundred sentences.
-			r.report(ctx, run)
+			// The queue has gone quiet. Past tense, and the last word on this run.
+			r.report(ctx, "worked the queue", run)
 			run = tally{}
+			lastReport = time.Time{}
 
 			if refill != nil && time.Since(lastRefill) >= RefillInterval {
 				lastRefill = time.Now()
@@ -271,8 +288,8 @@ func (r *Runner) Run(ctx context.Context, refill func(context.Context)) {
 	}
 }
 
-// report says what a run of the queue came to, once it has gone quiet.
-func (r *Runner) report(ctx context.Context, run tally) {
+// report says where a run of the queue has got to.
+func (r *Runner) report(ctx context.Context, msg string, run tally) {
 	if !run.any() {
 		return
 	}
@@ -286,12 +303,13 @@ func (r *Runner) report(ctx context.Context, run tally) {
 		at = append(at, "waiting", depth)
 	}
 
-	// Info rather than Debug. This is one line per drained queue — a handful a day — and it
-	// is the line that answers "is the queue moving, and is anything getting through?".
-	// Counting what gave up beside what worked is the point: forty done and none given up is
-	// a different instance from forty done and two hundred given up, and a bare "done" hides
-	// the difference.
-	r.log.Info("worked the queue", at...)
+	// Info rather than Debug. This is the line that answers "is the queue moving, and is
+	// anything getting through?", and somebody asking that should not have to turn Debug on
+	// and restart to find out. Counting what gave up beside what worked is the point: forty
+	// done and none given up is a different instance from forty done and two hundred given
+	// up, and a bare "done" hides the difference. Counting what is still waiting is what
+	// makes it progress rather than a status.
+	r.log.Info(msg, at...)
 }
 
 // Enqueue adds work for a kind this runner knows about.
