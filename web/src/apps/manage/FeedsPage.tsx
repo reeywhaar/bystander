@@ -17,6 +17,7 @@ import {
 import { FeedDialog } from "@app/apps/manage/FeedDialog";
 import { FeedErrorDialog } from "@app/apps/manage/FeedErrorDialog";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
+import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
@@ -52,20 +53,46 @@ export function FeedsPage() {
   // opened: renaming or retagging from inside it would update the list underneath and
   // leave the dialog still describing what used to be true.
   const [editingID, setEditingID] = useState<string | null>(null);
+  // The feed being looked at, from either flow. What its Add means follows from whether the
+  // picker is open behind it: on its own it subscribes, and over a list it ticks a row.
+  const [previewing, setPreviewing] = useState<PlannedFeed | null>(null);
 
   function subscribe(feed: PlannedFeed) {
-    // One feed and no choice to make: straight in, untagged, as it always was. The picker
-    // is for when a site offers several — see below.
+    // One feed and no choice of which: straight in, untagged. The picker is for when a site
+    // offers several — see below.
     add.mutate(toImport([feed], initialSelection([feed]), tags.data ?? []), {
       onSuccess: () => {
         setUrl("");
         setChoices(null);
+        setPreviewing(null);
       },
       onError: (error) => {
         setChoices(null);
+        setPreviewing(null);
         setProblem(error.message);
       },
     });
+  }
+
+  /**
+   * What the Add at the bottom of a preview does.
+   *
+   * Two things, because the preview is opened from two places and the person pressing it
+   * means the same thing both times — yes, this one. On its own that is a subscription; over
+   * a list of several it is a tick, and the list is still there to be finished.
+   */
+  function addPreviewed() {
+    const feed = previewing;
+    if (!feed) return;
+
+    if (choices) {
+      const next = new Set(selection.skipped);
+      next.delete(feed.feed_url);
+      setSelection({ ...selection, skipped: next });
+      setPreviewing(null);
+      return;
+    }
+    subscribe(feed);
   }
 
   function submit(event: FormEvent) {
@@ -81,9 +108,15 @@ export function FeedsPage() {
         // took last week still goes straight in rather than opening a picker with one row.
         const fresh = offered(candidates);
         if (fresh.length === 1 && fresh[0]) {
-          subscribe(fresh[0]);
+          // Shown rather than subscribed. An address is not a description, and this is the
+          // moment somebody can still say no cheaply — after it is a subscription, saying no
+          // means unfollowing and losing the read marks with it.
+          setPreviewing(fresh[0]);
         } else {
-          setSelection(initialSelection(candidates));
+          // Nothing ticked. A site that turns out to offer five feeds chose none of them,
+          // and a screen that starts by assuming all five makes "None" the first thing
+          // anybody has to press.
+          setSelection(initialSelection(candidates, "none"));
           setChoices(candidates);
         }
       },
@@ -145,6 +178,13 @@ export function FeedsPage() {
         tags={tags.data}
       />
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
+      <PreviewDialog
+        feed={previewing}
+        open={previewing !== null}
+        onClose={() => setPreviewing(null)}
+        onAdd={addPreviewed}
+        adding={add.isPending}
+      />
       <FeedDialog
         feed={feeds.data.find((feed) => feed.id === editingID) ?? null}
         tags={tags.data ?? []}
@@ -192,6 +232,7 @@ export function FeedsPage() {
               tags={tags.data ?? []}
               selection={selection}
               onChange={setSelection}
+              onPreview={setPreviewing}
             />
 
             {add.error ? <Alert>{add.error.message}</Alert> : null}

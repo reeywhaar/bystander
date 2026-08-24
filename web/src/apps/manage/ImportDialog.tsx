@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import type { PlannedFeed } from "@app/api/types";
+
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
@@ -13,6 +15,7 @@ import {
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
 import { ImportOutcome } from "@app/apps/manage/ImportOutcome";
+import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 
 /**
  * Takes somebody else's subscription list.
@@ -37,12 +40,16 @@ export function ImportDialog({
   const [selection, setSelection] = useState<PlanSelection>(
     initialSelection([]),
   );
+  // Whichever row is being looked at. Its Add ticks that row rather than importing it: the
+  // list is still there to be finished, and the import happens once at the bottom.
+  const [previewing, setPreviewing] = useState<PlannedFeed | null>(null);
 
   const plan = preview.data?.feeds;
   const mine = tags.data ?? [];
 
   function reset() {
     setText("");
+    setPreviewing(null);
     setSelection(initialSelection([]));
     preview.reset();
     run.reset();
@@ -125,11 +132,24 @@ export function ImportDialog({
             tags={mine}
             selection={selection}
             onChange={setSelection}
+            onPreview={setPreviewing}
           />
 
           {run.error ? <Alert>{run.error.message}</Alert> : null}
         </>
       )}
+      <PreviewDialog
+        feed={previewing}
+        open={previewing !== null}
+        onClose={() => setPreviewing(null)}
+        onAdd={() => {
+          if (!previewing) return;
+          const next = new Set(selection.skipped);
+          next.delete(previewing.feed_url);
+          setSelection({ ...selection, skipped: next });
+          setPreviewing(null);
+        }}
+      />
     </Modal>
   );
 }

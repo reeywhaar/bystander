@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -279,5 +279,159 @@ describe("FeedsPage", () => {
     expect(
       transport.calls.filter((call) => call.method === "PATCH"),
     ).toHaveLength(0);
+  });
+});
+
+/*
+ * Looking at a feed before following it.
+ *
+ * A feed's title and address say almost nothing about it — a site offering "Posts",
+ * "Comments" and "Notes" is three plausible names and one right answer — and finding out used
+ * to mean following one and then unfollowing it again, losing the read marks with it.
+ */
+describe("FeedsPage, before following anything", () => {
+  const candidate = (title: string, url: string) => ({
+    title,
+    feed_url: url,
+    site_url: "https://example.com",
+    priority: 50,
+    reach: 604800,
+    tags: [],
+    already_subscribed: false,
+  });
+
+  const preview = {
+    title: "The Example",
+    site_url: "https://example.com",
+    feed_url: "https://example.com/rss",
+    items: [
+      {
+        title: "A story about a thing",
+        link: "https://example.com/1",
+        summary: "<p>What the thing was.</p>",
+        published_at: now - 3600,
+      },
+    ],
+  };
+
+  const type = async (address: string) => {
+    await userEvent.type(
+      await screen.findByLabelText("Feed or site address"),
+      address,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+  };
+
+  it("shows one discovered feed rather than subscribing to it", async () => {
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/discover": {
+        body: { candidates: [candidate("The Example", preview.feed_url)] },
+      },
+      "POST /api/feeds/preview": { body: preview },
+    });
+
+    await type("example.com");
+
+    expect(
+      await screen.findByText("A story about a thing"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("What the thing was.")).toBeInTheDocument();
+
+    // And nothing was taken. This is the moment somebody can still say no cheaply.
+    expect(
+      transport.calls.some((call) => call.path === "/api/feeds/import"),
+    ).toBe(false);
+  });
+
+  it("subscribes when the preview is accepted", async () => {
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/discover": {
+        body: { candidates: [candidate("The Example", preview.feed_url)] },
+      },
+      "POST /api/feeds/preview": { body: preview },
+      "POST /api/feeds/import": { body: { added: 1, skipped: [], tags: [] } },
+    });
+
+    await type("example.com");
+    // Scoped to the dialog: the form behind it has an Add of its own, and this test is
+    // about the one somebody presses after reading.
+    const shown = await screen.findByText("A story about a thing");
+    await userEvent.click(
+      within(shown.closest("dialog")!).getByRole("button", { name: "Add" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        transport.calls.some((call) => call.path === "/api/feeds/import"),
+      ).toBe(true),
+    );
+  });
+
+  /*
+   * A site that turns out to offer five feeds chose none of them, so the list starts with
+   * nothing ticked — otherwise "None" is the first thing anybody has to press.
+   */
+  it("starts a list of several with nothing chosen", async () => {
+    renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/discover": {
+        body: {
+          candidates: [
+            candidate("Posts", "https://example.com/posts.xml"),
+            candidate("Comments", "https://example.com/comments.xml"),
+          ],
+        },
+      },
+    });
+
+    await type("example.com");
+
+    await screen.findByText("Posts");
+    for (const box of screen.getAllByRole("checkbox")) {
+      expect(box).not.toBeChecked();
+    }
+    expect(screen.getByText("0 of 2")).toBeInTheDocument();
+  });
+
+  it("ticks the row it was opened from, and leaves the list up", async () => {
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/discover": {
+        body: {
+          candidates: [
+            candidate("Posts", "https://example.com/posts.xml"),
+            candidate("Comments", "https://example.com/comments.xml"),
+          ],
+        },
+      },
+      "POST /api/feeds/preview": { body: preview },
+    });
+
+    await type("example.com");
+    await screen.findByText("Posts");
+
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Preview" })[0]!,
+    );
+    // Scoped to the preview: the form and the picker behind it both have an Add.
+    const shown = await screen.findByText("A story about a thing");
+    await userEvent.click(
+      within(shown.closest("dialog")!).getByRole("button", { name: "Add" }),
+    );
+
+    // One ticked, and the picker still open with the other still to decide.
+    expect(await screen.findByText("1 of 2")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")[0]).toBeChecked();
+    expect(screen.getAllByRole("checkbox")[1]).not.toBeChecked();
+    // Ticking is not importing: the list is finished at the bottom, not here.
+    expect(
+      transport.calls.some((call) => call.path === "/api/feeds/import"),
+    ).toBe(false);
   });
 });

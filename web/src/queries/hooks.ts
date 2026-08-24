@@ -36,7 +36,7 @@ import {
   postFeedsByIdRead,
   type MarkSpan,
 } from "@app/api/actions/feeds";
-import { postFeedsDiscover } from "@app/api/actions/discover";
+import { postFeedsDiscover, postFeedsPreview } from "@app/api/actions/discover";
 import {
   postFeedsExport,
   postFeedsImport,
@@ -203,6 +203,21 @@ export function useDiscoverFeeds() {
   const callApi = useApiCall();
   return useMutation({
     mutationFn: (url: string) => callApi(postFeedsDiscover(url)),
+  });
+}
+
+/**
+ * Asks what a feed has published, without following it.
+ *
+ * A mutation for the same reason discovery is one: it makes the server fetch somebody else's
+ * site, which is an action with a cost rather than a cached read. It also means pressing
+ * Preview a second time asks again, which is what somebody who left the dialog open for a
+ * while would expect.
+ */
+export function usePreviewFeed() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (url: string) => callApi(postFeedsPreview(url)),
   });
 }
 

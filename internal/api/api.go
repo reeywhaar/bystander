@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/feeds", s.requireSession(s.listFeeds))
 	mux.Handle("POST /api/feeds", s.requireSession(s.addFeed))
 	mux.Handle("POST /api/feeds/discover", s.requireSession(s.discoverFeeds))
+	mux.Handle("POST /api/feeds/preview", s.requireSession(s.previewFeed))
 	mux.Handle("POST /api/feeds/export", s.requireSession(s.exportFeeds))
 	mux.Handle("POST /api/feeds/import/preview", s.requireSession(s.previewImport))
 	mux.Handle("POST /api/feeds/import", s.requireSession(s.importFeeds))

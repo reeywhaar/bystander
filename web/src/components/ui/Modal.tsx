@@ -37,11 +37,20 @@ export function Modal({
   title,
   children,
   footer,
+  wide = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /**
+   * A dialog for reading rather than for answering.
+   *
+   * Twenty-eight rem is a form: a few fields, a list of names, a question. Prose needs more
+   * than that — a feed's articles set to a form's width are a column of forty characters,
+   * which is the shape this width exists to avoid everywhere else on the page.
+   */
+  wide?: boolean;
   /**
    * What this dialog does, as buttons.
    *
@@ -133,9 +142,12 @@ export function Modal({
       // on into whatever is behind it. Holding the page still already covers that for a
       // wheel; this is for touch, where `overflow: hidden` on the body is not reliably
       // enough on its own and the gesture becomes a rubber-band or a pull-to-refresh.
-      className="m-auto max-h-[85dvh] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto
-        overscroll-contain rounded-md border border-rule bg-paper-raised p-0 text-ink
-        backdrop:bg-black/50"
+      className={`m-auto max-h-[85dvh] overflow-y-auto overscroll-contain rounded-md
+        border border-rule bg-paper-raised p-0 text-ink backdrop:bg-black/50 ${
+          wide
+            ? "w-[min(44rem,calc(100vw-2rem))]"
+            : "w-[min(28rem,calc(100vw-2rem))]"
+        }`}
     >
       {open ? (
         <DialogContext.Provider value={ref}>

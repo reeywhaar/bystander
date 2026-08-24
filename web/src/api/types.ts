@@ -302,3 +302,32 @@ export interface SmtpForm {
   from_address: string;
   sender_name: string;
 }
+
+/** One article in a feed nobody has subscribed to yet. */
+export interface PreviewItem {
+  title: string;
+  link: string;
+  /**
+   * The same picture a card would carry, and for some feeds the entire article: a comic's
+   * summary is an `<img>` and nothing else, and the sanitizer drops images. Without this a
+   * comics feed previews as a list of titles and dates — which is the kind of feed somebody
+   * most needs to look at before following.
+   */
+  image_url: string;
+  /**
+   * Sanitized on the server, at parse, by the pass every stored summary goes through — an
+   * allowlist of a dozen tags with every script and every attribute but a resolved href
+   * removed. What is looked at here is what would arrive.
+   */
+  summary: string;
+  published_at: number;
+}
+
+/** What a feed has published, for somebody deciding whether to follow it. */
+export interface FeedPreview {
+  title: string;
+  site_url: string;
+  feed_url: string;
+  /** The most recent first, capped by the server. */
+  items: PreviewItem[];
+}

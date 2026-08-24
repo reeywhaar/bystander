@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"bystander/internal/feeds"
@@ -231,6 +232,107 @@ func (s *Server) discoverFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"candidates": out})
+}
+
+// PreviewItems is how much of a feed is shown to somebody deciding whether to follow it.
+//
+// Ten, which is enough to tell what a publisher writes about and how often, and short enough
+// that the answer arrives in one screen. The question being answered is "is this the feed I
+// think it is", not "what have they published this year".
+const PreviewItems = 10
+
+type previewItemBody struct {
+	Title string `json:"title"`
+	Link  string `json:"link"`
+	// ImageURL is the same picture a card would carry, and it is here because for some feeds
+	// it is the entire article. A comic's summary is an <img> and nothing else, and the
+	// sanitizer drops images — so a preview built from summaries alone shows a comics feed as
+	// a list of titles and dates, which is exactly the feed somebody most needs to look at
+	// before following.
+	ImageURL    string `json:"image_url"`
+	Summary     string `json:"summary"`
+	PublishedAt int64  `json:"published_at"`
+}
+
+type previewBody struct {
+	Title   string            `json:"title"`
+	SiteURL string            `json:"site_url"`
+	FeedURL string            `json:"feed_url"`
+	Items   []previewItemBody `json:"items"`
+}
+
+// previewFeed shows what a feed has published, without subscribing to it.
+//
+// The gap this fills is that a feed's title and address say almost nothing about it. A site
+// offering "Posts", "Comments" and "Notes" is three plausible names and one right answer, and
+// the only way to find out used to be to follow one and look — which meant unfollowing it
+// again, and the read marks and the schedule that came with it.
+//
+// Nothing is stored. This is a fetch, a parse and ten items straight back, so a feed somebody
+// looked at and did not want leaves nothing behind at all.
+func (s *Server) previewFeed(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	var body discoverRequest
+	if !decode(w, r, &body) {
+		return
+	}
+	// The same ceiling discovery has, and for the same reason: this is an outbound request to
+	// somebody else's server, made because a person pressed a button.
+	if !s.discovery.allow(p.ID) {
+		writeError(w, http.StatusTooManyRequests, "too many feeds at once; wait a minute")
+		return
+	}
+
+	// Resolve rather than a fetch of its own: handed a feed's address it parses that, and
+	// handed a page's it finds the feed first. Both are things somebody might have in hand
+	// when they ask what this is.
+	feedURL, parsed, err := s.fetcher.Resolve(r.Context(), body.URL, s.store.Now())
+	if err != nil {
+		if errors.Is(err, feeds.ErrNotAFeed) {
+			writeError(w, http.StatusBadRequest, "that page does not offer a feed")
+			return
+		}
+		if errors.Is(err, store.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// A publisher being unreachable is not our failure, and a 500 would say it was.
+		writeError(w, http.StatusBadRequest, "could not read that address: "+err.Error())
+		return
+	}
+
+	// Newest first, which is not the order a feed arrives in — publishers disagree about
+	// that, and some of them are simply wrong. Somebody judging a feed wants the most recent
+	// thing at the top.
+	items := slices.Clone(parsed.Items)
+	slices.SortStableFunc(items, func(a, b *store.Item) int {
+		return b.PublishedAt.Compare(a.PublishedAt)
+	})
+	if len(items) > PreviewItems {
+		items = items[:PreviewItems]
+	}
+
+	out := previewBody{
+		Title:   parsed.Title,
+		SiteURL: parsed.SiteURL,
+		FeedURL: feedURL,
+		Items:   make([]previewItemBody, 0, len(items)),
+	}
+	for _, item := range items {
+		out.Items = append(out.Items, previewItemBody{
+			Title:    item.Title,
+			Link:     item.Link,
+			ImageURL: item.ImageURL,
+			// Sanitized where every summary is, at parse — an allowlist of a dozen tags with
+			// every script and every attribute but a resolved href removed. The preview shows
+			// the same HTML the page would, from the same pass, so what is looked at here is
+			// what would arrive. See internal/feeds/sanitize.go.
+			Summary:     item.Summary,
+			PublishedAt: item.PublishedAt.Unix(),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type patchFeedRequest struct {

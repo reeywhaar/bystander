@@ -18,13 +18,26 @@ export interface PlanSelection {
 /**
  * Where a plan starts.
  *
- * Every feed ticked, and on each one the tags the source named **that you already have**.
- * Those are a match rather than a decision. Tags you do not have start off: a taxonomy
- * should arrive because somebody asked for it, not because it came in the post.
+ * On each feed, the tags the source named **that you already have**. Those are a match rather
+ * than a decision. Tags you do not have start off: a taxonomy should arrive because somebody
+ * asked for it, not because it came in the post.
+ *
+ * Whether the feeds themselves start ticked depends on where the list came from, and the two
+ * cases genuinely differ. A pasted list is a list somebody chose — every feed in it is there
+ * because they put it there, so the work is untangling the few they have changed their mind
+ * about. A site that turns out to offer five feeds chose none of them: taking all five is
+ * almost never what anybody wants, and a screen that starts by assuming it makes "None" the
+ * first thing you have to press.
  */
-export function initialSelection(feeds: PlannedFeed[]): PlanSelection {
+export function initialSelection(
+  feeds: PlannedFeed[],
+  start: "all" | "none" = "all",
+): PlanSelection {
   return {
-    skipped: new Set(),
+    skipped:
+      start === "none"
+        ? new Set(feeds.map((feed) => feed.feed_url))
+        : new Set(),
     tags: new Map(
       feeds.map((feed) => [
         feed.feed_url,
@@ -97,11 +110,20 @@ export function FeedPlan({
   tags,
   selection,
   onChange,
+  onPreview,
 }: {
   feeds: PlannedFeed[];
   tags: Tag[];
   selection: PlanSelection;
   onChange: (selection: PlanSelection) => void;
+  /**
+   * Show what one of them has published, before it is taken.
+   *
+   * Optional, because the list can be shown somewhere with nowhere to put a dialog. Where it
+   * is given, every row gets it: a title and an address are not enough to choose between
+   * "Posts", "Comments" and "Notes", which is the list this screen most often shows.
+   */
+  onPreview?: (feed: PlannedFeed) => void;
 }) {
   const showing = offered(feeds);
   const hidden = feeds.length - showing.length;
@@ -173,6 +195,7 @@ export function FeedPlan({
               setSkipped(next);
             }}
             onToggleTag={(key) => toggleTag(feed.feed_url, key)}
+            onPreview={onPreview ? () => onPreview(feed) : undefined}
           />
         ))}
       </ul>
@@ -201,6 +224,7 @@ function PlanRow({
   chosen,
   onKeep,
   onToggleTag,
+  onPreview,
 }: {
   feed: PlannedFeed;
   tags: Tag[];
@@ -208,31 +232,47 @@ function PlanRow({
   chosen: Set<string>;
   onKeep: (keep: boolean) => void;
   onToggleTag: (key: string) => void;
+  onPreview?: () => void;
 }) {
   // Tags the source named that nobody here has yet.
   const incoming = feed.tags.filter((tag) => !tag.tag_id);
 
   return (
     <li className="border-b border-rule px-3 py-2.5 last:border-b-0">
-      <label className="flex cursor-pointer items-baseline gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={keep}
-          onChange={(event) => onKeep(event.target.checked)}
-        />
-        <span className="min-w-0">
-          <span className="block truncate text-ink">{feed.title}</span>
-          <span className="block truncate text-xs text-ink-faint">
-            {feed.feed_url}
+      {/* The label covers the tick and the name and stops there. A button inside a label is
+          a button that also ticks the box, which on this row would mean looking at a feed
+          and thereby choosing it. */}
+      <div className="flex items-baseline gap-2 text-sm">
+        <label className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2">
+          <input
+            type="checkbox"
+            checked={keep}
+            onChange={(event) => onKeep(event.target.checked)}
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-ink">{feed.title}</span>
+            <span className="block truncate text-xs text-ink-faint">
+              {feed.feed_url}
+            </span>
+            {/* What the list says this feed is worth reading back, which arrives with it. A
+                setting somebody is about to accept should be visible before they accept it,
+                not discovered afterwards in the feed's own dialog. */}
+            <span className="mt-1 block">
+              <Reach seconds={feed.reach} />
+            </span>
           </span>
-          {/* What the list says this feed is worth reading back, which arrives with it. A
-              setting somebody is about to accept should be visible before they accept it,
-              not discovered afterwards in the feed's own dialog. */}
-          <span className="mt-1 block">
-            <Reach seconds={feed.reach} />
-          </span>
-        </span>
-      </label>
+        </label>
+
+        {onPreview ? (
+          <button
+            type="button"
+            onClick={onPreview}
+            className="shrink-0 rounded-md px-2 py-1 text-xs text-ink-muted hover:bg-paper-sunken hover:text-ink"
+          >
+            Preview
+          </button>
+        ) : null}
+      </div>
 
       {keep && (tags.length > 0 || incoming.length > 0) ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">

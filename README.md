@@ -70,6 +70,11 @@ docker exec bystander bystander invite
 Then add a feed. A site's address is enough — bystander follows it to the feed it names, and
 offers you the list when it names several.
 
+Either way it shows you the feed's last ten articles first, pictures and all, and adds nothing
+until you say so. A title and an address are not a description: a site offering "Posts",
+"Comments" and "Notes" is three plausible names and one right answer, and the alternative is
+following one to find out and then unfollowing it again.
+
 ### Bringing a list in, and getting one out
 
 **Import a list** under Settings → Feeds takes an OPML file or a pasted list of addresses.
