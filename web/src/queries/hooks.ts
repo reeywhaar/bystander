@@ -32,6 +32,8 @@ import {
   getFeeds,
   patchFeedsById,
   postFeeds,
+  postFeedsByIdRead,
+  type MarkSpan,
 } from "@app/api/actions/feeds";
 import { postFeedsDiscover } from "@app/api/actions/discover";
 import {
@@ -352,6 +354,27 @@ export function useRemoveTag() {
       // Deleting a tag detaches it from every subscription that carried it, so the feed
       // listing is stale too.
       void client.invalidateQueries({ queryKey: qk.tags });
+      void client.invalidateQueries({ queryKey: qk.feeds });
+    },
+  });
+}
+
+/**
+ * Marks a feed's articles read, as far back as was asked for.
+ *
+ * Everything is invalidated afterwards rather than patched: this touches articles on every
+ * page, the record behind Recently read, and the feed row itself, and working out which of
+ * those changed would be re-deriving on the client what the server already decided.
+ */
+export function useMarkFeedRead() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, olderThan }: { id: string; olderThan: MarkSpan }) =>
+      callApi(postFeedsByIdRead(id, olderThan)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.edition });
+      void client.invalidateQueries({ queryKey: qk.read });
       void client.invalidateQueries({ queryKey: qk.feeds });
     },
   });

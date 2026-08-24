@@ -45,3 +45,20 @@ export function deleteFeedsById(id: string): ApiAction<void> {
     d.call({ method: "DELETE", path: `/api/feeds/${seg(id)}` }),
   );
 }
+
+/** How far back to mark read: an article older than this. Empty is the whole feed. */
+export type MarkSpan = "" | "day" | "week" | "month";
+
+/** `POST /api/feeds/{id}/read` */
+export function postFeedsByIdRead(
+  id: string,
+  olderThan: MarkSpan,
+): ApiAction<{ marked: number }> {
+  return createApiAction((d) =>
+    d.call({
+      method: "POST",
+      path: `/api/feeds/${encodeURIComponent(id)}/read`,
+      body: { older_than: olderThan },
+    }),
+  );
+}

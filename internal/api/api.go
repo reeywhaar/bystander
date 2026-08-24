@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/shares/{token}", s.requireSession(s.share))
 	mux.Handle("GET /api/feeds/{id}", s.requireSession(s.getFeed))
 	mux.Handle("PATCH /api/feeds/{id}", s.requireSession(s.patchFeed))
+	mux.Handle("POST /api/feeds/{id}/read", s.requireSession(s.markFeedRead))
 	mux.Handle("DELETE /api/feeds/{id}", s.requireSession(s.deleteFeed))
 
 	mux.Handle("GET /api/tags", s.requireSession(s.listTags))

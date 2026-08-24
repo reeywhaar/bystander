@@ -527,3 +527,62 @@ func (s *Store) DropEditions(ctx context.Context, pageID string) error {
 	_, err := s.derived.ExecContext(ctx, `DELETE FROM editions WHERE page_id = ?`, pageID)
 	return err
 }
+
+// MarkFeedRead marks everything one person can see from one feed as read.
+//
+// `before` bounds it by when an article was published — everything older than a day, a week, a
+// month. The zero time means all of it.
+//
+// Both halves of "read" are written, and they are not the same thing. The record in
+// read_articles is what keeps an article off a page it has not reached yet: Candidates skips
+// what this person has read, so marking a feed's backlog read means its old articles are never
+// offered, which is the whole point of doing this when following a feed again after a while.
+// The marks on live editions are what greys the cards already on screen.
+//
+// Articles already read are left alone rather than re-stamped. "Mark everything read" is about
+// the things that are not, and moving an article somebody finished with last week to the top of
+// Recently read would be answering a different question.
+func (s *Store) MarkFeedRead(ctx context.Context, principalID, feedID string, before time.Time) (int64, error) {
+	now := s.Now()
+
+	// Zero means no bound. Written as a flag rather than a far-future date, because a date
+	// this far out is a magic number somebody has to recognise.
+	bounded := 0
+	cutoff := int64(0)
+	if !before.IsZero() {
+		bounded, cutoff = 1, unix(before)
+	}
+
+	tx, err := s.derived.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO read_articles
+		    (principal_id, item_id, feed_id, title, link, published_at, read_at)
+		SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
+		  FROM items i
+		 WHERE i.feed_id = ? AND (? = 0 OR i.published_at < ?)`,
+		principalID, unix(now), feedID, bounded, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	marked, _ := res.RowsAffected()
+
+	// And the cards on screen. Only the ones not already read, for the same reason: a mark
+	// somebody made themselves is theirs, and this should not restamp it.
+	if _, err := tx.ExecContext(ctx, currentEditions+`
+		UPDATE edition_items SET read_at = ?
+		 WHERE read_at IS NULL
+		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)
+		   AND item_id IN (
+		         SELECT id FROM items
+		          WHERE feed_id = ? AND (? = 0 OR published_at < ?))`,
+		unix(now), principalID, feedID, bounded, cutoff); err != nil {
+		return 0, err
+	}
+
+	return marked, tx.Commit()
+}

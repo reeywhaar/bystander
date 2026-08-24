@@ -5,6 +5,8 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Field } from "@app/components/ui/Field";
 import { Modal } from "@app/components/ui/Modal";
+
+import { MarkReadDialog } from "@app/apps/manage/MarkReadDialog";
 import { ARTICLE_WINDOWS } from "@app/lib/constants";
 import { tagLabel } from "@app/lib/tags";
 import { useRemoveFeed, useUpdateFeed } from "@app/queries/hooks";
@@ -40,6 +42,7 @@ export function FeedDialog({
   const [name, setName] = useState("");
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [reach, setReach] = useState(0);
+  const [marking, setMarking] = useState(false);
 
   // Keyed on which feed, not on the feed object. The object changes identity every time
   // the list refetches — which is after every change made in here — and resetting on that
@@ -110,6 +113,11 @@ export function FeedDialog({
             onClick={() => remove.mutate(feed.id, { onSuccess: onClose })}
           >
             Stop following
+          </Button>
+          {/* Neither a save nor a dismissal: it writes, but not to the feed. It sits with
+              Cancel and Save because it is the third thing somebody opens this to do. */}
+          <Button onClick={() => setMarking(true)} disabled={update.isPending}>
+            Mark read…
           </Button>
           {/* Closing any other way — Cancel, Escape, the backdrop — leaves the feed as it
               was. Save is the only thing that writes. */}
@@ -217,6 +225,11 @@ export function FeedDialog({
       {feed.failure_count > 0 ? <Alert>{feed.last_error}</Alert> : null}
       {update.error ? <Alert>{update.error.message}</Alert> : null}
       {remove.error ? <Alert>{remove.error.message}</Alert> : null}
+      {/* Mounted only while it is open, so the feed dialog is not carrying a second one
+          around unopened. */}
+      {marking ? (
+        <MarkReadDialog feed={feed} open onClose={() => setMarking(false)} />
+      ) : null}
     </Modal>
   );
 }

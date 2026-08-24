@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -84,5 +85,127 @@ func TestAFeedRemembersHowOftenItIsWorthFetching(t *testing.T) {
 	}
 	if got.FetchInterval != 6*time.Hour {
 		t.Errorf("interval = %s, want 6h", got.FetchInterval)
+	}
+}
+
+// Marking a feed read is about what a page has not shown yet as much as what it has: an
+// article this person has read is never offered to any of their pages, so this is what makes
+// following a feed again after a while start from now rather than from its backlog.
+func TestMarkingAFeedReadCoversWhatNoPageHasShown(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, err := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatalf("CreatePrincipal(): %v", err)
+	}
+	feed, err := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+	other, err := s.UpsertFeed(ctx, "https://other.example.com/feed.xml", "Another", "")
+	if err != nil {
+		t.Fatalf("UpsertFeed(): %v", err)
+	}
+
+	now := s.Now()
+	ages := []time.Duration{
+		2 * time.Hour,       // today
+		3 * 24 * time.Hour,  // this week
+		10 * 24 * time.Hour, // this month
+		60 * 24 * time.Hour, // older
+	}
+	items := make([]*Item, 0, len(ages)+1)
+	for i, age := range ages {
+		items = append(items, &Item{
+			FeedID: feed.ID, GUID: fmt.Sprintf("g%d", i),
+			Title: fmt.Sprintf("Story %d", i), Link: fmt.Sprintf("https://example.com/%d", i),
+			PublishedAt: now.Add(-age), FetchedAt: now,
+		})
+	}
+	// One on another feed, which must be left entirely alone.
+	items = append(items, &Item{
+		FeedID: other.ID, GUID: "elsewhere", Title: "Elsewhere",
+		Link: "https://other.example.com/1", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+	})
+	if _, err := s.SaveItems(ctx, items); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+
+	// Older than a week: the ten-day and sixty-day ones, and nothing else.
+	marked, err := s.MarkFeedRead(ctx, p.ID, feed.ID, now.Add(-7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("MarkFeedRead(): %v", err)
+	}
+	if marked != 2 {
+		t.Errorf("marked %d, want the 2 older than a week", marked)
+	}
+
+	read, err := s.ReadArticles(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ReadArticles(): %v", err)
+	}
+	if len(read) != 2 {
+		t.Fatalf("%d articles read, want 2", len(read))
+	}
+	for _, article := range read {
+		if article.FeedID != feed.ID {
+			t.Errorf("%q is from another feed", article.Title)
+		}
+	}
+
+	// Everything, which picks up the two that were left.
+	if marked, err = s.MarkFeedRead(ctx, p.ID, feed.ID, time.Time{}); err != nil {
+		t.Fatalf("MarkFeedRead(): %v", err)
+	}
+	if marked != 2 {
+		t.Errorf("marked %d the second time, want the 2 that were left", marked)
+	}
+	if read, _ = s.ReadArticles(ctx, p.ID); len(read) != 4 {
+		t.Errorf("%d articles read, want all 4 of this feed's", len(read))
+	}
+}
+
+// A mark somebody made themselves is theirs. Marking a feed read must not move an article they
+// finished with last week to the top of Recently read.
+func TestMarkingAFeedReadLeavesEarlierMarksAlone(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, _ := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	feed, _ := s.UpsertFeed(ctx, "https://example.com/feed.xml", "The Example", "")
+
+	now := s.Now()
+	if _, err := s.SaveItems(ctx, []*Item{{
+		FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+		PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+	}}); err != nil {
+		t.Fatalf("SaveItems(): %v", err)
+	}
+
+	// Truncated, because read_at is stored in whole seconds and a comparison against a time
+	// carrying microseconds fails on the round trip rather than on the behaviour.
+	long := now.Add(-30 * 24 * time.Hour).Truncate(time.Second)
+	if _, err := s.derived.ExecContext(ctx,
+		`INSERT INTO read_articles (principal_id, item_id, feed_id, title, link, published_at, read_at)
+		 SELECT ?, id, feed_id, title, link, published_at, ? FROM items WHERE feed_id = ?`,
+		p.ID, unix(long), feed.ID); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	marked, err := s.MarkFeedRead(ctx, p.ID, feed.ID, time.Time{})
+	if err != nil {
+		t.Fatalf("MarkFeedRead(): %v", err)
+	}
+	if marked != 0 {
+		t.Errorf("marked %d, want none — it was already read", marked)
+	}
+
+	read, _ := s.ReadArticles(ctx, p.ID)
+	if len(read) != 1 {
+		t.Fatalf("%d read articles, want 1", len(read))
+	}
+	if !read[0].ReadAt.Equal(long) {
+		t.Errorf("read_at moved to %s, want it left at %s", read[0].ReadAt, long)
 	}
 }

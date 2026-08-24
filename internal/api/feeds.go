@@ -276,3 +276,62 @@ func (s *Server) deleteFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
+
+// The spans somebody can mark read, by what an article is older than.
+//
+// A closed set, like every other duration this program offers: four choices fit in a dialog and
+// an arbitrary date is a date picker nobody asked for. "Everything" is the empty string, which
+// is the whole feed rather than a bound of zero.
+var markSpans = map[string]time.Duration{
+	"day":   24 * time.Hour,
+	"week":  7 * 24 * time.Hour,
+	"month": 30 * 24 * time.Hour,
+}
+
+type markReadRequest struct {
+	// OlderThan is "day", "week", "month", or empty for everything.
+	OlderThan string `json:"older_than"`
+}
+
+// markFeedRead marks a feed's articles read, as far back as was asked for.
+//
+// It covers articles no page has shown yet, which is the point rather than a side effect:
+// a page never offers what this person has already read, so this is how somebody who has been
+// reading a publisher elsewhere — or who followed it again after a while — starts from now
+// instead of from its backlog.
+func (s *Server) markFeedRead(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	var body markReadRequest
+	if !decode(w, r, &body) {
+		return
+	}
+
+	// Through the subscription, so this can only ever mark a feed the caller follows — the
+	// store's own call takes a feed id and knows nothing about who is asking.
+	sub, err := s.store.SubscriptionByID(r.Context(), p.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	var before time.Time
+	if body.OlderThan != "" {
+		span, ok := markSpans[body.OlderThan]
+		if !ok {
+			writeError(w, http.StatusBadRequest, "that is not one of the spans that can be marked read")
+			return
+		}
+		before = s.store.Now().Add(-span)
+	}
+
+	marked, err := s.store.MarkFeedRead(r.Context(), p.ID, sub.FeedID, before)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("marked a feed read",
+		"principal", p.ID, "feed", sub.FeedID, "older_than", body.OlderThan, "articles", marked)
+
+	writeJSON(w, http.StatusOK, map[string]int64{"marked": marked})
+}

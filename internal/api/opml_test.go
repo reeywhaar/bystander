@@ -457,3 +457,91 @@ func TestASharedListBringsItsReachesWithIt(t *testing.T) {
 		t.Errorf("both arrived at %ds; the list's own reaches were not carried", theirs[0].ArticleWindow)
 	}
 }
+
+// Marking a feed read reaches further than the page in front of you, and that is the point.
+//
+// A page never offers an article somebody has already read, so marking a feed's backlog read
+// means those articles are never drawn at all. That is what makes following a publisher again
+// after a while start from now rather than from its archive — and it is the part a dialog has
+// to say out loud, because it cannot be seen on screen.
+func TestMarkingAFeedReadKeepsItsBacklogOffLaterPages(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 12)
+
+	h.signIn(store.RoleUser, "alice")
+
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}),
+		http.StatusCreated, &sub)
+
+	// Nothing has been composed, so nothing has been shown — the whole feed is backlog.
+	var before editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &before)
+	if len(before.Items) != 0 {
+		t.Fatalf("a page exists already with %d articles", len(before.Items))
+	}
+
+	var result struct {
+		Marked int `json:"marked"`
+	}
+	h.expect(h.do(http.MethodPost, "/api/feeds/"+sub.ID+"/read",
+		map[string]string{"older_than": ""}), http.StatusOK, &result)
+	if result.Marked == 0 {
+		t.Fatal("marked nothing, though the feed's articles had never been shown")
+	}
+
+	// And now a page composed from it has nothing to draw.
+	res := h.do(http.MethodPost, "/api/edition/regenerate", nil)
+	if res.StatusCode < 400 {
+		var after editionBody
+		h.expect(res, http.StatusOK, &after)
+		if len(after.Items) != 0 {
+			t.Errorf("composed %d articles from a feed marked read", len(after.Items))
+		}
+	} else {
+		res.Body.Close()
+	}
+
+	// It is in Recently read, which is the other half of what "read" means.
+	var read []struct {
+		Title string `json:"title"`
+	}
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &read)
+	if len(read) != result.Marked {
+		t.Errorf("%d articles in Recently read, want the %d marked", len(read), result.Marked)
+	}
+}
+
+// Only the feed asked for, and only what the caller follows.
+func TestMarkingAFeedReadIsYourOwnFeedOnly(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 4)
+
+	h.signIn(store.RoleUser, "alice")
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}),
+		http.StatusCreated, &sub)
+
+	elsewhere := h.signInAsSomebodyElse("bob")
+	res := h.doAs(elsewhere, http.MethodPost, "/api/feeds/"+sub.ID+"/read",
+		map[string]string{"older_than": ""})
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("marking somebody else's subscription = %d, want 404", res.StatusCode)
+	}
+	res.Body.Close()
+
+	// And a span nobody offers is refused rather than quietly meaning everything.
+	res = h.do(http.MethodPost, "/api/feeds/"+sub.ID+"/read",
+		map[string]string{"older_than": "fortnight"})
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("an unknown span = %d, want 400", res.StatusCode)
+	}
+	res.Body.Close()
+
+	// Nothing was marked by either of those.
+	var read []struct{}
+	h.expect(h.do(http.MethodGet, "/api/read", nil), http.StatusOK, &read)
+	if len(read) != 0 {
+		t.Errorf("%d articles marked read by requests that should have failed", len(read))
+	}
+}
