@@ -78,8 +78,18 @@ export function ArticleCard({
             src={article.image_url}
             alt=""
             loading="lazy"
-            className={`mb-3 w-full rounded-sm border border-rule object-cover ${
-              article.slot === "lead" ? "aspect-[21/9]" : "aspect-[16/9]"
+            // The lead keeps a shape of its own. It runs the width of the page, so a crop
+            // from the ladder would put a picture three quarters of a screen tall above the
+            // story it belongs to — the cinematic ratio is what keeps a full-width picture
+            // from becoming the page.
+            // Written out rather than built from `style.fit`. Tailwind generates a class
+            // only if it can find the whole name in the source, so `object-${fit}` produced
+            // neither — the images had no object-fit at all and were stretching to their
+            // box. A template literal is invisible to it.
+            className={`mb-3 w-full rounded-sm border border-rule ${
+              style.fit === "contain" ? "object-contain" : "object-cover"
+            } ${
+              article.slot === "lead" ? "aspect-[21/9]" : `shot-${style.shot}`
             }`}
             // A publisher's image that 404s or hotlink-blocks would otherwise leave a
             // broken-image glyph in the middle of the page.

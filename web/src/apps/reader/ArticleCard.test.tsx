@@ -47,6 +47,8 @@ const plain = (over: Partial<Style> = {}): Style => ({
   frame: null,
   columns: false,
   rule: false,
+  shot: 2,
+  fit: "cover",
   ...over,
 });
 

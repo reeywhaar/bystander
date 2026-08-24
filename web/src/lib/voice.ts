@@ -94,6 +94,40 @@ export const PROSE_STEPS = 4;
 export const FRAME_RANKS = 3;
 
 /**
+ * How tall a picture is, as a share of how wide it is — five steps from three fifths to square.
+ *
+ * Every image was cropped to the same 16:9 before this, which is a television's shape and
+ * nothing else's. A page of photographs all cut to one ratio reads as a catalogue: the crop
+ * stops being something anybody notices, and it is one of the few things about a picture that
+ * carries across a room.
+ *
+ * Landscape through to square, and no further. A picture here is a crop of somebody else's
+ * photograph, and turning a landscape into a portrait would be recomposing a frame its
+ * photographer chose. Square is the far end because a square picture still reads as a picture
+ * given a shape; a tall one reads as a photograph that has been cut in half.
+ *
+ * The values themselves are in styles.css, as `.shot-0` upwards.
+ */
+export const SHOT_STEPS = 5;
+
+/**
+ * Whether a picture fills its shape or sits inside it, as a bag to draw from.
+ *
+ * Two honest answers to the same question, which is why this varies rather than picking one.
+ * `cover` fills the crop and loses the edges of the photograph; `contain` keeps the whole
+ * photograph and loses some of the space. Neither is right for a picture whose subject nobody
+ * here has looked at.
+ *
+ * Mostly `cover`, because a page is mostly better for it — a filled shape sits in a column
+ * cleanly. `contain` is the occasional one that shows a picture whole, which is the more
+ * generous treatment of a photograph somebody else framed, and it is the mark that makes a
+ * card with a picture in it look unlike the card with a picture beside it.
+ */
+const FIT_BAG = ["cover", "cover", "cover", "contain"] as const;
+
+export type Fit = (typeof FIT_BAG)[number];
+
+/**
  * How much text is worth splitting into two columns.
  *
  * Three lines cut down the middle is not two columns, it is one paragraph with a gap in it —
@@ -136,6 +170,10 @@ export interface Style {
   columns: boolean;
   /** Whether a rule runs across the page above this card. */
   rule: boolean;
+  /** Which step of the crop ladder this card's picture is cut to. */
+  shot: number;
+  /** Whether that picture fills the crop or sits whole inside it. */
+  fit: Fit;
 }
 
 /**
@@ -202,6 +240,8 @@ export function styleFor(
 
   const columns = next() < 0.5 && summary.length >= COLUMNS_NEED;
   const rule = next() < RULE_CHANCE;
+  const shot = Math.floor(next() * SHOT_STEPS);
+  const fit = FIT_BAG[Math.floor(next() * FIT_BAG.length)] as Fit;
 
   return {
     voice,
@@ -209,6 +249,8 @@ export function styleFor(
     frame: line ? { line, width, ink, pad } : null,
     columns,
     rule,
+    shot,
+    fit,
   };
 }
 

@@ -168,6 +168,8 @@ describe("assignVoices", () => {
       frame: null,
       columns: false,
       rule: false,
+      shot: 2,
+      fit: "cover",
     }));
     expect(assignVoices(drawn)).toEqual([...VOICES]);
   });
