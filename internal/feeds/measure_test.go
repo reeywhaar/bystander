@@ -122,23 +122,41 @@ func TestMeasuringGivesUpOnAnswersThatWillNotChange(t *testing.T) {
 	}
 }
 
-func TestMeasuringBacksOffWhenToldTo(t *testing.T) {
-	st := testStore(t)
-
+// Nothing is retried, so every answer that is not a picture ends the same way.
+//
+// A 429 and a 404 differ in what they mean and not at all in what to do about them: the page
+// draws a shape for an unmeasured picture and looks exactly as it does now, so no answer here
+// is worth a second request to somebody else's server.
+func TestMeasuringDoesNotComeBackAfterATemporaryRefusal(t *testing.T) {
 	for _, code := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		st := testStore(t)
+		feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(code)
 		}))
+		now := time.Now()
+		if _, err := st.SaveItems(t.Context(), []*store.Item{{
+			ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+			ImageURL: host.URL + "/pic.png", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+		}}); err != nil {
+			t.Fatal(err)
+		}
+
 		payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
-		err := Measure(st, "test")(t.Context(), string(payload))
+		err = Measure(st, "test")(t.Context(), string(payload))
 		host.Close()
 
-		if err == nil {
-			t.Errorf("a %d looked like a measurement", code)
+		if !errors.Is(err, jobs.Drop) {
+			t.Errorf("a %d is queued for another go: %v", code, err)
 		}
-		// "Not now" is not "no". These are the two answers worth waiting out.
-		if errors.Is(err, jobs.Drop) {
-			t.Errorf("a %d was treated as final: %v", code, err)
+		// And the picture is marked, so the next top-up does not offer it again — which is
+		// the loop that made the queue impolite in the first place.
+		if urls, err := st.UnmeasuredImages(t.Context(), 10); err != nil || len(urls) != 0 {
+			t.Errorf("after a %d the picture is queued again: %v (%v)", code, urls, err)
 		}
 	}
 }
@@ -208,5 +226,35 @@ func TestOneMeasurementAnswersForEveryArticleSharingThePicture(t *testing.T) {
 	// And nothing is left to ask about.
 	if urls, err := st.UnmeasuredImages(t.Context(), 10); err != nil || len(urls) != 0 {
 		t.Errorf("still queued: %v (%v)", urls, err)
+	}
+}
+
+// A picture nothing can measure must stop being asked about.
+func TestAPictureThatCannotBeMeasuredIsNotAskedAboutForever(t *testing.T) {
+	st := testStore(t)
+	feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := st.SaveItems(t.Context(), []*store.Item{{
+		ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+		ImageURL: "https://example.com/gone.png", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The job runs, fails for good, and is dropped from the queue.
+	if err := st.GiveUpOnImage(t.Context(), "https://example.com/gone.png"); err != nil {
+		t.Fatalf("GiveUpOnImage(): %v", err)
+	}
+
+	// The queue must not offer it again on the next top-up.
+	urls, err := st.UnmeasuredImages(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(urls) != 0 {
+		t.Errorf("a picture that was given up on is queued again: %v", urls)
 	}
 }

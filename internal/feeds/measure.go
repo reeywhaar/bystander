@@ -46,6 +46,23 @@ type measurePayload struct {
 	URL string `json:"url"`
 }
 
+// give up on a picture, once and for all, whatever went wrong.
+//
+// Every failure ends here. There is no retry and no backoff: a picture nothing could measure
+// costs nothing, because the page draws a shape for it and looks exactly as it does now, so
+// no outcome is worth a second request to somebody else's server. A host that happens to be
+// down during its one moment is never measured, and that is a page that looks like the page
+// already looks.
+func giveUp(ctx context.Context, st *store.Store, url string, err error) error {
+	if mark := st.GiveUpOnImage(ctx, url); mark != nil {
+		// The write failed, so the queue will offer this again. Returning the write error
+		// rather than the drop keeps that visible instead of losing it behind a job that
+		// looks deliberately abandoned.
+		return mark
+	}
+	return fmt.Errorf("%w: %v", jobs.Drop, err)
+}
+
 // Measure asks how big a picture is, without downloading it.
 //
 // `image.DecodeConfig` reads exactly as far as the header and returns — so this is one request
@@ -63,14 +80,14 @@ func Measure(st *store.Store, agent string) jobs.Handler {
 	return func(ctx context.Context, payload string) error {
 		var job measurePayload
 		if err := json.Unmarshal([]byte(payload), &job); err != nil {
-			// Written by an older version of this program, and unreadable now. Nothing will
-			// change that.
+			// Written by an older version of this program, and unreadable now. There is no
+			// URL to mark, and nothing will change that.
 			return fmt.Errorf("%w: unreadable payload: %v", jobs.Drop, err)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, job.URL, nil)
 		if err != nil {
-			return fmt.Errorf("%w: %v", jobs.Drop, err)
+			return giveUp(ctx, st, job.URL, err)
 		}
 		req.Header.Set("User-Agent", agent)
 		req.Header.Set("Accept", "image/*")
@@ -79,34 +96,28 @@ func Measure(st *store.Store, agent string) jobs.Handler {
 
 		res, err := client.Do(req)
 		if err != nil {
-			// A refused connection, a DNS failure, a timeout. Any of them might be different
-			// tomorrow.
-			return err
+			// A refused connection, a DNS failure, a timeout. Some of these would be
+			// different tomorrow and none of them is worth finding out.
+			return giveUp(ctx, st, job.URL, err)
 		}
 		defer res.Body.Close()
 
-		switch {
-		case res.StatusCode == http.StatusOK, res.StatusCode == http.StatusPartialContent:
-			// Good.
-		case res.StatusCode == http.StatusTooManyRequests,
-			res.StatusCode >= 500 && res.StatusCode <= 599:
-			// The two answers that mean "not now" rather than "no". Backing off is the whole
-			// point of hearing them.
-			return fmt.Errorf("%s said %s", job.URL, res.Status)
-		default:
-			// 404, 403, 410, a redirect loop. Asking again is asking somebody to keep saying
-			// no on a timer.
-			return fmt.Errorf("%w: %s said %s", jobs.Drop, job.URL, res.Status)
+		// Every answer other than the picture is the same answer: this one is not measured.
+		// A 429 and a 404 differ in what they mean and not at all in what to do about them,
+		// once nothing is being retried.
+		if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusPartialContent {
+			return giveUp(ctx, st, job.URL, fmt.Errorf("%s said %s", job.URL, res.Status))
 		}
 
 		cfg, _, err := image.DecodeConfig(io.LimitReader(res.Body, measureBudget))
 		if err != nil {
 			// Not an image, or a format with no decoder registered — AVIF and SVG both land
-			// here. Neither becomes readable by being fetched again.
-			return fmt.Errorf("%w: could not read %s: %v", jobs.Drop, job.URL, err)
+			// here.
+			return giveUp(ctx, st, job.URL, fmt.Errorf("could not read %s: %v", job.URL, err))
 		}
 		if cfg.Width <= 0 || cfg.Height <= 0 {
-			return fmt.Errorf("%w: %s is %dx%d", jobs.Drop, job.URL, cfg.Width, cfg.Height)
+			return giveUp(ctx, st, job.URL,
+				fmt.Errorf("%s is %dx%d", job.URL, cfg.Width, cfg.Height))
 		}
 
 		if err := st.SetImageSize(ctx, job.URL, cfg.Width, cfg.Height); err != nil {

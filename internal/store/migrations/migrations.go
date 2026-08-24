@@ -81,6 +81,7 @@ var Derived = []Migration{
 	derivedItemLinkIndex,
 	derivedWideSlot,
 	derivedImageSize,
+	derivedImageProbed,
 }
 
 // exec is the shape almost every migration takes: some SQL, in its own transaction.
