@@ -41,6 +41,21 @@
   --negative: #b0392c;
 
   /*
+   * The same two, desaturated, for saying which way something went rather than switching it.
+   *
+   * A word next to a control is not the control. At full strength the labels beside a row of
+   * switches compete with the switches for the same glance, and a page of them reads as an
+   * alarm; greyed most of the way down, the hue is still the first thing you take in and the
+   * word is still the thing you read.
+   *
+   * Roughly six parts colour to four parts muted ink, which keeps them legible — 5.4:1 and
+   * 6.3:1 on raised paper against the 3.05:1 of the plain ink-faint they replaced, so this is
+   * more readable than what was there and not less.
+   */
+  --positive-quiet: #517353;
+  --negative-quiet: #944b3e;
+
+  /*
    * The two reading stacks. System faces, so nothing is fetched for the text somebody
    * actually reads and the page paints without waiting on a font. The headline faces are a
    * separate argument, made in fonts/fonts.css and in the voices below.
@@ -69,6 +84,8 @@
     --accent-quiet: #a85c45;
     --positive: #74b183;
     --negative: #e2796a;
+    --positive-quiet: #84a686;
+    --negative-quiet: #c68577;
   }
 }
 
@@ -84,6 +101,8 @@
   --color-accent-quiet: var(--accent-quiet);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-positive-quiet: var(--positive-quiet);
+  --color-negative-quiet: var(--negative-quiet);
 
   --font-serif: var(--serif);
   --font-sans: var(--sans);

@@ -115,7 +115,15 @@ function StanceList({
               {item.label}
             </span>
             {stance === "neutral" && item.defersTo !== undefined ? (
-              <span className="text-xs text-ink-faint">
+              // Tinted rather than coloured. It answers the same question the switch either
+              // side of it answers, so it should read in the same terms — but it is a note
+              // about what the tags did, not a control, and at full strength a column of them
+              // shouts over the switches they are annotating.
+              <span
+                className={`text-xs ${
+                  item.defersTo ? "text-positive-quiet" : "text-negative-quiet"
+                }`}
+              >
                 {item.defersTo ? "in" : "out"}
               </span>
             ) : null}
