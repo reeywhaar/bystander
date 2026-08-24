@@ -12,6 +12,10 @@ import (
 // released is every migration that has ever shipped, by name and by the sha256 of the file
 // that declares it.
 //
+// In the order they shipped, which is the order their names sort in. Nothing reads it that
+// way — the tests below treat it as a set — but it is a ledger of what has gone out, and a
+// ledger out of order is one nobody can scan for the entry they are looking for.
+//
 // This is what turns "never edit a released migration" from a comment into something the
 // build enforces. Every deployment past a given migration has already recorded it as
 // applied and will skip it forever, so editing one silently leaves the schema in front of
@@ -27,17 +31,17 @@ var released = []struct{ name, sha string }{
 	{"20260823030000_derived_initial_schema", "ec50025a77f339cb53322c5cf065eafb72fc862091f308380fc011c70912ba7f"},
 	{"20260823030000_main_initial_schema", "017213ba33a8a7bf1e649664b79c54da634172c52dfc04235ecc599bb9454489"},
 	{"20260823051000_derived_read_articles", "dc8052af5e712bccfcaf8ebc97c26de5764e560090bea6092e30227ca4eb3674"},
-	{"20260823201425_derived_item_link_index", "4acc0f208b17babb1ea7052bfab60897a5b0d193c87902922c4f50cef2464d57"},
-	{"20260823232919_derived_wide_slot", "4529e33544d2eed4609a104f5a7a27767e9d50276430d60aaffc33c1d1bba1fc"},
-	{"20260824013412_derived_image_size", "2db9ce454aa832729f26acf5b44ef25c1ac295f8ac276c524210f9597a688bd5"},
-	{"20260824015002_derived_image_probed", "14c8b02f812b241a948324d45e963f5ad9c8ed1b45bac81ebeea8604e76e2ae0"},
 	{"20260823061500_main_article_window", "c17ad1b36a3230a6767e9bc0e196d1c17f377e81c7ec2fe8c89ac88cf30a0f5f"},
 	{"20260823103614_main_article_window_per_feed", "77725541a887d569f18b1142fa82b32e6af3550c118b407bfdd5e78305dcb88b"},
 	{"20260823190043_main_recovery_email", "7e319816e63e89fe11991529e6b8b881365bfdc7542215f394e7b50c557c4e29"},
 	{"20260823190456_main_smtp_relay", "db61f782a58927b09822f80133c3f8494539ae2086ce9a8900b91f85dd54e79f"},
 	{"20260823195146_main_proved_recovery_email", "ed5ef7cc86cb7d380c17accb3bd5dd0d34afa0883c43d9ef1a6ac4c5f36db29c"},
+	{"20260823201425_derived_item_link_index", "4acc0f208b17babb1ea7052bfab60897a5b0d193c87902922c4f50cef2464d57"},
 	{"20260823203459_main_shares", "16d47cae350de5981d5b54324fd54e52fd82878fae7d9d4a18710d656882fe69"},
+	{"20260823232919_derived_wide_slot", "4529e33544d2eed4609a104f5a7a27767e9d50276430d60aaffc33c1d1bba1fc"},
+	{"20260824013412_derived_image_size", "2db9ce454aa832729f26acf5b44ef25c1ac295f8ac276c524210f9597a688bd5"},
 	{"20260824013604_main_jobs", "0dd9e98cbf2388108b4a07c21362bdd60061928c87377f66cd2b7a118054c3ed"},
+	{"20260824015002_derived_image_probed", "14c8b02f812b241a948324d45e963f5ad9c8ed1b45bac81ebeea8604e76e2ae0"},
 }
 
 func all() []Migration {
