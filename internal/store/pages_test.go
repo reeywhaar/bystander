@@ -77,12 +77,19 @@ func TestAPageIsMadeAndTakenAway(t *testing.T) {
 		t.Errorf("page = %+v, want no filtering to begin with", page)
 	}
 
-	found, err := s.PageBySlug(t.Context(), p.ID, "finances")
-	if err != nil {
-		t.Fatalf("PageBySlug(): %v", err)
+	for _, ref := range []string{"finances", page.ID} {
+		found, err := s.PageOf(t.Context(), p.ID, ref)
+		if err != nil {
+			t.Fatalf("PageOf(%q): %v", ref, err)
+		}
+		if found.ID != page.ID {
+			t.Errorf("PageOf(%q) found %s, want %s", ref, found.ID, page.ID)
+		}
 	}
-	if found.ID != page.ID {
-		t.Errorf("found %s, want %s", found.ID, page.ID)
+
+	// The empty reference is the main page, because that is the main page's address.
+	if main, err := s.PageOf(t.Context(), p.ID, ""); err != nil || !main.IsMain {
+		t.Errorf("PageOf(\"\") = %v, %v — want the main page", main, err)
 	}
 
 	// Main first, then by age — the order of the tab strip.

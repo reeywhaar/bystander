@@ -49,7 +49,7 @@ type feedStub struct {
 func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 
-	page, err := s.store.PageByID(r.Context(), store.MainPageID(p.ID))
+	page, err := s.store.PageOf(r.Context(), p.ID, r.URL.Query().Get("page"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -125,11 +125,17 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 // regenerate composes a page now and rebases the clock from this moment, so a manual
 // regeneration does not leave a stale timer about to fire.
 func (s *Server) regenerate(w http.ResponseWriter, r *http.Request) {
-	p := principalOf(r)
-	if _, err := s.gen.Regenerate(r.Context(), store.MainPageID(p.ID), s.store.Now()); err != nil {
+	page, err := s.store.PageOf(r.Context(), principalOf(r).ID, r.URL.Query().Get("page"))
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	if _, err := s.gen.Regenerate(r.Context(), page.ID, s.store.Now()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// Answers with the page it just composed, which is the one the caller asked for — s.edition
+	// reads the same query parameter.
 	s.edition(w, r)
 }
 

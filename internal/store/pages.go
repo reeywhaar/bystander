@@ -147,12 +147,28 @@ func (s *Store) PageByID(ctx context.Context, id string) (*Page, error) {
 	return page, s.loadPageLists(ctx, page)
 }
 
-// PageBySlug finds one of a person's pages by its address. An empty slug is the main page.
-func (s *Store) PageBySlug(ctx context.Context, principalID, slug string) (*Page, error) {
+// PageOf resolves one of a person's pages, by id or by address.
+//
+// Either, because both are how a page gets named: the interface addresses a page by its slug in
+// a URL, and everything else holds its id. One lookup rather than two endpoints, and it settles
+// ownership at the same time — a page belonging to somebody else is not found rather than
+// forbidden, since whether a stranger has a page called "finances" is not this caller's
+// business.
+//
+// An empty ref is the main page, which falls out of the query rather than being a special case:
+// the main page's slug is the empty string.
+func (s *Store) PageOf(ctx context.Context, principalID, ref string) (*Page, error) {
 	page, err := scanPage(s.main.QueryRowContext(ctx,
-		`SELECT `+pageColumns+` FROM pages WHERE principal_id = ? AND slug = ?`, principalID, slug))
+		`SELECT `+pageColumns+`
+		   FROM pages WHERE principal_id = ? AND (id = ? OR slug = ?)`,
+		principalID, ref, ref))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFound("no page %q", slug)
+		if ref == "" {
+			// Every account is created with one, so this is a database somebody has edited
+			// or a bug — either way not something to report as an ordinary missing page.
+			return nil, NotFound("no main page for %s", principalID)
+		}
+		return nil, NotFound("no page %q", ref)
 	}
 	if err != nil {
 		return nil, err

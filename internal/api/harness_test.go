@@ -247,6 +247,33 @@ func (h *harness) signInElsewhere(username, password string) *http.Client {
 	return client
 }
 
+// signInAsSomebodyElse creates a second account and hands back a client holding its session.
+//
+// A different person, not a second device — for the tests that are about one account not being
+// able to reach another's things.
+func (h *harness) signInAsSomebodyElse(username string) *http.Client {
+	h.t.Helper()
+
+	_, token, err := h.store.CreateInvite(h.t.Context(), store.RoleUser, "")
+	if err != nil {
+		h.t.Fatalf("CreateInvite(): %v", err)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		h.t.Fatalf("cookiejar.New(): %v", err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
+
+	res := h.doAs(client, http.MethodPost, "/api/invites/"+token+"/accept",
+		map[string]string{"username": username, "password": harnessPassword})
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		h.t.Fatalf("sign-in as %s answered %d", username, res.StatusCode)
+	}
+	return client
+}
+
 // feedServer serves a small RSS feed, and counts how often it was asked for.
 type feedServer struct {
 	*httptest.Server

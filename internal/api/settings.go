@@ -15,11 +15,11 @@ type settingsBody struct {
 
 // getSettings answers with the main page's cadence and size.
 //
-// These are a page's settings rather than a person's, and have been since pages became a list.
-// This endpoint stays pointed at the main page so that everything which knew about one page
-// keeps working while the interface catches up; the per-page controls will address a page by id.
+// A bridge, and a temporary one. These are a page's settings rather than a person's, and
+// /api/pages/{id} is where they belong now — this stays pointed at the main page only so that
+// the interface keeps working until it is taught about the others, and goes when it has been.
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	page, err := s.store.PageByID(r.Context(), store.MainPageID(principalOf(r).ID))
+	page, err := s.store.PageOf(r.Context(), principalOf(r).ID, "")
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -49,7 +49,12 @@ func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
 		d := time.Duration(*body.EditionInterval) * time.Second
 		patch.EditionInterval = &d
 	}
-	if err := s.store.UpdatePage(r.Context(), store.MainPageID(p.ID), patch); err != nil {
+	main, err := s.store.PageOf(r.Context(), p.ID, "")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.store.UpdatePage(r.Context(), main.ID, patch); err != nil {
 		s.fail(w, r, err)
 		return
 	}

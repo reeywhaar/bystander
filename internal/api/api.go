@@ -99,6 +99,14 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/account/recovery/confirm", s.requireSession(s.confirmRecovery))
 	mux.Handle("DELETE /api/account/recovery", s.requireSession(s.clearRecovery))
 
+	mux.Handle("GET /api/pages", s.requireSession(s.listPages))
+	mux.Handle("POST /api/pages", s.requireSession(s.createPage))
+	mux.Handle("GET /api/pages/{id}", s.requireSession(s.getPage))
+	mux.Handle("PATCH /api/pages/{id}", s.requireSession(s.patchPage))
+	mux.Handle("DELETE /api/pages/{id}", s.requireSession(s.deletePage))
+
+	// Both of these take an optional ?page=, by id or by address. Without one they answer for
+	// the main page, which is what the reader asks for at /.
 	mux.Handle("GET /api/edition", s.requireSession(s.edition))
 	mux.Handle("POST /api/edition/regenerate", s.requireSession(s.regenerate))
 	mux.Handle("GET /api/read", s.requireSession(s.readArticles))
