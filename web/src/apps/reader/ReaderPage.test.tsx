@@ -1,9 +1,9 @@
 import { screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Article, Edition, Me } from "@app/api/types";
+import type { Article, Edition, Me, Page } from "@app/api/types";
 import { renderWith } from "@app/test/harness";
 
 import { ReaderPage } from "@app/apps/reader/ReaderPage";
@@ -43,6 +43,105 @@ function edition(items: Article[]): Edition {
     items,
   };
 }
+
+/** A front page, as the tab strip sees it. */
+function page(overrides: Partial<Page> = {}): Page {
+  return {
+    id: "pg_1",
+    name: "Front Page",
+    slug: "",
+    is_main: true,
+    edition_interval: 86400,
+    edition_size: 60,
+    next_edition_at: 1_787_000_000,
+    max_article_age: 0,
+    tag_filter: "no",
+    feed_filter: "all",
+    tag_ids: [],
+    feed_ids: [],
+    ...overrides,
+  };
+}
+
+/** The reader as it is actually mounted: two routes onto one component. */
+function reader() {
+  return (
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<ReaderPage me={me} />} />
+        <Route path="/f/:slug" element={<ReaderPage me={me} />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+describe("ReaderPage composing", () => {
+  let scrolled: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    // jsdom has a window.scrollTo that refuses to do anything and complains; this is also
+    // the only way to see that it was asked.
+    scrolled = vi.fn();
+    vi.stubGlobal("scrollTo", scrolled);
+  });
+
+  const refusal = {
+    "GET /api/pages": {
+      body: [
+        page(),
+        page({ id: "pg_2", name: "Art", slug: "art", is_main: false }),
+      ],
+    },
+    "GET /api/edition": { body: edition([article("a_1")]) },
+    "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
+    "POST /api/edition/regenerate": {
+      status: 409,
+      body: {
+        error:
+          "everything here has been read, and nothing new has been published yet",
+      },
+    },
+  };
+
+  // The button is at the bottom of the page and everything it has to say is at the top. It
+  // scrolled only on success, so a refusal looked like the button doing nothing at all.
+  it("goes back to the top whether or not it composed anything", async () => {
+    renderWith(reader(), refusal);
+    const compose = await screen.findByRole("button", {
+      name: "Make a different page",
+    });
+
+    // Arriving at the page scrolls to the top as well, so only what happens after the
+    // press says anything about the press.
+    scrolled.mockClear();
+    await userEvent.click(compose);
+
+    expect(
+      await screen.findByText(/everything here has been read/),
+    ).toBeInTheDocument();
+    expect(scrolled).toHaveBeenCalledWith({ top: 0 });
+  });
+
+  // Both routes render this component, so React hands it new props rather than remounting —
+  // and the refusal sat there over a page it was never said of.
+  it("leaves the last page's refusal behind when you move to another tab", async () => {
+    renderWith(reader(), refusal);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Make a different page" }),
+    );
+    await screen.findByText(/everything here has been read/);
+
+    scrolled.mockClear();
+    await userEvent.click(screen.getByRole("link", { name: "Art" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/everything here has been read/)).toBeNull();
+    });
+    // And arriving at a different page means arriving at the top of it.
+    expect(scrolled).toHaveBeenCalledWith({ top: 0 });
+  });
+});
 
 describe("ReaderPage", () => {
   it("lays out the page it was given", async () => {

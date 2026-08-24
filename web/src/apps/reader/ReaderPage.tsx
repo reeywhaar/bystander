@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useParams } from "react-router";
 
 import { ApiError } from "@app/api/error";
@@ -29,9 +29,24 @@ export function ReaderPage({ me }: { me: Me }) {
   const edition = useEdition(slug);
   const setRead = useSetRead();
   const regenerate = useRegenerate(slug);
+  const resetCompose = regenerate.reset;
   // Which page this is, for the empty state: a page filtered to nothing is empty for a
   // completely different reason from an account with no feeds.
   const pages = usePages();
+
+  // Moving to another tab is arriving at a different front page, and nothing about the last
+  // one should survive it.
+  //
+  // Both routes render this same component, so React keeps the instance and hands it new
+  // props rather than remounting — which is what makes the two things below necessary rather
+  // than automatic. "Everything here has been read" is about the page it was said of, and it
+  // sat there over the top of a page nobody had composed yet. And the scroll position belongs
+  // to the page being left; carrying it over drops somebody into the middle of one they have
+  // not seen the top of.
+  useEffect(() => {
+    resetCompose();
+    window.scrollTo({ top: 0 });
+  }, [slug, resetCompose]);
   // Only to tell the two empty states apart: somebody with no feeds needs a different
   // sentence from somebody whose feeds have not been fetched yet.
   const feeds = useFeeds();
@@ -159,10 +174,16 @@ export function ReaderPage({ me }: { me: Me }) {
               <Button
                 onClick={() =>
                   regenerate.mutate(undefined, {
-                    // The page underneath has been replaced entirely, and this button is
-                    // at the bottom of the old one. Staying put would land somebody in the
-                    // middle of a page they have not seen the top of.
-                    onSuccess: () => window.scrollTo({ top: 0 }),
+                    // Whatever came of it, the thing to look at is at the top and this
+                    // button is at the bottom.
+                    //
+                    // On success the page underneath has been replaced entirely, and
+                    // staying put would land somebody in the middle of one they have not
+                    // seen the top of. On a refusal — everything here read, nothing new
+                    // published — the sentence saying so is also at the top, and this used
+                    // to scroll only on success: you pressed the button, nothing appeared
+                    // to happen, and the explanation was several screens above you.
+                    onSettled: () => window.scrollTo({ top: 0 }),
                   })
                 }
                 disabled={regenerate.isPending}
