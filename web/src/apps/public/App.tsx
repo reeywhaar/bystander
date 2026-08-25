@@ -1,15 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
 
 import type { PublicPage } from "@app/api/types";
 import { getPublicPage } from "@app/api/actions/public";
+import { SignInDialog } from "@app/apps/public/SignInDialog";
 import { useApiCall } from "@app/api/provider";
 import { ArticleCard } from "@app/apps/reader/ArticleCard";
+import { Masthead as AppMasthead } from "@app/components/Masthead";
 import { Boundary } from "@app/components/Boundary";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useMasonry } from "@app/lib/masonry";
-import { useSetRead } from "@app/queries/hooks";
+import { useMe, useSetRead } from "@app/queries/hooks";
 import { assignVoices, styleFor } from "@app/lib/voice";
 
 /**
@@ -43,6 +44,11 @@ function PublicPage({ person, page }: { person: string; page: string }) {
   const callApi = useApiCall();
   const grid = useRef<HTMLDivElement>(null);
 
+  // Who is looking, if anybody. The page itself already says whether the request carried a
+  // session — this is for the masthead, which should look like the rest of the application to
+  // somebody who has an account here rather than inviting them to sign in again.
+  const me = useMe();
+  const [signingIn, setSigningIn] = useState(false);
   const cacheKey = ["public", person, page];
   const published = useQuery({
     queryKey: cacheKey,
@@ -106,7 +112,11 @@ function PublicPage({ person, page }: { person: string; page: string }) {
 
   return (
     <>
-      <Masthead />
+      {me.data ? (
+        <AppMasthead me={me.data} />
+      ) : (
+        <GuestMasthead onSignIn={() => setSigningIn(true)} />
+      )}
       <main className="mx-auto max-w-[1400px] px-6 py-8">
         {missing ? (
           <Gone />
@@ -162,18 +172,35 @@ function PublicPage({ person, page }: { person: string; page: string }) {
           </>
         )}
       </main>
+
+      <SignInDialog
+        open={signingIn}
+        onClose={(signedIn) => {
+          setSigningIn(false);
+          // Everything on screen depends on who is looking: the masthead, and whether the
+          // cards carry a way to mark them read. Both are asked again rather than patched,
+          // because the answer comes from the server either way.
+          if (signedIn) {
+            void client.invalidateQueries();
+          }
+        }}
+      />
     </>
   );
 }
 
 /**
- * The band across the top, and it is not the reader's.
+ * The band across the top, for somebody with no account here.
  *
- * A wordmark and a way in, and nothing else. No settings, no account, no tagline, and no name
- * of whoever published this — the address already carries the one identity they chose to
- * expose, and a username beside it would expose one they did not.
+ * A wordmark and a way in, and nothing else. No settings, no tagline, and no name of whoever
+ * published this — the address already carries the one identity they chose to expose, and a
+ * username beside it would expose one they did not.
+ *
+ * Somebody who *is* signed in gets the application's own masthead instead. They have an
+ * account, they can mark things read here, and being invited to sign in again reads as the
+ * page not knowing who they are — which it does.
  */
-function Masthead() {
+function GuestMasthead({ onSignIn }: { onSignIn: () => void }) {
   return (
     <header className="border-b border-rule">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-5">
@@ -181,9 +208,16 @@ function Masthead() {
           bystander
         </a>
         <div className="flex basis-full items-center gap-4 text-sm sm:ml-auto sm:basis-auto">
-          <a href="/login" className="text-ink-muted hover:text-ink">
+          {/* A button, not a link to the login island. Signing in here is not the errand —
+              they are reading a page, and being sent away and brought back would lose their
+              place in it for a gesture made in passing. */}
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="text-ink-muted hover:text-ink"
+          >
             Sign in
-          </a>
+          </button>
         </div>
       </div>
     </header>
