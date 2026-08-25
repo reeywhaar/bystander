@@ -117,16 +117,14 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 		return nil, fmt.Errorf("create edition: %w", err)
 	}
 
-	// read_at is carried over from the month-long record rather than left null.
-	//
-	// It only ever fires for an article being shown again — a fresh one has never been on
-	// a page, so nobody can have read it. Without this, an article somebody read last week
-	// would come back looking new, which is the one thing a page that repeats itself must
-	// not do.
+	// Nothing about reading is written here. It used to be — the mark was copied forward
+	// from read_articles so that an article shown again did not come back looking new — and
+	// that copy was the whole problem: a second place for a fact that has one home, which
+	// every write then had to remember to keep in step. The edition says what is on the page;
+	// whether somebody has read it is a fact about them and the article, and it is looked up
+	// when the page is read.
 	item, err := tx.PrepareContext(ctx,
-		`INSERT INTO edition_items (edition_id, item_id, rank, slot, read_at)
-		 VALUES (?, ?, ?, ?,
-		   (SELECT read_at FROM read_articles WHERE principal_id = ? AND item_id = ?))`)
+		`INSERT INTO edition_items (edition_id, item_id, rank, slot) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +140,7 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 	defer shown.Close()
 
 	for _, pick := range picks {
-		if _, err := item.ExecContext(ctx, ed.ID, pick.Item.ID, pick.Rank, string(pick.Slot),
-			principalID, pick.Item.ID); err != nil {
+		if _, err := item.ExecContext(ctx, ed.ID, pick.Item.ID, pick.Rank, string(pick.Slot)); err != nil {
 			return nil, fmt.Errorf("place article %s: %w", pick.Item.ID, err)
 		}
 		if _, err := shown.ExecContext(ctx, page.ID, pick.Item.FeedID, GUIDHash(pick.Item.GUID), unix(now)); err != nil {
@@ -168,7 +165,7 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 // timestamp and a random tail, so two minted in the same millisecond order at random — which
 // meant the reader was shown the *older* of the two editions about one time in ten. It was a
 // test failing intermittently that said so.
-func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []*EditionItem, error) {
+func (s *Store) CurrentEdition(ctx context.Context, pageID, viewerID string) (*Edition, []*EditionItem, error) {
 	var (
 		ed        Edition
 		generated int64
@@ -188,11 +185,18 @@ func (s *Store) CurrentEdition(ctx context.Context, pageID string) (*Edition, []
 
 	// The item's own columns come from the one list in items.go rather than a copy here. A
 	// copy is what this was, and it silently went stale — see [itemColumnsFrom].
+	//
+	// The read mark is joined from read_articles rather than carried on the edition, and it
+	// is the *viewer's*. On somebody's own page the viewer is the owner and nothing changes;
+	// on a page they published it is whoever is looking, so a visitor sees their own reading
+	// and never the owner's. An empty viewer — a stranger — reads nothing.
 	rows, err := s.derived.QueryContext(ctx,
-		`SELECT `+prefixed(itemColumns, "i")+`, e.rank, e.slot, e.read_at
-		   FROM edition_items e JOIN items i ON i.id = e.item_id
+		`SELECT `+prefixed(itemColumns, "i")+`, e.rank, e.slot, r.read_at
+		   FROM edition_items e
+		   JOIN items i          ON i.id = e.item_id
+		   LEFT JOIN read_articles r ON r.item_id = e.item_id AND r.principal_id = ?
 		  WHERE e.edition_id = ?
-		  ORDER BY e.rank`, ed.ID)
+		  ORDER BY e.rank`, viewerID, ed.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -249,50 +253,26 @@ type ReadArticle struct {
 func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bool) error {
 	now := s.Now()
 
-	tx, err := s.derived.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Every one of this person's live editions, not just the page they were looking at.
-	//
-	// Reading is a fact about a person and an article. The same article can sit on a page of
-	// everything and on a page filtered to one tag at the same time, and seeing it unread on the
-	// next tab having just read it reads as a bug rather than as a distinction anybody wanted.
-	res, err := tx.ExecContext(ctx, currentEditions+`
-		UPDATE edition_items SET read_at = ?
-		 WHERE item_id = ?
-		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)`,
-		nullTime(readAt(now, read)), itemID, principalID)
-	if err != nil {
-		return err
-	}
-	// At least one, rather than exactly one: an article on two pages updates two rows, and
-	// that is the point of the query above.
-	if err := expectSome(res, NotFound("that article is not on any of your pages")); err != nil {
-		return err
-	}
-
 	if read {
-		// INSERT ... SELECT so the article's details are copied inside the transaction
-		// rather than read out and written back. OR REPLACE because reading something,
-		// unreading it and reading it again should record the latest moment, not fail.
-		if _, err := tx.ExecContext(ctx,
+		// INSERT ... SELECT so the article's details are copied by the database rather than
+		// read out and written back. OR REPLACE because reading something, unreading it and
+		// reading it again should record the latest moment, not fail.
+		//
+		// A missing article writes nothing and says nothing, which is the right answer: it
+		// has been pruned, and there is no longer anything to have read.
+		_, err := s.derived.ExecContext(ctx,
 			`INSERT OR REPLACE INTO read_articles
 			   (principal_id, item_id, feed_id, title, link, published_at, read_at)
 			 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
 			   FROM items i WHERE i.id = ?`,
-			principalID, unix(now), itemID); err != nil {
-			return err
-		}
-	} else if _, err := tx.ExecContext(ctx,
-		`DELETE FROM read_articles WHERE principal_id = ? AND item_id = ?`,
-		principalID, itemID); err != nil {
+			principalID, unix(now), itemID)
 		return err
 	}
 
-	return tx.Commit()
+	_, err := s.derived.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE principal_id = ? AND item_id = ?`,
+		principalID, itemID)
+	return err
 }
 
 // ReadArticles is what this person has read lately, newest first.
@@ -405,7 +385,9 @@ func (s *Store) ReleaseUnread(ctx context.Context, pageID string) (int64, error)
 		  JOIN edition_items e ON e.edition_id = ed.id
 		  JOIN items i         ON i.id = e.item_id
 		 WHERE ed.page_id = ?
-		   AND e.read_at IS NULL`,
+		   AND NOT EXISTS (
+		         SELECT 1 FROM read_articles r
+		          WHERE r.principal_id = ed.principal_id AND r.item_id = e.item_id)`,
 		pageID)
 	if err != nil {
 		return 0, err
@@ -571,19 +553,6 @@ func (s *Store) MarkFeedRead(ctx context.Context, principalID, feedID string, be
 	}
 	marked, _ := res.RowsAffected()
 
-	// And the cards on screen. Only the ones not already read, for the same reason: a mark
-	// somebody made themselves is theirs, and this should not restamp it.
-	if _, err := tx.ExecContext(ctx, currentEditions+`
-		UPDATE edition_items SET read_at = ?
-		 WHERE read_at IS NULL
-		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)
-		   AND item_id IN (
-		         SELECT id FROM items
-		          WHERE feed_id = ? AND (? = 0 OR published_at < ?))`,
-		unix(now), principalID, feedID, bounded, cutoff); err != nil {
-		return 0, err
-	}
-
 	return marked, tx.Commit()
 }
 
@@ -609,15 +578,5 @@ func (s *Store) UnmarkFeedRead(ctx context.Context, principalID, feedID string) 
 		return 0, err
 	}
 	forgotten, _ := res.RowsAffected()
-
-	if _, err := tx.ExecContext(ctx, currentEditions+`
-		UPDATE edition_items SET read_at = NULL
-		 WHERE read_at IS NOT NULL
-		   AND edition_id IN (SELECT id FROM current WHERE principal_id = ?)
-		   AND item_id IN (SELECT id FROM items WHERE feed_id = ?)`,
-		principalID, feedID); err != nil {
-		return 0, err
-	}
-
 	return forgotten, tx.Commit()
 }

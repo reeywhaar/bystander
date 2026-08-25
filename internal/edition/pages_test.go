@@ -83,7 +83,7 @@ func (in *instance) page(t *testing.T, slug string, patch store.PagePatch) *stor
 
 func titlesOf(t *testing.T, st *store.Store, pageID string) []string {
 	t.Helper()
-	_, items, err := st.CurrentEdition(context.Background(), pageID)
+	_, items, err := st.CurrentEdition(context.Background(), pageID, "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -287,7 +287,8 @@ func TestReadingAnArticleReadsItOnEveryPageItIsOn(t *testing.T) {
 	}
 
 	for _, page := range []*store.Page{main, second} {
-		_, entries, err := in.store.CurrentEdition(ctx, page.ID)
+		// Read as the person who read it: the mark is theirs and the join is against them.
+		_, entries, err := in.store.CurrentEdition(ctx, page.ID, in.principal.ID)
 		if err != nil {
 			t.Fatalf("CurrentEdition(): %v", err)
 		}
@@ -304,7 +305,7 @@ func TestReadingAnArticleReadsItOnEveryPageItIsOn(t *testing.T) {
 		t.Fatalf("SetRead(): %v", err)
 	}
 	for _, page := range []*store.Page{main, second} {
-		_, entries, _ := in.store.CurrentEdition(ctx, page.ID)
+		_, entries, _ := in.store.CurrentEdition(ctx, page.ID, in.principal.ID)
 		if entries[0].Read() {
 			t.Errorf("%q is still read on %s after being unread elsewhere", shared.Title, page.ID)
 		}
@@ -402,7 +403,7 @@ func TestAPageDoesNotDrawWhatYouHaveAlreadyRead(t *testing.T) {
 	if _, err := in.gen.Generate(ctx, money.ID); err != nil {
 		t.Fatalf("Generate(): %v", err)
 	}
-	_, onMoney, err := in.store.CurrentEdition(ctx, money.ID)
+	_, onMoney, err := in.store.CurrentEdition(ctx, money.ID, "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -426,7 +427,7 @@ func TestAPageDoesNotDrawWhatYouHaveAlreadyRead(t *testing.T) {
 		t.Fatalf("Generate(): %v", err)
 	}
 
-	_, onMain, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, onMain, err := in.store.CurrentEdition(ctx, in.pageID(), in.principal.ID)
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}

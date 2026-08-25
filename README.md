@@ -87,6 +87,10 @@ published page moves with it, because the address is built from the name rather 
 beside the page — so the old links stop working, which is what changing your name means. Give it
 up and the pages come down with it.
 
+Signed in, somebody else's published page has the same controls yours does — you can mark an
+article read there and it counts, wherever else it turns up. It is the one thing you cannot do
+that you can on your own: compose a new page, because it is not yours to compose.
+
 **The instance decides whether any of this is possible**, under Admin → Publishing, and both
 answers start as no. Publishing is one switch; search-engine indexing is a second, and the
 asymmetry is deliberate. Taking a page down is a switch. Taking it out of somebody else's search

@@ -150,7 +150,7 @@ func TestThePageIsTheNewestEdition(t *testing.T) {
 		}
 	}
 
-	ed, _, err := s.CurrentEdition(ctx, "pg_p_1")
+	ed, _, err := s.CurrentEdition(ctx, "pg_p_1", "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -166,7 +166,7 @@ func TestThePageIsTheNewestEdition(t *testing.T) {
 	if n != 2 {
 		t.Errorf("collected %d editions, want the 2 behind the newest", n)
 	}
-	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1"); err != nil || ed.ID != "e_2" {
+	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1", ""); err != nil || ed.ID != "e_2" {
 		t.Errorf("after collecting: %v, %v — the live edition should be untouched", ed, err)
 	}
 }
@@ -192,7 +192,7 @@ func TestTwoEditionsInOneSecondKeepTheirOrder(t *testing.T) {
 		}
 	}
 
-	ed, _, err := s.CurrentEdition(ctx, "pg_p_1")
+	ed, _, err := s.CurrentEdition(ctx, "pg_p_1", "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -204,7 +204,7 @@ func TestTwoEditionsInOneSecondKeepTheirOrder(t *testing.T) {
 	if n, err := s.PruneOldEditions(ctx); err != nil || n != 1 {
 		t.Fatalf("PruneOldEditions() = %d, %v — want the first one collected", n, err)
 	}
-	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1"); err != nil || ed.ID != "e_aaa_written_second" {
+	if ed, _, err := s.CurrentEdition(ctx, "pg_p_1", ""); err != nil || ed.ID != "e_aaa_written_second" {
 		t.Errorf("after collecting: %v, %v — the live edition should have survived", ed, err)
 	}
 }
@@ -229,7 +229,7 @@ func TestEachPageKeepsItsOwnEdition(t *testing.T) {
 		t.Fatalf("PruneOldEditions() = %d, %v — want only e_1 collected", n, err)
 	}
 	for page, want := range map[string]string{"pg_p_1": "e_2", "art": "e_3"} {
-		ed, _, err := s.CurrentEdition(ctx, page)
+		ed, _, err := s.CurrentEdition(ctx, page, "")
 		if err != nil {
 			t.Fatalf("CurrentEdition(%s): %v", page, err)
 		}

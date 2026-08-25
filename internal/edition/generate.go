@@ -283,7 +283,9 @@ func (g *Generator) Regenerate(ctx context.Context, pageID string, now time.Time
 		// Everything on the page has been read and the feeds have published nothing
 		// since. Unread articles were already returned to the pool above, so there is
 		// genuinely nothing left to arrange.
-		if _, _, err := g.store.CurrentEdition(ctx, pageID); err == nil {
+		// No viewer: this only asks whether a page has an edition at all, and whether
+		// anybody has read what is on it does not bear on that.
+		if _, _, err := g.store.CurrentEdition(ctx, pageID, ""); err == nil {
 			return nil, store.Conflict("everything here has been read, and nothing new has been published yet")
 		}
 		return nil, store.NotFound("there is nothing to put on a page yet — add a feed, and give it a moment to fetch")

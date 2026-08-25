@@ -1,13 +1,15 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 
+import type { PublicPage } from "@app/api/types";
 import { getPublicPage } from "@app/api/actions/public";
 import { useApiCall } from "@app/api/provider";
 import { ArticleCard } from "@app/apps/reader/ArticleCard";
 import { Boundary } from "@app/components/Boundary";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useMasonry } from "@app/lib/masonry";
+import { useSetRead } from "@app/queries/hooks";
 import { assignVoices, styleFor } from "@app/lib/voice";
 
 /**
@@ -41,12 +43,45 @@ function PublicPage({ person, page }: { person: string; page: string }) {
   const callApi = useApiCall();
   const grid = useRef<HTMLDivElement>(null);
 
+  const cacheKey = ["public", person, page];
   const published = useQuery({
-    queryKey: ["public", person, page],
+    queryKey: cacheKey,
     queryFn: ({ signal }) => callApi(getPublicPage(person, page), signal),
     enabled: person !== "" && page !== "",
     retry: false,
   });
+
+  // The same hook the reader uses, and the same endpoint behind it. Marking something read on
+  // somebody else's page records it against *you*: reading is a fact about a person and an
+  // article, and whose page it was seen on does not come into it. So it also greys the article
+  // wherever it sits on your own pages, which is the rule that already held between two of
+  // your own.
+  const setRead = useSetRead();
+  const client = useQueryClient();
+
+  // Greyed the moment it is pressed, as it is on the reader. The shared hook writes its
+  // optimistic update against the reader's own cache, which this page does not share — so the
+  // same courtesy is done here rather than left to a round trip. The gesture is "I have
+  // finished with this one", and a card that waits before greying makes it feel like a
+  // request rather than a statement.
+  const mark = (id: string, read: boolean) => {
+    client.setQueryData<PublicPage>(cacheKey, (current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((article) =>
+              article.id === id
+                ? {
+                    ...article,
+                    read_at: read ? Math.floor(Date.now() / 1000) : null,
+                  }
+                : article,
+            ),
+          }
+        : current,
+    );
+    setRead.mutate({ id, read });
+  };
 
   useMasonry(grid, [
     published.data?.generated_at,
@@ -100,14 +135,17 @@ function PublicPage({ person, page }: { person: string; page: string }) {
 
                 let ruledAt = 0;
                 return items.flatMap((article, i) => {
-                  // No onRead: nobody here can mark anything, and the card leaves the
-                  // control out rather than showing one that refuses.
+                  // Offered only to somebody with an account. A stranger gets no control
+                  // rather than one that refuses — the card leaves it out entirely, which
+                  // is also what stops the page advertising what an account would let you
+                  // do.
                   const card = (
                     <ArticleCard
                       key={article.id}
                       article={article}
                       style={styles[i]!}
                       voice={voices[i]!}
+                      onRead={published.data.signed_in ? mark : undefined}
                     />
                   );
                   if (i > 0 && styles[i]!.rule && i - ruledAt >= 4) {

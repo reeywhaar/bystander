@@ -84,7 +84,7 @@ func (in *instance) pageID() string { return store.MainPageID(in.principal.ID) }
 // titles is what is on the live page, by title, so a failure names the articles.
 func (in *instance) titles(t *testing.T) []string {
 	t.Helper()
-	_, items, err := in.store.CurrentEdition(context.Background(), in.pageID())
+	_, items, err := in.store.CurrentEdition(context.Background(), in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRegenerateKeepsReadArticlesSpent(t *testing.T) {
 
 	in.scheduledTurn(t, now)
 
-	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -228,7 +228,7 @@ func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
 
 	in.scheduledTurn(t, now)
 
-	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -302,7 +302,7 @@ func TestARepeatKeepsItsReadMark(t *testing.T) {
 	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 
 	in.scheduledTurn(t, now)
-	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -314,7 +314,9 @@ func TestARepeatKeepsItsReadMark(t *testing.T) {
 	// Nothing fresh at all, so the whole next page is repeats.
 	in.scheduledTurn(t, now.Add(24*time.Hour))
 
-	_, next, err := in.store.CurrentEdition(ctx, in.pageID())
+	// The viewer is the person whose reading this is about — read marks are theirs, not
+	// the edition's.
+	_, next, err := in.store.CurrentEdition(ctx, in.pageID(), in.principal.ID)
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -354,7 +356,7 @@ func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
 
 	// Show everything across two pages, reading the first page through.
 	in.scheduledTurn(t, now)
-	_, first, _ := in.store.CurrentEdition(ctx, in.pageID())
+	_, first, _ := in.store.CurrentEdition(ctx, in.pageID(), "")
 	for _, entry := range first {
 		if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
 			t.Fatalf("SetRead(): %v", err)
@@ -366,7 +368,7 @@ func TestBackfillPrefersWhatWasNeverRead(t *testing.T) {
 	// be the ten nobody read.
 	in.scheduledTurn(t, now.Add(48*time.Hour))
 
-	_, third, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, third, err := in.store.CurrentEdition(ctx, in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}
@@ -407,7 +409,7 @@ func TestThePageGetsTheWholeArticle(t *testing.T) {
 		t.Fatalf("Generate(): %v", err)
 	}
 
-	_, items, err := in.store.CurrentEdition(ctx, in.pageID())
+	_, items, err := in.store.CurrentEdition(ctx, in.pageID(), "")
 	if err != nil {
 		t.Fatalf("CurrentEdition(): %v", err)
 	}

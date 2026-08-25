@@ -199,8 +199,23 @@ func TestOnePersonCannotReachAnother(t *testing.T) {
 	h.expect(h.do(http.MethodPatch, "/api/tags/"+aliceTag.ID,
 		map[string]any{"name": "Stolen"}), http.StatusNotFound, nil)
 	h.expect(h.do(http.MethodDelete, "/api/tags/"+aliceTag.ID, nil), http.StatusNotFound, nil)
-	// The article id is shared by everybody who follows that feed, so this is the case the
-	// join through editions exists to refuse.
+	// Marking an article read is the exception, and it is not a hole.
+	//
+	// It used to be refused, back when a read mark was a column on the edition and writing
+	// one meant writing to a particular page. It is now a fact about a person and an
+	// article, stored once against whoever did the reading — so Bob marking Alice's article
+	// records that *Bob* read it and touches nothing of hers. Which is also what lets one
+	// endpoint serve a page somebody else published.
 	h.expect(h.do(http.MethodPut, "/api/edition/items/"+alicePage.Items[0].ID+"/read", nil),
-		http.StatusNotFound, nil)
+		http.StatusNoContent, nil)
+
+	// The part that matters: Alice's own page is exactly as she left it.
+	alice := h.signInElsewhere("alice", harnessPassword)
+	var hers editionBody
+	h.expect(h.doAs(alice, http.MethodGet, "/api/edition", nil), http.StatusOK, &hers)
+	for _, item := range hers.Items {
+		if item.ReadAt != nil {
+			t.Errorf("%q was marked read on Alice's page by somebody else", item.Title)
+		}
+	}
 }

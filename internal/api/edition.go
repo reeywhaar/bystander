@@ -55,7 +55,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID)
+	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID, p.ID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Not a 404. "Your page has not been generated yet" is a state the reader
@@ -192,6 +192,17 @@ func (s *Server) markRead(w http.ResponseWriter, r *http.Request)   { s.setRead(
 func (s *Server) markUnread(w http.ResponseWriter, r *http.Request) { s.setRead(w, r, false) }
 
 func (s *Server) setRead(w http.ResponseWriter, r *http.Request, read bool) {
+	// Any article, and no check that it is on a page of yours.
+	//
+	// There used to be one, and it guarded something that no longer exists: a read mark was
+	// once a column on the edition, so writing it meant writing to a particular page. It is
+	// now a fact about a person and an article, stored once against the person doing the
+	// reading — so the worst an id from nowhere can do is mark something read for the person
+	// who sent it, which is not a thing worth refusing.
+	//
+	// That is also what lets this one endpoint serve a page somebody else published. For
+	// somebody signed in, such a page has the same controls as their own — they simply
+	// cannot compose a new one, because it is not theirs to compose.
 	if err := s.store.SetRead(r.Context(), principalOf(r).ID, r.PathValue("id"), read); err != nil {
 		s.fail(w, r, err)
 		return

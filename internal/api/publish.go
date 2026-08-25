@@ -158,8 +158,14 @@ type publicPageBody struct {
 	GeneratedAt int64  `json:"generated_at"`
 	// Indexable is whether a search engine may keep this. Both the owner and the instance
 	// have to say yes, and this is the answer after both were asked.
-	Indexable bool          `json:"indexable"`
-	Items     []articleBody `json:"items"`
+	Indexable bool `json:"indexable"`
+	// SignedIn is whether whoever asked has an account here.
+	//
+	// The page needs it to decide whether to offer a way to mark anything read: a control
+	// that exists and refuses is worse than one that is not there, and a stranger has no
+	// read state for it to act on.
+	SignedIn bool          `json:"signed_in"`
+	Items    []articleBody `json:"items"`
 }
 
 // publicPage serves somebody's published page to anybody at all.
@@ -179,13 +185,28 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolved rather than required, which is the one endpoint here that does. A session is
+	// not needed to read this and is used when there is one: the read marks on the page are
+	// then the visitor's own. Never the owner's — whether they have read something is a fact
+	// about them, and publishing a page is not an offer to publish that too.
+	viewer, err := s.sessions.Resolve(r.Context(), w, r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var viewerID string
+	if viewer != nil {
+		viewerID = viewer.ID
+	}
+
 	body := publicPageBody{
 		Name:      page.Name,
 		Indexable: page.Indexable,
+		SignedIn:  viewer != nil,
 		Items:     []articleBody{},
 	}
 
-	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID)
+	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID, viewerID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// A published page that has not been composed yet is a page with nothing on
@@ -212,9 +233,7 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 
 	body.GeneratedAt = ed.GeneratedAt.Unix()
 	for _, entry := range items {
-		// ReadAt is left nil for everybody, which is the whole difference between this and
-		// the owner's own view of the same edition.
-		body.Items = append(body.Items, articleBody{
+		article := articleBody{
 			ID:          entry.Item.ID,
 			Rank:        entry.Rank,
 			Slot:        string(entry.Slot),
@@ -227,7 +246,15 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 			ImageHeight: entry.Item.ImageHeight,
 			PublishedAt: entry.Item.PublishedAt.Unix(),
 			Feed:        titles[entry.Item.FeedID],
-		})
+		}
+		// The visitor's own mark, or none. A stranger has no read state and every article
+		// arrives unmarked, which is the difference between reading somebody's page and
+		// reading their reading.
+		if entry.Read() {
+			at := entry.ReadAt.Unix()
+			article.ReadAt = &at
+		}
+		body.Items = append(body.Items, article)
 	}
 	writeJSON(w, http.StatusOK, body)
 }

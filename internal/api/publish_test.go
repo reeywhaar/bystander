@@ -180,3 +180,91 @@ func TestPublishingBelongsToTheOwner(t *testing.T) {
 	h.expect(h.do(http.MethodPut, "/api/admin/instance",
 		map[string]any{"public_pages": true}), http.StatusForbidden, nil)
 }
+
+// A signed-in visitor reads somebody else's page, and their own marks are their own.
+//
+// Two things have to be true at once and they pull in opposite directions. The owner's reading
+// is never shown — whether they have read something is a fact about them, and publishing a page
+// is not an offer to publish that too. And a visitor's own reading *is* shown, because a read
+// mark is a fact about a person and an article and does not care whose page it was seen on.
+func TestAVisitorSeesTheirOwnReadingAndNotTheOwners(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 6)
+
+	h.signIn(store.RoleUser, "alice")
+	h.allowPublishing(t, false)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	var alicePage editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &alicePage)
+	h.expect(h.do(http.MethodPut, "/api/account/public-name", map[string]string{"name": "misha"}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPut, "/api/pages/"+h.mainPage()+"/publish",
+		map[string]any{"slug": "front"}), http.StatusOK, nil)
+
+	// Alice reads one of her own.
+	hers := alicePage.Items[0].ID
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+hers+"/read", nil), http.StatusNoContent, nil)
+
+	// Bob arrives. He sees the page, and none of Alice's reading.
+	bob := h.signInAsSomebodyElse("bob")
+	var seen publicPageBody
+	h.expect(h.doAs(bob, http.MethodGet, "/api/public/misha/front", nil), http.StatusOK, &seen)
+	if !seen.SignedIn {
+		t.Error("a signed-in visitor is reported as a stranger")
+	}
+	for _, item := range seen.Items {
+		if item.ReadAt != nil {
+			t.Fatalf("%q carries somebody else's read mark", item.Title)
+		}
+	}
+
+	// He marks one read, through the same endpoint he would use on his own page — a read
+	// mark is a fact about a person and an article, and whose page it was seen on does not
+	// come into it.
+	his := seen.Items[1].ID
+	h.expect(h.doAs(bob, http.MethodPut,
+		"/api/edition/items/"+his+"/read", nil), http.StatusNoContent, nil)
+
+	h.expect(h.doAs(bob, http.MethodGet, "/api/public/misha/front", nil), http.StatusOK, &seen)
+	marks := map[string]bool{}
+	for _, item := range seen.Items {
+		marks[item.ID] = item.ReadAt != nil
+	}
+	if !marks[his] {
+		t.Error("the visitor's own mark is not shown back to them")
+	}
+	if marks[hers] {
+		t.Error("the owner's mark leaked to a visitor")
+	}
+
+	// And Alice's own page is untouched by any of it: hers still read, Bob's still not.
+	var afterwards editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &afterwards)
+	for _, item := range afterwards.Items {
+		if item.ID == hers && item.ReadAt == nil {
+			t.Error("the owner's own read mark was cleared by a visitor")
+		}
+		if item.ID == his && item.ReadAt != nil {
+			t.Error("a visitor's read mark appeared on the owner's page")
+		}
+	}
+}
+
+// A stranger cannot mark anything: reading is a fact about a person, and a stranger is nobody.
+func TestOnlySomebodyWithAnAccountMarksAnythingRead(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 4)
+
+	h.signIn(store.RoleUser, "alice")
+	h.allowPublishing(t, false)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	var page editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &page)
+	h.expect(h.do(http.MethodPut, "/api/account/public-name", map[string]string{"name": "misha"}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPut, "/api/pages/"+h.mainPage()+"/publish",
+		map[string]any{"slug": "front"}), http.StatusOK, nil)
+
+	nobody := h.stranger()
+	h.expect(h.doAs(nobody, http.MethodGet, "/api/public/misha/front", nil), http.StatusOK, nil)
+	h.expect(h.doAs(nobody, http.MethodPut,
+		"/api/edition/items/"+page.Items[0].ID+"/read", nil), http.StatusUnauthorized, nil)
+}

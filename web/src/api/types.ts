@@ -387,17 +387,25 @@ export interface ImageTally {
 }
 
 /**
- * Somebody's published page, as a stranger sees it.
+ * Somebody's published page.
  *
  * Whose it is appears in the address and nowhere else: the public name is the only identity
  * its owner chose to expose, and putting a username beside it would expose one they did not.
  *
- * The articles carry no `read_at` — not "unread", but absent. Whether the owner has read
- * something is a fact about them, and publishing a page is not an offer to publish that too.
+ * The read marks on it are *yours*, never the owner's — whether they have read something is a
+ * fact about them, and publishing a page is not an offer to publish that too. A stranger has
+ * none, so every article arrives unmarked.
  */
 export interface PublicPage {
   name: string;
   generated_at: number;
+  /**
+   * Whether whoever asked has an account here.
+   *
+   * Decides whether a way to mark anything read is offered at all: a control that exists and
+   * refuses is worse than one that is not there, and a stranger has no read state to act on.
+   */
+  signed_in: boolean;
   /** Whether a search engine may keep this, after both the owner and the instance were asked. */
   indexable: boolean;
   items: Article[];
