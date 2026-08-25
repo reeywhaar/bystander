@@ -717,8 +717,18 @@ away from everybody permanently. Not a trade worth making to save two pixels of 
 
 ## Components
 
-- `src/components/ui/` — primitives: `Button`, `Field`, `Modal`, `Card`, `Alert`. Small and
-  close to unstyled: they carry layout and state, not a look.
+- `src/components/ui/` — primitives: `Button`, `Field`, `Select`, `Segmented`, `Modal`,
+  `Card`, `Alert`. Small and close to unstyled: they carry layout and state, not a look.
+
+  `Select` exists because there were three hand-styled `<select>`s in three components, and
+  three copies of a style are three chances for one to drift. It is also where the asymmetric
+  padding lives: a browser draws the arrow *inside* the padding box rather than beside it, so
+  even padding puts it hard against the border.
+
+  `Segmented` is the same question when there are only two or three answers and the answer
+  changes what the rest of the form is — a select hides its options behind a press, and seeing
+  both at once is most of what makes such a form legible. It takes plain strings and an index,
+  because the caller already has the meanings in an array to render from.
 - `src/components/` — shared composites.
 - `src/apps/<island>/` — everything belonging to one island.
 

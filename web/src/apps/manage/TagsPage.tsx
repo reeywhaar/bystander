@@ -4,6 +4,7 @@ import type { Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Priority } from "@app/components/ui/Priority";
+import { Select } from "@app/components/ui/Select";
 import { Spinner } from "@app/components/ui/Spinner";
 import { DEFAULT_PRIORITY } from "@app/lib/constants";
 import {
@@ -118,7 +119,8 @@ function TagRow({
           text-lg text-ink hover:border-rule focus-visible:border-rule focus-visible:outline-none"
       />
 
-      <select
+      <Select
+        small
         value={tag.parent_id ?? ""}
         onChange={(event) =>
           update.mutate({
@@ -127,7 +129,6 @@ function TagRow({
           })
         }
         aria-label={`Where ${tag.name} sits`}
-        className="rounded-md border border-rule bg-paper-raised px-2 py-1 text-xs text-ink-muted"
       >
         <option value="">on its own</option>
         {candidates.map((candidate) => (
@@ -135,7 +136,7 @@ function TagRow({
             under {candidate.name}
           </option>
         ))}
-      </select>
+      </Select>
 
       <Priority
         label={`How often ${tag.name} appears`}

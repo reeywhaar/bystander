@@ -5,6 +5,7 @@ import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Field } from "@app/components/ui/Field";
 import { Modal } from "@app/components/ui/Modal";
+import { Select } from "@app/components/ui/Select";
 import { useSaveSmtp, useTestSmtp } from "@app/queries/hooks";
 
 /** What recipients see when no sender name is chosen. Mirrors `mail.DefaultSenderName`. */
@@ -87,29 +88,23 @@ export function RelayDialog({
         />
 
         <div className="grid grid-cols-[1fr_5.5rem] items-end gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="relay-tls" className="text-sm font-medium text-ink">
-              Encryption
-            </label>
-            <select
-              id="relay-tls"
-              value={state.tls}
-              onChange={(event) => {
-                const tls = event.target.value as SmtpTls;
-                // Changing the mode moves the port to the one that mode is usually on.
-                // A port somebody typed themselves is neither default, and is left alone.
-                const port =
-                  state.port === PORTS.starttls || state.port === PORTS.implicit
-                    ? PORTS[tls]
-                    : state.port;
-                setState((was) => ({ ...was, tls, port }));
-              }}
-              className="rounded-md border border-rule bg-paper-raised px-3 py-2 text-sm text-ink"
-            >
-              <option value="starttls">STARTTLS</option>
-              <option value="implicit">TLS from the start</option>
-            </select>
-          </div>
+          <Select
+            label="Encryption"
+            value={state.tls}
+            onChange={(event) => {
+              const tls = event.target.value as SmtpTls;
+              // Changing the mode moves the port to the one that mode is usually on.
+              // A port somebody typed themselves is neither default, and is left alone.
+              const port =
+                state.port === PORTS.starttls || state.port === PORTS.implicit
+                  ? PORTS[tls]
+                  : state.port;
+              setState((was) => ({ ...was, tls, port }));
+            }}
+          >
+            <option value="starttls">STARTTLS</option>
+            <option value="implicit">TLS from the start</option>
+          </Select>
           <Field
             label="Port"
             type="number"
