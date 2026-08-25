@@ -396,4 +396,26 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 		}
 		picks[pos].Slot = drawSlot(rng, weights)
 	}
+
+	// A band is never left in a column, whether or not it was one of the cards this page
+	// picked out.
+	//
+	// Everything above is about the page: how many landmarks it has, where they fall, how wide
+	// each goes. This is not about the page. A picture four times wider than it is tall, in a
+	// quarter of sixteen tracks, is sixty-five pixels of photograph over a headline — it does
+	// not read as a small picture, it reads as a mistake, and no amount of it being the right
+	// number of landmarks makes that card work. Half the page is the narrowest width at which
+	// the thing is legible, so that is the floor.
+	//
+	// It does mean a page of bands comes out wider than one card in four. That is the correct
+	// answer to a page of bands: the alternative is a column of slivers, chosen so that a rule
+	// about landmarks could hold on a page that has none.
+	for i := range picks {
+		if picks[i].Slot != store.SlotStandard {
+			continue
+		}
+		if shapeOfPicture(picks[i].Item) == pictureWide {
+			picks[i].Slot = store.SlotFeature
+		}
+	}
 }

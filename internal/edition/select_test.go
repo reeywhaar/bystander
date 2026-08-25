@@ -347,7 +347,7 @@ func shaped(id string, priority, n, w, h int) *Source {
 	return src
 }
 
-// slotsFrom lays out several pages and reports which widths the wide cards came out at.
+// slotsFrom lays out several pages and tallies the widths every card came out at.
 func slotsFrom(t *testing.T, src *Source, seeds int) map[store.Slot]int {
 	t.Helper()
 	tally := map[store.Slot]int{}
@@ -358,47 +358,73 @@ func slotsFrom(t *testing.T, src *Source, seeds int) map[store.Slot]int {
 			t.Fatalf("seed %d: only %d articles; this test needs a full page", seed, len(picks))
 		}
 		for _, p := range picks {
-			switch p.Slot {
-			case store.SlotLead, store.SlotWide, store.SlotFeature:
-				tally[p.Slot]++
-			}
+			tally[p.Slot]++
 		}
 	}
 	return tally
 }
 
-// How wide a card is laid out follows what its picture is shaped like.
+// A picture much wider than it is tall is never left in a quarter-page column.
 //
-// Which cards are widened is a question about the page — where the landmarks fall, how often —
-// and is answered without looking at any of them. This is the other question: given that this
-// one is being widened, how wide. A 10:1 band and a portrait want opposite answers, and the
-// old rule drew the same weighted number for both.
-func TestHowWideACardGoesFollowsItsPicture(t *testing.T) {
-	// A band. Widened towards the widths that give it somewhere to be — across a quarter-page
-	// column a 10:1 picture is sixty-five pixels of photograph over a headline.
+// Not a preference about landmarks — a floor. Four times wider than tall, in four of sixteen
+// tracks, is sixty-five pixels of photograph over a headline: not a small picture, a mistake.
+// This is the case the first version of the rule missed, because it only chose *which* width
+// an already-widened card took, and a band in a card the page had not picked out stayed a
+// sliver.
+func TestABandIsNeverLeftInAColumn(t *testing.T) {
 	bands := slotsFrom(t, shaped("band", 50, 200, 2000, 200), 12)
-	if bands[store.SlotFeature] >= bands[store.SlotLead]+bands[store.SlotWide] {
-		t.Errorf("bands went narrow: lead %d, wide %d, feature %d",
+	if bands[store.SlotStandard] != 0 {
+		t.Errorf("%d band pictures were left at a quarter of the page", bands[store.SlotStandard])
+	}
+	if bands[store.SlotFeature] == 0 {
+		t.Error("no band was laid out at half the page, which is the floor this is about")
+	}
+
+	// A page of bands comes out wider than one card in four, and that is the answer rather
+	// than a side effect: the alternative is a column of slivers chosen so a rule about
+	// landmarks could hold on a page that has none.
+	wide := bands[store.SlotLead] + bands[store.SlotWide] + bands[store.SlotFeature]
+	if total := wide + bands[store.SlotStandard] + bands[store.SlotBrief]; wide*4 <= total {
+		t.Errorf("only %d of %d cards were widened on a page of nothing but bands", wide, total)
+	}
+}
+
+// How wide a widened card goes still follows its picture, on top of the floor.
+func TestHowWideACardGoesFollowsItsPicture(t *testing.T) {
+	// A band still reaches the widths above the floor — the floor is where it starts, not
+	// where it is held. Across the full page a 10:1 file is a band across a newspaper.
+	bands := slotsFrom(t, shaped("band", 50, 200, 2000, 200), 12)
+	if bands[store.SlotLead] == 0 || bands[store.SlotWide] == 0 {
+		t.Errorf("bands never went past the floor: lead %d, wide %d, feature %d",
 			bands[store.SlotLead], bands[store.SlotWide], bands[store.SlotFeature])
 	}
 
-	// A portrait. Always the narrowest of the three, because width costs an upright picture
-	// height it cannot spend: across the full page it is bounded at 70vh and what survives is
-	// a slice through the middle of it.
+	// A portrait goes the other way: always the narrowest of the wide slots, because width
+	// costs an upright picture height it cannot spend — across the full page it is bounded at
+	// 70vh and what survives is a slice through the middle of it. And no floor: a portrait at
+	// a quarter of the page is a picture, which is the whole difference from a band.
 	uprights := slotsFrom(t, shaped("tall", 50, 200, 800, 1200), 12)
 	if uprights[store.SlotLead] != 0 || uprights[store.SlotWide] != 0 {
-		t.Errorf("an upright picture was laid out across the page: lead %d, wide %d, feature %d",
-			uprights[store.SlotLead], uprights[store.SlotWide], uprights[store.SlotFeature])
+		t.Errorf("an upright picture was laid out across the page: lead %d, wide %d",
+			uprights[store.SlotLead], uprights[store.SlotWide])
 	}
 	if uprights[store.SlotFeature] == 0 {
 		t.Error("upright pictures stopped being widened at all; they should still be landmarks")
 	}
+	if uprights[store.SlotStandard] == 0 {
+		t.Error("upright pictures were all widened; the floor is for bands, not for everything")
+	}
 
 	// And a page that has measured nothing is laid out exactly as it always was — every
-	// picture on it is `pictureOrdinary`, which is the case this rule must not disturb.
+	// picture on it is pictureOrdinary, which is the case this rule must not disturb.
 	plain := slotsFrom(t, feed("plain", 50, 200), 12)
 	if plain[store.SlotLead] == 0 || plain[store.SlotWide] == 0 || plain[store.SlotFeature] == 0 {
 		t.Errorf("unmeasured pictures stopped drawing the full range: lead %d, wide %d, feature %d",
 			plain[store.SlotLead], plain[store.SlotWide], plain[store.SlotFeature])
+	}
+	widened := plain[store.SlotLead] + plain[store.SlotWide] + plain[store.SlotFeature]
+	if total := widened + plain[store.SlotStandard] + plain[store.SlotBrief]; widened*3 > total {
+		t.Errorf("an unmeasured page widened %d of %d cards; it should be about one in four",
+			widened, total)
 	}
 }
