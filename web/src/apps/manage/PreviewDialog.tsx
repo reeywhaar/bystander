@@ -60,6 +60,7 @@ export function PreviewDialog({
     <Modal
       wide
       flush
+      onPaper
       open={open}
       onClose={onClose}
       title={feed?.title || "This feed"}
@@ -112,9 +113,12 @@ function Preview({ items }: { items: PreviewItem[] }) {
           what these would look like once followed, so it is set the way they would be: the
           slot decides the sizes, the voice decides the face.
           
-          `slot-feature` also carries a grid span, which does nothing outside the grid — it is
-          here for the sizes it brings with it, which is the whole reason the slot is a class
-          rather than four separate ones.
+          `slot-standard` rather than a bigger one: it is the size most cards on the page are,
+          and a feature's twenty-four pixels of bold, set ten deep, outweighed the feed's own
+          name at the top of the dialog — the subject reading as a caption on its samples. The
+          slot also carries a grid span, which does nothing outside the grid; it is here for
+          the sizes it brings with it, which is the whole reason the slot is one class rather
+          than four separate ones.
         */
         <article
           key={item.link || item.title}
@@ -122,7 +126,7 @@ function Preview({ items }: { items: PreviewItem[] }) {
           // `last:border-b-0` stopped matching the last article and it drew a rule of its own
           // right above the footer's. Matching on the element type is what makes the rules
           // about articles rather than about whatever happens to be last in the box.
-          className="slot-feature border-b border-rule py-4 first-of-type:pt-0 last-of-type:border-b-0 last-of-type:pb-0"
+          className="slot-standard border-b border-rule py-4 first-of-type:pt-0 last-of-type:border-b-0 last-of-type:pb-0"
         >
           {/*
             One voice for all ten rather than the page's per-article draw. On the page the

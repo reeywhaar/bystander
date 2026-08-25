@@ -39,11 +39,25 @@ export function Modal({
   footer,
   wide = false,
   flush = false,
+  onPaper = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /**
+   * Set on the reading paper rather than the raised white.
+   *
+   * For a dialog showing what a page would show. Everything the reader reads is on `paper`;
+   * `paper-raised` is the surface things sit *on top of* it on — dialogs, cards, inputs. A
+   * dialog whose job is to be a sample of the page belongs on the same stock as the page, or
+   * it is showing the articles against a background they will never appear against.
+   *
+   * The footer stays raised either way, which is what turns the difference into a division:
+   * the part you read, and the bar you press.
+   */
+  onPaper?: boolean;
+
   /**
    * The footer's rule sits directly on the body, with no space above it.
    *
@@ -126,6 +140,13 @@ export function Modal({
     };
   }, [open, parent]);
 
+  /*
+    How much room sits under the body: the dialog's own padding when nothing follows it, the
+    same gap the body's blocks get when a footer does, and none at all when the footer's rule
+    is meant to sit on a scroll edge.
+  */
+  const bodyBottom = !footer ? "pb-5" : flush ? "pb-0" : "pb-4";
+
   return (
     <dialog
       ref={ref}
@@ -155,7 +176,9 @@ export function Modal({
       // wheel; this is for touch, where `overflow: hidden` on the body is not reliably
       // enough on its own and the gesture becomes a rubber-band or a pull-to-refresh.
       className={`m-auto max-h-[85dvh] overflow-y-auto overscroll-contain rounded-md
-        border border-rule bg-paper-raised p-0 text-ink backdrop:bg-black/50 ${
+        border border-rule p-0 text-ink backdrop:bg-black/50 ${
+          onPaper ? "bg-paper" : "bg-paper-raised"
+        } ${
           wide
             ? "w-[min(44rem,calc(100vw-2rem))]"
             : "w-[min(28rem,calc(100vw-2rem))]"
@@ -163,21 +186,33 @@ export function Modal({
     >
       {open ? (
         <DialogContext.Provider value={ref}>
-          <div className="flex flex-col gap-4 p-5">
-            <h2 className="font-serif text-xl text-ink">{title}</h2>
+          {/*
+            The footer is a sibling of the body rather than its last child, so that the two
+            can differ — in colour, and in how much room sits above the rule. As a child it
+            inherited the body's background and its gap, and `flush` had to be a negative
+            margin cancelling that gap from inside it.
+          */}
+          <div className={`flex flex-col gap-4 px-5 pt-5 ${bodyBottom}`}>
+            {/*
+              Sized and weighted like a heading, because it is one. At twenty pixels regular
+              it was lighter than anything bold underneath it, which in a dialog listing
+              articles put the feed's own name below its own samples in the hierarchy. Weight
+              alone did not settle it — twenty semibold against nineteen bold is two things
+              the same size arguing. The step up in size is what makes it read as a title.
+            */}
+            <h2 className="font-serif text-2xl font-semibold text-ink">
+              {title}
+            </h2>
             {children}
-            {footer ? (
-              // The negative margin cancels this container's `gap-4`, and the two are
-              // written beside each other so they cannot drift apart unnoticed.
-              <div
-                className={`flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4 ${
-                  flush ? "-mt-4" : ""
-                }`}
-              >
-                {footer}
-              </div>
-            ) : null}
           </div>
+          {footer ? (
+            // Always raised, whatever the body is set on. On an ordinary dialog that is the
+            // same colour and changes nothing; under a body on paper it is what makes the
+            // buttons read as a bar rather than as the end of the reading.
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule bg-paper-raised px-5 pt-4 pb-5">
+              {footer}
+            </div>
+          ) : null}
         </DialogContext.Provider>
       ) : null}
     </dialog>
