@@ -59,6 +59,7 @@ export function PreviewDialog({
   return (
     <Modal
       wide
+      flush
       open={open}
       onClose={onClose}
       title={feed?.title || "This feed"}

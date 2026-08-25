@@ -38,11 +38,23 @@ export function Modal({
   children,
   footer,
   wide = false,
+  flush = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /**
+   * The footer's rule sits directly on the body, with no space above it.
+   *
+   * For a body that scrolls to the footer. The space this removes is the container's own gap,
+   * and between a cut-off line of text and the rule it reads as a mistake rather than as
+   * breathing room — the content stops, then there is a blank strip, then the rule. A scroll
+   * region should run right up to its edge, and the room after the last item belongs inside
+   * it, where scrolling to the end reveals it.
+   */
+  flush?: boolean;
+
   /**
    * A dialog for reading rather than for answering.
    *
@@ -155,7 +167,13 @@ export function Modal({
             <h2 className="font-serif text-xl text-ink">{title}</h2>
             {children}
             {footer ? (
-              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
+              // The negative margin cancels this container's `gap-4`, and the two are
+              // written beside each other so they cannot drift apart unnoticed.
+              <div
+                className={`flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4 ${
+                  flush ? "-mt-4" : ""
+                }`}
+              >
                 {footer}
               </div>
             ) : null}
