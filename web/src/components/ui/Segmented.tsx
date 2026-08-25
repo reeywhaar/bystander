@@ -23,9 +23,7 @@ import { useId } from "react";
  * own size — opted into, like every other switch on these primitives.
  *
  * A `radiogroup` rather than buttons that happen to look chosen: it is one question with one
- * answer, and that is what a screen reader should be told. The pressed segment is tinted the
- * same way the tab strips are — two controls meaning "you are on this one" should not be two
- * different objects.
+ * answer, and that is what a screen reader should be told.
  */
 export function Segmented({
   options,
@@ -57,10 +55,34 @@ export function Segmented({
       <div
         role="radiogroup"
         aria-labelledby={id}
-        className={`gap-1 rounded-md border border-rule bg-paper-sunken p-1 ${
+        className={`relative rounded-md border border-rule bg-paper-sunken p-1 ${
           block ? "flex w-full" : "inline-flex w-fit"
         }`}
       >
+        {/*
+          The tint slides rather than each segment lighting up where it stands, so the eye
+          follows the answer from the old one to the new instead of finding it again.
+
+          Measured against the *content* box, not the percentage the browser would resolve.
+          An absolutely positioned child is placed against its container's padding box, so a
+          plain `left: 50%` is half of the track including its own padding — a couple of
+          pixels adrift at every position, which is near enough to look like a mistake and not
+          near enough to be one anybody could name. `p-1` is 0.25rem a side, so the track is
+          `100% - 0.5rem` wide and starts 0.25rem in. See StanceSwitch, which learned this the
+          same way.
+        */}
+        {at === null ? null : (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute top-1 bottom-1 rounded bg-accent/10
+              transition-[left,width] duration-150 ease-out motion-reduce:transition-none"
+            style={{
+              width: `calc((100% - 0.5rem) / ${options.length})`,
+              left: `calc(0.25rem + (100% - 0.5rem) * ${at} / ${options.length})`,
+            }}
+          />
+        )}
+
         {options.map((option, index) => (
           <button
             key={option}
@@ -69,13 +91,14 @@ export function Segmented({
             aria-checked={index === at}
             disabled={disabled}
             onClick={() => onChange(index)}
-            className={`rounded px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50 ${
-              block ? "flex-1" : ""
-            } ${
-              index === at
-                ? "bg-accent/10 text-accent"
-                : "text-ink-muted hover:text-ink"
-            }`}
+            // `basis-0 grow` in both modes, so every segment is the same width and the
+            // arithmetic above holds. In the inline case that makes the track as wide as its
+            // widest answer times the number of them, which is what stops a two-word option
+            // dwarfing a one-word one.
+            className={`relative basis-0 grow rounded px-3 py-1.5 text-sm whitespace-nowrap
+              transition-colors duration-150 disabled:opacity-50 ${
+                index === at ? "text-accent" : "text-ink-muted hover:text-ink"
+              }`}
           >
             {option}
           </button>
