@@ -74,7 +74,7 @@ func TestMeasuringReadsTheHeaderAndNotThePicture(t *testing.T) {
 	item := &store.Item{
 		ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One",
 		Link: "https://example.com/1", ImageURL: host.URL + "/pic.png",
-		// Dated, or it falls outside every window and Candidates hands back nothing.
+		// Dated, or it falls outside every window and Queues hands back nothing.
 		PublishedAt: time.Now().Add(-time.Hour), FetchedAt: time.Now(),
 	}
 	if _, err := st.SaveItems(t.Context(), []*store.Item{item}); err != nil {
@@ -86,14 +86,14 @@ func TestMeasuringReadsTheHeaderAndNotThePicture(t *testing.T) {
 		t.Fatalf("Measure(): %v", err)
 	}
 
-	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
+	got, err := st.Queues(t.Context(), "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got[feed.ID]) != 1 {
-		t.Fatalf("%d articles", len(got[feed.ID]))
+	if len(got[feed.ID].Fresh) != 1 {
+		t.Fatalf("%d articles", len(got[feed.ID].Fresh))
 	}
-	if w, h := got[feed.ID][0].ImageWidth, got[feed.ID][0].ImageHeight; w != 1200 || h != 900 {
+	if w, h := got[feed.ID].Fresh[0].ImageWidth, got[feed.ID].Fresh[0].ImageHeight; w != 1200 || h != 900 {
 		t.Errorf("measured %dx%d, want 1200x900", w, h)
 	}
 
@@ -210,15 +210,15 @@ func TestOneMeasurementAnswersForEveryArticleSharingThePicture(t *testing.T) {
 	if err := st.SetImageSize(t.Context(), shared, 800, 600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
+	got, err := st.Queues(t.Context(), "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Asserted, because a loop over nothing passes without saying anything.
-	if len(got[feed.ID]) != 2 {
-		t.Fatalf("%d articles back, want the two that were saved", len(got[feed.ID]))
+	if len(got[feed.ID].Fresh) != 2 {
+		t.Fatalf("%d articles back, want the two that were saved", len(got[feed.ID].Fresh))
 	}
-	for _, item := range got[feed.ID] {
+	for _, item := range got[feed.ID].Fresh {
 		if item.ImageWidth != 800 || item.ImageHeight != 600 {
 			t.Errorf("%s is %dx%d", item.ID, item.ImageWidth, item.ImageHeight)
 		}
@@ -312,7 +312,7 @@ func TestAMeasuredPictureIsNeverAskedAgain(t *testing.T) {
 // Widening how far back a feed reaches must not turn up articles with unmeasured pictures.
 //
 // The two things are decided in different places and it is not obvious they agree. A feed's
-// window is applied when a page is composed — Candidates and Backfill bound what they will
+// window is applied when a page is composed — Queues bounds what it will
 // offer — and nowhere else. Nothing filters by it on the way in, so an article older than the
 // window is saved like any other, and it is kept for the retention counted from when it was
 // *fetched* rather than when it was published.
@@ -372,24 +372,24 @@ func TestWideningAFeedsReachFindsPicturesAlreadyMeasured(t *testing.T) {
 
 	// A week's reach offers the recent ones.
 	week := map[string]time.Time{feed.ID: now.Add(-7 * 24 * time.Hour)}
-	narrow, err := st.Candidates(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, week)
+	narrow, err := st.Queues(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, week)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(narrow[feed.ID]) != 2 {
-		t.Fatalf("a week's reach offers %d articles, want 2", len(narrow[feed.ID]))
+	if len(narrow[feed.ID].Fresh) != 2 {
+		t.Fatalf("a week's reach offers %d articles, want 2", len(narrow[feed.ID].Fresh))
 	}
 
 	// Widened to a year it offers all of them, and every one arrives measured.
 	year := map[string]time.Time{feed.ID: now.Add(-365 * 24 * time.Hour)}
-	wide, err := st.Candidates(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, year)
+	wide, err := st.Queues(t.Context(), "pg_1", "p_1", []string{feed.ID}, 50, year)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(wide[feed.ID]) != len(ages) {
-		t.Fatalf("a year's reach offers %d articles, want %d", len(wide[feed.ID]), len(ages))
+	if len(wide[feed.ID].Fresh) != len(ages) {
+		t.Fatalf("a year's reach offers %d articles, want %d", len(wide[feed.ID].Fresh), len(ages))
 	}
-	for _, item := range wide[feed.ID] {
+	for _, item := range wide[feed.ID].Fresh {
 		if item.ImageWidth == 0 || item.ImageHeight == 0 {
 			t.Errorf("%q was published %s ago and its picture is still unmeasured",
 				item.Title, now.Sub(item.PublishedAt).Round(24*time.Hour))
@@ -517,14 +517,14 @@ func TestAWebPPictureIsMeasured(t *testing.T) {
 
 	// Read back the way the page would: an article's id is derived from its feed and guid,
 	// so the one handed to SaveItems is not the one it is stored under.
-	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
+	got, err := st.Queues(t.Context(), "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got[feed.ID]) != 1 {
-		t.Fatalf("%d articles back, want the one that was saved", len(got[feed.ID]))
+	if len(got[feed.ID].Fresh) != 1 {
+		t.Fatalf("%d articles back, want the one that was saved", len(got[feed.ID].Fresh))
 	}
-	if item := got[feed.ID][0]; item.ImageWidth != 16 || item.ImageHeight != 16 {
+	if item := got[feed.ID].Fresh[0]; item.ImageWidth != 16 || item.ImageHeight != 16 {
 		t.Errorf("measured %dx%d, want 16x16 — the WebP decoder is not registered",
 			item.ImageWidth, item.ImageHeight)
 	}

@@ -181,7 +181,7 @@ are.
 Selection and slot assignment, per [edition.md](edition.md), plus the scheduler that
 decides when.
 
-Pure where it can be: the sampler takes buckets, weights and a seed, and returns ranks. It
+Pure where it can be: the sampler takes queues, weights and a seed, and returns ranks. It
 does not open a transaction, read a clock or touch the store, which is what makes it
 testable against a fixed seed rather than against a database.
 

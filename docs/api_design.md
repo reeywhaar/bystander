@@ -191,10 +191,11 @@ DELETE /api/tags/{id}
 everything.
 
 It reaches **articles no page has shown yet**, and that is the point rather than a side effect:
-`Candidates` never offers an article this person has read, so marking a feed's backlog read
-keeps it off every later page. That is what makes following a publisher again — or one somebody
-has been reading elsewhere — start from now instead of from its archive. Articles already read
-are left alone rather than re-stamped, so this cannot reorder Recently read.
+a read article is never offered to any page as *new* — it drops to the last band, behind
+everything else — so marking a feed's backlog read keeps its archive off every later page. That
+is what makes following a publisher again, or one somebody has been reading elsewhere, start
+from now. Articles already read are left alone rather than re-stamped, so this cannot reorder
+Recently read.
 
 `DELETE` on the same place is the inverse: it forgets that anything from the feed was read, so
 its articles are offered again. It takes no span — "unread the last week" is a question whose

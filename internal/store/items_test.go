@@ -46,12 +46,12 @@ func TestAnArticleWhoseGuidMovedIsStillTheSameArticle(t *testing.T) {
 		t.Fatalf("SaveItems() = %d, %v", added, err)
 	}
 
-	before, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
+	before, err := s.Queues(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
-		t.Fatalf("Candidates(): %v", err)
+		t.Fatalf("Queues(): %v", err)
 	}
-	if len(before[feed.ID]) != 1 {
-		t.Fatalf("%d articles after the first fetch", len(before[feed.ID]))
+	if len(before[feed.ID].Fresh) != 1 {
+		t.Fatalf("%d articles after the first fetch", len(before[feed.ID].Fresh))
 	}
 
 	// The publisher shortens the headline. Same story, same link, and a guid that has moved
@@ -66,23 +66,23 @@ func TestAnArticleWhoseGuidMovedIsStillTheSameArticle(t *testing.T) {
 		t.Errorf("an edited article counted as %d new ones", added)
 	}
 
-	after, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
+	after, err := s.Queues(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
-		t.Fatalf("Candidates(): %v", err)
+		t.Fatalf("Queues(): %v", err)
 	}
-	if len(after[feed.ID]) != 1 {
-		t.Fatalf("%d articles after an edit, want the one", len(after[feed.ID]))
+	if len(after[feed.ID].Fresh) != 1 {
+		t.Fatalf("%d articles after an edit, want the one", len(after[feed.ID].Fresh))
 	}
 	// The same row, so anything pointing at it still points at it.
-	if after[feed.ID][0].ID != before[feed.ID][0].ID {
-		t.Errorf("the article changed id: %s then %s", before[feed.ID][0].ID, after[feed.ID][0].ID)
+	if after[feed.ID].Fresh[0].ID != before[feed.ID].Fresh[0].ID {
+		t.Errorf("the article changed id: %s then %s", before[feed.ID].Fresh[0].ID, after[feed.ID].Fresh[0].ID)
 	}
 	// And the corrected headline is the one shown, because it is the publisher's latest word.
-	if after[feed.ID][0].Title != "Команда Team Spirit выиграла главный мировой турнир по Dota 2" {
-		t.Errorf("title = %q", after[feed.ID][0].Title)
+	if after[feed.ID].Fresh[0].Title != "Команда Team Spirit выиграла главный мировой турнир по Dota 2" {
+		t.Errorf("title = %q", after[feed.ID].Fresh[0].Title)
 	}
-	if after[feed.ID][0].PublishedAt.Unix() != published.Unix() {
-		t.Errorf("published_at moved to %s; an edit is not a republication", after[feed.ID][0].PublishedAt)
+	if after[feed.ID].Fresh[0].PublishedAt.Unix() != published.Unix() {
+		t.Errorf("published_at moved to %s; an edit is not a republication", after[feed.ID].Fresh[0].PublishedAt)
 	}
 }
 
@@ -194,13 +194,13 @@ func TestArticlesSharingOneLinkAreLeftAlone(t *testing.T) {
 		t.Fatalf("added = %d, want all three kept", added)
 	}
 
-	got, err := s.Candidates(ctx, "", "", []string{feed.ID}, 10, nil)
+	got, err := s.Queues(ctx, "", "", []string{feed.ID}, 10, nil)
 	if err != nil {
-		t.Fatalf("Candidates(): %v", err)
+		t.Fatalf("Queues(): %v", err)
 	}
-	if len(got[feed.ID]) != 3 {
+	if len(got[feed.ID].Fresh) != 3 {
 		t.Errorf("%d articles, want 3: losing articles to prevent duplicates is the wrong way round",
-			len(got[feed.ID]))
+			len(got[feed.ID].Fresh))
 	}
 }
 
@@ -310,13 +310,13 @@ func TestTwoFeedsWithTheSameArticleKeepBoth(t *testing.T) {
 		t.Fatalf("the second feed's copy was dropped: added = %d", added)
 	}
 
-	got, err := s.Candidates(ctx, "", "", []string{one.ID, two.ID}, 10, nil)
+	got, err := s.Queues(ctx, "", "", []string{one.ID, two.ID}, 10, nil)
 	if err != nil {
-		t.Fatalf("Candidates(): %v", err)
+		t.Fatalf("Queues(): %v", err)
 	}
-	if len(got[one.ID]) != 1 || len(got[two.ID]) != 1 {
+	if len(got[one.ID].Fresh) != 1 || len(got[two.ID].Fresh) != 1 {
 		t.Errorf("articles per feed = %d and %d, want one each",
-			len(got[one.ID]), len(got[two.ID]))
+			len(got[one.ID].Fresh), len(got[two.ID].Fresh))
 	}
 }
 

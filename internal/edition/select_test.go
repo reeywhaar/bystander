@@ -21,7 +21,7 @@ func feed(id string, priority, n int) *Source {
 			ImageURL: "https://example.com/i.png",
 		}
 	}
-	return &Source{FeedID: id, Priority: priority, Items: items}
+	return &Source{FeedID: id, Priority: priority, Fresh: items}
 }
 
 func sources(list ...*Source) map[string]*Source {
@@ -36,10 +36,9 @@ func sources(list ...*Source) map[string]*Source {
 // wrong, and it is the reason the sampler takes a seed rather than reaching for a clock.
 func TestSelectIsDeterministic(t *testing.T) {
 	src := sources(feed("a", 50, 40), feed("b", 50, 40), feed("c", 50, 40))
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"a", "b", "c"}}}
 
-	first := Select(buckets, src, nil, 20, 12345)
-	second := Select(buckets, src, nil, 20, 12345)
+	first := Select(src, 20, 12345)
+	second := Select(src, 20, 12345)
 
 	if len(first) != len(second) {
 		t.Fatalf("two runs of one seed gave %d and %d articles", len(first), len(second))
@@ -57,10 +56,6 @@ func TestPriorityShiftsTheOdds(t *testing.T) {
 	// More feeds than the page has room for, so the cap does not fill it by itself and
 	// the odds are what decide. With two feeds and a page they could both fill, every
 	// priority produces the same page — correct, and useless as a test.
-	ids := []string{"loud"}
-	for i := range 9 {
-		ids = append(ids, fmt.Sprintf("quiet%d", i))
-	}
 
 	counts := map[string]int{}
 	for seed := range 300 {
@@ -68,8 +63,7 @@ func TestPriorityShiftsTheOdds(t *testing.T) {
 		for i := range 9 {
 			list = append(list, feed(fmt.Sprintf("quiet%d", i), 10, 100))
 		}
-		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
-		for _, pick := range Select(buckets, sources(list...), nil, 10, int64(seed)) {
+		for _, pick := range Select(sources(list...), 10, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -90,8 +84,7 @@ func TestPriorityShiftsTheOdds(t *testing.T) {
 func TestZeroPriorityNeverAppears(t *testing.T) {
 	for seed := range 50 {
 		src := sources(feed("on", 50, 50), feed("off", 0, 50))
-		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"on", "off"}}}
-		for _, pick := range Select(buckets, src, nil, 20, int64(seed)) {
+		for _, pick := range Select(src, 20, int64(seed)) {
 			if pick.Item.FeedID == "off" {
 				t.Fatalf("seed %d drew from a feed at priority zero", seed)
 			}
@@ -101,8 +94,7 @@ func TestZeroPriorityNeverAppears(t *testing.T) {
 
 func TestAllZeroTerminates(t *testing.T) {
 	src := sources(feed("a", 0, 10), feed("b", 0, 10))
-	buckets := []Bucket{{TagID: "t1", Priority: 0, FeedIDs: []string{"a", "b"}}}
-	if got := Select(buckets, src, nil, 20, 1); len(got) != 0 {
+	if got := Select(src, 20, 1); len(got) != 0 {
 		t.Fatalf("Select() returned %d articles from an all-zero pool", len(got))
 	}
 }
@@ -116,8 +108,7 @@ func TestVolumeDoesNotBuyAShareOfThePage(t *testing.T) {
 	counts := map[string]int{}
 	for seed := range 100 {
 		src := sources(feed("prolific", 50, 500), feed("occasional", 50, 200))
-		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"prolific", "occasional"}}}
-		for _, pick := range Select(buckets, src, nil, size, int64(seed)) {
+		for _, pick := range Select(src, size, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -136,9 +127,8 @@ func TestVolumeDoesNotBuyAShareOfThePage(t *testing.T) {
 func TestASmallFeedDoesNotStarveThePage(t *testing.T) {
 	const size = 40
 	src := sources(feed("plenty", 50, 500), feed("trickle", 50, 5))
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"plenty", "trickle"}}}
 
-	picks := Select(buckets, src, nil, size, 7)
+	picks := Select(src, size, 7)
 	if len(picks) != size {
 		t.Fatalf("Select() returned %d articles, want a full page of %d", len(picks), size)
 	}
@@ -159,8 +149,7 @@ func TestPriorityDecidesWithFewFeeds(t *testing.T) {
 	counts := map[string]int{}
 	for seed := range 200 {
 		src := sources(feed("loud", 90, 200), feed("quiet", 10, 200))
-		buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"loud", "quiet"}}}
-		for _, pick := range Select(buckets, src, nil, size, int64(seed)) {
+		for _, pick := range Select(src, size, int64(seed)) {
 			counts[pick.Item.FeedID]++
 		}
 	}
@@ -176,17 +165,16 @@ func TestPriorityDecidesWithFewFeeds(t *testing.T) {
 	}
 }
 
-// A feed reachable through two tags is one queue: an article drawn through one must not
-// be offered again through the other.
-func TestNoDuplicatesAcrossBuckets(t *testing.T) {
-	src := sources(feed("shared", 50, 30))
-	buckets := []Bucket{
-		{TagID: "art", Priority: 50, FeedIDs: []string{"shared"}},
-		{TagID: "news", Priority: 50, FeedIDs: []string{"shared"}},
-	}
+// One article, one place. A feed's bands are one queue, and an article that was placed in an
+// earlier pass must not be offered again in a later one.
+func TestNoArticleIsPlacedTwice(t *testing.T) {
+	src := feed("a", 50, 12)
+	// The same three articles listed as fresh and again as read, which is what a queue built
+	// from an inconsistent read set would look like.
+	src.Read = src.Fresh[:3]
 
 	seen := map[string]bool{}
-	for _, pick := range Select(buckets, src, nil, 20, 3) {
+	for _, pick := range Select(sources(src), 20, 3) {
 		if seen[pick.Item.ID] {
 			t.Fatalf("article %q appears twice", pick.Item.ID)
 		}
@@ -197,9 +185,8 @@ func TestNoDuplicatesAcrossBuckets(t *testing.T) {
 // A short edition is the honest outcome of a dry pool, not something to pad.
 func TestExhaustedPoolGivesAShortPage(t *testing.T) {
 	src := sources(feed("a", 50, 3), feed("b", 50, 2))
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"a", "b"}}}
 
-	got := Select(buckets, src, nil, 60, 9)
+	got := Select(src, 60, 9)
 	if len(got) != 5 {
 		t.Fatalf("Select() returned %d articles, want the 5 that exist", len(got))
 	}
@@ -224,11 +211,10 @@ func TestThePageOpensWideAndSpreadsTheRest(t *testing.T) {
 		list = append(list, feed(id, 50, 200))
 		ids = append(ids, id)
 	}
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
 
 	// Several seeds, because these are drawn: one page passing says little.
 	for seed := int64(1); seed <= 12; seed++ {
-		picks := Select(buckets, sources(list...), nil, 50, seed)
+		picks := Select(sources(list...), 50, seed)
 		if len(picks) < 20 {
 			t.Fatalf("seed %d: only %d articles; this test needs a full page", seed, len(picks))
 		}
@@ -289,10 +275,9 @@ func TestNoArticleIsNarrowerThanAQuarterOfThePage(t *testing.T) {
 		list = append(list, feed(id, 50, 200))
 		ids = append(ids, id)
 	}
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: ids}}
 
 	for seed := int64(1); seed <= 12; seed++ {
-		for _, p := range Select(buckets, sources(list...), nil, 50, seed) {
+		for _, p := range Select(sources(list...), 50, seed) {
 			span, known := tracks[p.Slot]
 			if !known {
 				t.Fatalf("seed %d: %q has no width; styles.css will not know either",
@@ -313,12 +298,11 @@ func TestNoArticleIsNarrowerThanAQuarterOfThePage(t *testing.T) {
 
 // A card sized for a picture that has no picture is what makes a page look broken.
 func TestArticlesWithNothingToShowBecomeBriefs(t *testing.T) {
-	bare := &Source{FeedID: "bare", Priority: 50, Items: []*store.Item{
+	bare := &Source{FeedID: "bare", Priority: 50, Fresh: []*store.Item{
 		{ID: "bare-0", FeedID: "bare", GUID: "bare-0", Title: "No picture, no words"},
 	}}
-	buckets := []Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{"bare"}}}
 
-	picks := Select(buckets, sources(bare), nil, 10, 1)
+	picks := Select(sources(bare), 10, 1)
 	if len(picks) != 1 {
 		t.Fatalf("Select() returned %d articles, want 1", len(picks))
 	}
@@ -328,20 +312,10 @@ func TestArticlesWithNothingToShowBecomeBriefs(t *testing.T) {
 	}
 }
 
-func TestUntaggedBucketIsOrdinary(t *testing.T) {
-	src := sources(feed("loose", 50, 10))
-	// The empty TagID is what "no tag" looks like, and nothing treats it specially.
-	buckets := []Bucket{{TagID: "", Priority: store.DefaultPriority, FeedIDs: []string{"loose"}}}
-
-	if got := Select(buckets, src, nil, 5, 2); len(got) != 5 {
-		t.Fatalf("Select() returned %d articles from the untagged bucket, want 5", len(got))
-	}
-}
-
 // shaped is a feed whose every picture is the same measured shape.
 func shaped(id string, priority, n, w, h int) *Source {
 	src := feed(id, priority, n)
-	for _, item := range src.Items {
+	for _, item := range src.Fresh {
 		item.ImageWidth, item.ImageHeight = w, h
 	}
 	return src
@@ -352,8 +326,7 @@ func slotsFrom(t *testing.T, src *Source, seeds int) map[store.Slot]int {
 	t.Helper()
 	tally := map[store.Slot]int{}
 	for seed := int64(1); seed <= int64(seeds); seed++ {
-		picks := Select([]Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{src.FeedID}}},
-			sources(src), nil, 50, seed)
+		picks := Select(sources(src), 50, seed)
 		if len(picks) < 20 {
 			t.Fatalf("seed %d: only %d articles; this test needs a full page", seed, len(picks))
 		}
@@ -426,5 +399,44 @@ func TestHowWideACardGoesFollowsItsPicture(t *testing.T) {
 	if total := widened + plain[store.SlotStandard] + plain[store.SlotBrief]; widened*3 > total {
 		t.Errorf("an unmeasured page widened %d of %d cards; it should be about one in four",
 			widened, total)
+	}
+}
+
+// A feed with nothing fresh must still be able to offer its repeats.
+//
+// The bug this covers: the fresh articles and the repeats were two separately built pools,
+// each with its own tag buckets, and a bucket lists only the feeds that had something in the
+// pool it was planned from. So a page whose feeds had all been read through reached only the
+// one feed that still had an unread article, and came back a quarter full with sixty repeats
+// sitting there unreachable — worst on exactly the pages that needed them most. Bands in one
+// queue cannot come apart that way.
+func TestEveryBandReachesEveryFeed(t *testing.T) {
+	// One feed with a single fresh article; five feeds' worth of repeats behind it.
+	only := feed("a", 50, 5)
+	only.Fresh, only.Read = only.Fresh[:1], only.Fresh[1:]
+
+	list := []*Source{only}
+	for id, n := range map[string]int{"b": 9, "c": 8, "d": 20, "e": 20} {
+		src := feed(id, 50, n)
+		src.Fresh, src.Read = nil, src.Fresh
+		list = append(list, src)
+	}
+
+	picks := Select(sources(list...), 30, 7)
+	if len(picks) != 30 {
+		t.Fatalf("the page holds %d articles, want a full 30 out of the 62 available", len(picks))
+	}
+	// The one fresh article is the first thing placed, so it leads the page.
+	if picks[0].Item.FeedID != "a" {
+		t.Errorf("the page opens with %q; the only fresh article should come first",
+			picks[0].Item.FeedID)
+	}
+
+	drawn := map[string]bool{}
+	for _, pick := range picks {
+		drawn[pick.Item.FeedID] = true
+	}
+	if len(drawn) != 5 {
+		t.Errorf("the page draws from %d feeds, want all five: %v", len(drawn), drawn)
 	}
 }

@@ -443,3 +443,82 @@ func TestAPageDoesNotDrawWhatYouHaveAlreadyRead(t *testing.T) {
 		}
 	}
 }
+
+// A page read right through still turns, and still fills.
+//
+// This is the shape the fallback exists for, and the one it used to fail at. A read mark is a
+// fact about a person, so an article read anywhere is not a fresh candidate here — which means
+// a page somebody keeps up with is a page with nothing fresh at all, and its repeats are the
+// only thing there is to compose from. Reaching them needs the fallback to be drawn through
+// its own buckets: the fresh pool's list only the feeds that had something fresh, and here no
+// feed does.
+func TestAPageReadRightThroughStillFills(t *testing.T) {
+	in := newInstance(t, 6)
+	ctx := context.Background()
+
+	tag, err := in.store.CreateTag(ctx, in.principal.ID, "Comics", "", store.DefaultPriority)
+	if err != nil {
+		t.Fatalf("CreateTag(): %v", err)
+	}
+	for _, name := range []string{"Poorly", "Perry", "Talk"} {
+		in.addFeed(t, name, strings.ToLower(name), 8, tag.ID)
+	}
+
+	size := 12
+	page := in.page(t, "comics", store.PagePatch{IncludeTagIDs: []string{tag.ID}, EditionSize: &size})
+	now := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+
+	// Two turns take all twenty-four articles, and everything is read as it goes. After this
+	// there is nothing unshown and nothing unread anywhere in the three feeds.
+	for turn := range 2 {
+		if err := in.gen.GenerateAndSchedule(ctx, page, now.Add(time.Duration(turn)*24*time.Hour)); err != nil {
+			t.Fatalf("turn %d: %v", turn+1, err)
+		}
+		_, items, err := in.store.CurrentEdition(ctx, page.ID, "")
+		if err != nil {
+			t.Fatalf("turn %d: CurrentEdition(): %v", turn+1, err)
+		}
+		if len(items) != size {
+			t.Fatalf("turn %d holds %d articles, want %d", turn+1, len(items), size)
+		}
+		for _, entry := range items {
+			if err := in.store.SetRead(ctx, in.principal.ID, entry.Item.ID, true); err != nil {
+				t.Fatalf("SetRead(): %v", err)
+			}
+		}
+		if page, err = in.store.PageByID(ctx, page.ID); err != nil {
+			t.Fatalf("PageByID(): %v", err)
+		}
+	}
+
+	spent, _, err := in.store.CurrentEdition(ctx, page.ID, "")
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+
+	if err := in.gen.GenerateAndSchedule(ctx, page, now.Add(48*time.Hour)); err != nil {
+		t.Fatalf("the third turn: %v", err)
+	}
+
+	ed, items, err := in.store.CurrentEdition(ctx, page.ID, "")
+	if err != nil {
+		t.Fatalf("CurrentEdition(): %v", err)
+	}
+	// The page not turning at all is how this failed, so it is what to check first: a stale
+	// edition left in place reads as "a full page" to any assertion about length.
+	if ed.ID == spent.ID {
+		t.Fatal("the page did not turn — nothing was fresh, and its own repeats were out of reach")
+	}
+	if len(items) != size {
+		t.Fatalf("the page holds %d articles, want a full %d of repeats", len(items), size)
+	}
+
+	// And from all three feeds, not just whichever one the fresh pool happened to name.
+	feeds := map[string]bool{}
+	for _, entry := range items {
+		feeds[entry.Item.FeedID] = true
+	}
+	if len(feeds) != 3 {
+		t.Errorf("the page draws from %d feeds, want all three: %v", len(feeds), titlesOf(t, in.store, page.ID))
+	}
+}

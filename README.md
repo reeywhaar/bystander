@@ -113,24 +113,27 @@ what everything else exports.
 
 ## How a page is made
 
-Each feed carries a **priority** from 0 to 100, and so does each **tag** you file it under.
-Both default to 50.
+Each feed carries a **priority** from 0 to 100, and it defaults to 50.
 
-Priority is a **probability of being drawn, not a sort order**. A feed at 90 appears more
-often than one at 10 across pages, without ever silencing it — which over a week reads as
-variety rather than a fixed running order. Zero means never: a real setting, and how you
-keep a feed subscribed but out of rotation.
+Priority is a **share of the page, not a sort order**. A feed at 90 gets nine times the room
+of one at 10, and neither is ever silenced — which over a week reads as variety rather than a
+fixed running order. Zero means never: a real setting, and how you keep a feed subscribed but
+out of rotation.
 
-Composing a page draws repeatedly: a tag weighted by its priority, then a feed within it
-weighted by its, then that feed's newest article you have not been shown. It repeats until
-the page is full or the pool runs dry.
+Composing a page is one idea. Every feed is given a share of it in proportion to its
+priority, and fills that share with its newest articles you have not been shown. A feed with
+less than its share to offer hands the room back, and it is shared out again among the
+others, until the page is full or every feed is dry.
 
-Two things bound it:
+Two things follow, and both are the point:
 
-- **Volume buys nothing.** A draw picks a feed and then takes one article from it, so a
-  publisher posting forty times a day is drawn no more often than one posting twice, at the
-  same priority. A feed's share of the page is its share of the priorities — which is what
-  the slider says, and the only thing it says.
+- **Volume buys nothing.** A share is a number of articles, so a publisher posting forty
+  times a day is given exactly what one posting twice is, at the same priority. A feed's
+  share of the page is its share of the priorities — which is what the slider says, and the
+  only thing it says.
+- **Tags decide whether a feed appears, not how much.** Filing a feed under more tags does
+  not buy it more of the page. Tags are what a page's filters act on; the slider on the feed
+  is what decides its share.
 - **A page is filled out rather than left half empty.** When your feeds have published
   little, the rest of the page comes from what you have already been shown — the ones that
   went past unread first, and anything you actually read comes back greyed rather than

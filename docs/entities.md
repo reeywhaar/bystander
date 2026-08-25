@@ -234,8 +234,9 @@ CREATE TABLE subscription_tags (
 CREATE INDEX subscription_tags_tag ON subscription_tags(tag_id);
 ```
 
-A subscription may carry several tags, or none. Untagged subscriptions form one implicit
-bucket at priority 50 during selection — see [edition.md](edition.md).
+A subscription may carry several tags, or none, and selection does not care either way: tags
+decide whether a feed may appear on a page, and its own priority decides how much of that page
+it gets — see [edition.md](edition.md#in-plain-terms).
 
 Reads come back **ordered the way `ListTags` orders them**, not as the join happened to
 return them. Unordered, the summary under a feed said "Tech · Design" while the dialog
@@ -547,10 +548,10 @@ CREATE INDEX read_articles_feed ON read_articles(principal_id, feed_id);
 What somebody actually read, kept for as long as they follow the feed.
 
 **Nothing expires it.** It was a month, which was right while its only job was a list to look
-back at. It has a second job now: an article somebody has read is not offered to any of their
-pages again — `Candidates` excludes it — so this is what stops a story coming back a year later
-as though it were new. A month-long memory forgets, and forgetting is the one thing it must not
-do.
+back at. It has a second job now: an article somebody has read is never offered to any of their
+pages as *new* again — it falls to the last band, behind everything unread — so this is what
+stops a story coming back a year later as though it were fresh. A month-long memory forgets, and
+forgetting is the one thing it must not do.
 
 What ends it is unfollowing the feed, and `DeleteSubscription` does that in the same call. The
 sweep is the safety net for the two ways that can be missed: the delete crosses the two

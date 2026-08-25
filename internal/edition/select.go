@@ -1,203 +1,239 @@
 // Package edition composes a front page: which articles appear on it, where they sit, and
 // when the next one is due.
 //
-// The sampler in this file is pure. It takes buckets, weights and a seed and returns
+// The sampler in this file is pure. It takes queues, weights and a seed and returns
 // placements; it opens no transaction, reads no clock and touches no store. That is what
 // makes it testable against a fixed seed rather than against a database, and it is why the
 // interesting part of this program can be reasoned about without one.
 //
-// The argument for the algorithm — why probability rather than ordering, why a per-feed
-// cap, why the tag hierarchy takes no part — is in docs/edition.md.
+// The argument for the algorithm — why a feed's share rather than an article's chance, and
+// why tags decide only whether a feed is eligible — is in docs/edition.md.
 package edition
 
 import (
 	"math/rand/v2"
+	"slices"
 
 	"bystander/internal/store"
 )
 
-// Source is one feed as the sampler sees it: a weight and a queue of candidates, newest
-// first.
+// Source is one feed as the sampler sees it: a weight, and its articles in the order this
+// page wants them. See store.Queue for what puts them in that order.
 type Source struct {
 	FeedID   string
 	Priority int
-	Items    []*store.Item
+	Fresh    []*store.Item
+	Unread   []*store.Item
+	Read     []*store.Item
 }
 
-// Bucket is a tag together with the feeds tagged with it.
+// Select composes a page of up to size articles.
 //
-// The untagged bucket is an ordinary bucket with an empty TagID and the default priority.
-// Nothing downstream treats it specially, which is the point: "no tag" is a bucket, not a
-// special case threaded through the loop.
-type Bucket struct {
-	TagID    string
-	Priority int
-	FeedIDs  []string
-}
-
-// Select draws up to size articles.
+// # A feed's share of the page is its share of the priorities, and nothing else
 //
-// Two stages per draw — a bucket weighted by tag priority, then a feed within it weighted
-// by feed priority — repeated until the page is full or nothing is left to draw from.
-// Priority is a probability of being drawn rather than a sort order: a feed at 90 appears
-// more often than one at 10 across editions without ever silencing it.
+// Each feed is given a quota — `size × priority / Σ priorities` — and the page is filled from
+// the front of each feed's queue. Two properties fall out of that, and both are the product.
 //
-// # There is no per-feed cap, and none is needed
+// **Volume buys nothing.** A quota is a number of articles, so a publisher posting two
+// hundred times a day is allotted exactly what one posting twice is, at the same priority.
+// The alternative — any scheme that picks articles rather than feeds — hands the page to
+// whoever writes most: on a real subscription list, shuffling gave two feeds set to 25 and 10
+// forty-one places out of ninety, because between them they had a third of the articles.
 //
-// There was one, on the stated grounds that a prolific publisher should not be able to
-// take the page. It cannot. A draw picks a *feed* and then takes one article from it, so a
-// feed with five hundred articles is drawn exactly as often as one with five at the same
-// priority. Volume buys nothing; only priority does.
+// **Tags take no part.** A tag decides whether a feed is on this page at all, which is
+// edition.eligible and the page's own filter lists. It does not weigh anything: a tag
+// priority meant a feed carrying three tags was drawn from three buckets and took a quarter
+// of the page at the same slider setting as a feed carrying one.
 //
-// The cap was therefore guarding against something the sampler already makes impossible,
-// and it was not free: any cap expressed as a fraction of the page flattens the mix
-// whenever there are few enough feeds that the caps alone can fill it. At a fifth and the
-// default page of sixty, that was everybody following five feeds or fewer — for whom the
-// priority sliders did precisely nothing. A feed's share of the page is now its share of
-// the weights, which is what the slider says it is.
+// # Quotas rather than draws
 //
-// # When there is not enough fresh
+// A weighted draw repeated until the page is full has the same expectation and much more
+// variance: five feeds at equal priority filling thirty places came out 11, 6, 5, 4, 4 —
+// lopsided for no reason a reader could name. Quotas give 7, 6, 6, 6, 5. Priority is still a
+// share rather than an order, but it is the share it says it is on every page rather than on
+// average over a month.
+//
+// The randomness that is left is in *which* articles fill a quota and in the leftover places
+// — see apportion, where it is load-bearing rather than decorative.
+//
+// # When a feed cannot fill its quota
+//
+// Its places go back and are apportioned again over the feeds that still have something, and
+// again until the page is full or every queue is dry. Without that a page is short whenever
+// any feed is thin, which is most pages.
+//
+// # A band at a time, across every feed
+//
+// Three passes over the same queues, one per band, and the whole page is apportioned afresh
+// in each. Everything new from every feed is placed before anything already seen from any
+// feed; every unread repeat before any read one. A pass per band rather than a queue read
+// straight through, because otherwise a feed with a large quota and nothing new contributes
+// something already read while another feed still has unread articles waiting.
 //
 // A page with room left over and nothing new to put in it looks broken rather than honest,
-// so the remainder is drawn from `seen` — articles this person has already been shown. The
-// same weighting decides which, so a page that has to repeat itself repeats the feeds
-// somebody said they cared about.
-//
-// Nothing is invented: an article that was actually read comes back with its read mark
-// intact (see store.AddEdition), so it arrives greyed rather than pretending to be new.
-// One that was merely shown and never read comes back plain, which is fair — it was never
-// read. And when both pools are dry the page really is short, which is still the honest
-// answer.
-func Select(buckets []Bucket, sources, seen map[string]*Source, size int, seed int64) []store.Pick {
+// which is what the later passes are for. Nothing is invented: a repeat that was read arrives
+// with its read mark, so it is greyed rather than pretending to be new. When all three bands
+// are dry the page really is short, which is still the honest answer.
+func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 	if size <= 0 {
 		return nil
 	}
 
-	// Weight zero means never. Zero-weight entries are left out here rather than drawn and
-	// discarded, so a page of nothing but zeroes terminates instead of spinning.
-	build := func(from map[string]*Source) []Bucket {
-		pool := make([]Bucket, 0, len(buckets))
-		for _, b := range buckets {
-			if b.Priority <= 0 {
-				continue
-			}
-			feeds := make([]string, 0, len(b.FeedIDs))
-			for _, id := range b.FeedIDs {
-				if src := from[id]; src != nil && src.Priority > 0 && len(src.Items) > 0 {
-					feeds = append(feeds, id)
-				}
-			}
-			if len(feeds) > 0 {
-				pool = append(pool, Bucket{TagID: b.TagID, Priority: b.Priority, FeedIDs: feeds})
-			}
+	// Zero means never — a real setting, and how somebody keeps a feed subscribed but out of
+	// rotation. Dropped here rather than allotted nothing, so it cannot take a place through
+	// a rounding remainder.
+	feeds := make([]string, 0, len(sources))
+	for id, src := range sources {
+		if src != nil && src.Priority > 0 {
+			feeds = append(feeds, id)
 		}
-		return pool
 	}
+	// Sorted, because a map's order is not stable and a page that cannot be replayed from
+	// its seed is the one thing the seed is for.
+	slices.Sort(feeds)
 
-	drawing := sources
-	pool := build(drawing)
-	repeating := false
-
-	// Two streams from one seed, so a generation replays exactly.
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>32|1))
 
-	cursor := make(map[string]int, len(sources))
-	picked := make(map[string]bool, size)
-
 	var picks []store.Pick
-	for len(picks) < size {
-		if len(pool) == 0 {
-			// Nothing fresh left. Fall back to what has been seen before rather than
-			// handing somebody two thirds of a page and no explanation.
-			if repeating || len(seen) == 0 {
+	taken := make(map[string]bool, size)
+	cursor := make(map[string]int, len(feeds))
+
+	for _, band := range []func(*Source) []*store.Item{
+		func(s *Source) []*store.Item { return s.Fresh },
+		func(s *Source) []*store.Item { return s.Unread },
+		func(s *Source) []*store.Item { return s.Read },
+	} {
+		clear(cursor)
+		from := len(picks)
+
+		for len(picks) < size {
+			left := make(map[string]int, len(feeds))
+			for _, id := range feeds {
+				if n := len(band(sources[id])) - cursor[id]; n > 0 {
+					left[id] = n
+				}
+			}
+			if len(left) == 0 {
 				break
 			}
-			repeating = true
-			drawing = seen
-			clear(cursor)
-			if pool = build(drawing); len(pool) == 0 {
-				break
+
+			placed := 0
+			for id, quota := range apportion(rng, size-len(picks), feeds, left, sources) {
+				items := band(sources[id])
+				for ; quota > 0 && cursor[id] < len(items); cursor[id]++ {
+					item := items[cursor[id]]
+					// A feed reachable more than one way is still one queue, so an article
+					// already on the page is stepped over rather than placed twice.
+					if taken[item.ID] {
+						continue
+					}
+					taken[item.ID] = true
+					picks = append(picks, store.Pick{Item: item})
+					quota--
+					placed++
+				}
 			}
-			continue
-		}
-
-		bi := weightedIndex(rng, len(pool), func(i int) int { return pool[i].Priority })
-		bucket := &pool[bi]
-
-		fi := weightedIndex(rng, len(bucket.FeedIDs), func(i int) int {
-			return drawing[bucket.FeedIDs[i]].Priority
-		})
-		feedID := bucket.FeedIDs[fi]
-		src := drawing[feedID]
-
-		// Advance past anything already taken. A feed reachable from two tags is one
-		// queue, so an article drawn through "Art" is not offered again through "News".
-		var item *store.Item
-		for cursor[feedID] < len(src.Items) {
-			candidate := src.Items[cursor[feedID]]
-			cursor[feedID]++
-			if !picked[candidate.ID] {
-				item = candidate
+			// Every remaining queue held nothing but articles already placed. Apportioning
+			// again would allot the same places to the same empty queues, forever.
+			if placed == 0 {
 				break
 			}
 		}
 
-		if item == nil {
-			dropFeed(&pool, feedID)
-			continue
-		}
-
-		picks = append(picks, store.Pick{Item: item, Rank: len(picks)})
-		picked[item.ID] = true
-
-		if cursor[feedID] >= len(src.Items) {
-			dropFeed(&pool, feedID)
-		}
+		// Interleave the feeds. Each one's quota was taken in a run, so without this a page
+		// is one publisher after another in blocks — and since the slots are assigned by
+		// position, the lead and both features would come from whichever feed sorted first.
+		rest := picks[from:]
+		rng.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] })
 	}
 
+	for i := range picks {
+		picks[i].Rank = i
+	}
 	assignSlots(picks, rng)
 	return picks
 }
 
-// dropFeed removes a feed from every bucket, and any bucket it empties.
-func dropFeed(pool *[]Bucket, feedID string) {
-	buckets := *pool
-	out := buckets[:0]
-	for _, b := range buckets {
-		feeds := b.FeedIDs[:0]
-		for _, id := range b.FeedIDs {
-			if id != feedID {
-				feeds = append(feeds, id)
+// apportion divides room places among the feeds that still have something, in proportion to
+// their priorities.
+//
+// Each feed gets the whole part of its share outright. The places left over — there are
+// always some, since the shares almost never come out whole — are handed out one at a time by
+// a weighted draw on the fractional parts.
+//
+// **Drawn rather than given to the largest fractions**, and that is the whole reason this is
+// not three lines. Largest-remainder is the textbook answer and it silences: a feed whose
+// share is 0.4 of a place has the same fractional part on every page, loses every time, and
+// never appears at all. Priority is a probability of being drawn, not a sort order — zero
+// means never and nothing else does, and a feed at 10 has to turn up occasionally or the
+// slider has a dead zone nobody documented. Drawing on the fractions keeps the expectation
+// exactly right and lets the small ones through at their own rate.
+//
+// A feed is never allotted more than it has left. Its unused places are not redistributed
+// here; the caller apportions again over what remains, which is the same thing and
+// terminates.
+func apportion(rng *rand.Rand, room int, order []string, left map[string]int, sources map[string]*Source) map[string]int {
+	total := 0
+	for id := range left {
+		total += sources[id].Priority
+	}
+	if total == 0 || room <= 0 {
+		return nil
+	}
+
+	quota := make(map[string]int, len(left))
+	spent := 0
+
+	// Built in `order`, not in map order: the draw below consumes randomness in sequence, so
+	// an unstable order is a page that cannot be replayed from its seed.
+	ids := make([]string, 0, len(left))
+	fraction := make([]float64, 0, len(left))
+	for _, id := range order {
+		if left[id] == 0 {
+			continue
+		}
+		exact := float64(room) * float64(sources[id].Priority) / float64(total)
+		whole := min(int(exact), left[id])
+		quota[id] = whole
+		spent += whole
+		ids = append(ids, id)
+		fraction = append(fraction, exact-float64(int(exact)))
+	}
+
+	for spent < room {
+		// Only feeds that could still take one. Weights are the fractional parts, except
+		// that a feed which was allotted nothing at all is given a floor — otherwise a feed
+		// whose share is a whole number of places can never pick up a remainder, and a feed
+		// whose share rounds to exactly zero has weight zero and is silenced by arithmetic
+		// rather than by anybody's decision.
+		sum := 0.0
+		for i, id := range ids {
+			if quota[id] < left[id] {
+				sum += max(fraction[i], 0.01)
 			}
 		}
-		b.FeedIDs = feeds
-		if len(b.FeedIDs) > 0 {
-			out = append(out, b)
+		if sum == 0 {
+			break
 		}
-	}
-	*pool = out
-}
-
-// weightedIndex picks an index in [0,n) with probability proportional to weight(i).
-//
-// A linear scan over the cumulative total. n is the number of a person's tags, or the
-// feeds in one tag — tens, drawn sixty times a day.
-func weightedIndex(rng *rand.Rand, n int, weight func(int) int) int {
-	total := 0
-	for i := range n {
-		total += weight(i)
-	}
-	if total <= 0 {
-		return rng.IntN(n)
-	}
-	roll := rng.IntN(total)
-	for i := range n {
-		roll -= weight(i)
-		if roll < 0 {
-			return i
+		roll := rng.Float64() * sum
+		picked := ""
+		for i, id := range ids {
+			if quota[id] >= left[id] {
+				continue
+			}
+			roll -= max(fraction[i], 0.01)
+			if roll < 0 {
+				picked = id
+				break
+			}
 		}
+		if picked == "" {
+			break
+		}
+		quota[picked]++
+		spent++
 	}
-	return n - 1
+	return quota
 }
 
 // wideSlots are the widths worth more than one column, widest first.
@@ -297,6 +333,27 @@ func drawSlot(rng *rand.Rand, weights []int) store.Slot {
 	}
 	return wideSlots[len(wideSlots)-1]
 }
+
+// assignSlots decides how wide each article is laid out, and how prominently.
+//
+// Done here, at generation time, and stored — so the client renders slots rather than
+// computing them, the page does not reflow after paint, and two loads of one edition are
+// identical. That last part is what the whole thing is for: a page somebody can come back to
+// and find something in again. See web/src/lib/voice.ts.
+//
+// Two rules shape it, and they pull in opposite directions on purpose.
+//
+// **The page opens with weight.** The first card is never a single column. A front page that
+// began with four narrow ones would have nothing to look at first, and every paper ever
+// printed leads with something big. Which of the three wide slots it gets is drawn, so the
+// top of the page is not the same shape every time.
+//
+// **After that, width is scattered rather than spent.** The old rule handed the widest slots
+// to ranks one through four and left everything below identical, so the page ran big to small
+// and then stayed small for forty cards. Rank here is draw order out of a weighted sample, not
+// an editor's judgement of importance, so there is nothing to preserve by stacking prominence
+// at the top — and a page with a full-width story halfway down reads as a page rather than as
+// a list that has been sorted.
 
 // assignSlots decides how wide each article is laid out, and how prominently.
 //

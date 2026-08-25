@@ -38,13 +38,65 @@ way to see what a priority actually does.
 The one case a re-roll cannot help with is a page that has been read through with nothing
 new behind it. That answers `409` and says so.
 
+That refusal is now asked for rather than stumbled into. A scheduled turn composes from
+whatever there is, repeats included; a re-roll passes `freshOnly` and writes nothing at all
+when the fresh pool is empty, because handing back the page somebody just pressed the button
+on with every card greyed is not a different page. The check happens before anything is
+written — composing first and reporting failure afterwards would replace what they are
+looking at and then tell them nothing happened.
+
 A closed set of intervals rather than a cron expression: an arbitrary schedule is a
 support burden with no matching demand, and four options fit in a segmented control.
 
 ## Selection
 
-Weighted sampling, seeded from the edition id so a generation can be replayed exactly
-when something looks wrong.
+### In plain terms
+
+Every feed gets a **share of the page proportional to its priority**, and takes its newest
+articles up to that share. That is the whole algorithm; everything below is the detail.
+
+```
+1. Work out which feeds may appear on this page at all.
+   Its tag filters and feed overrides decide this. Tags do nothing else.
+
+2. Build one queue per feed, in three bands, newest first inside each:
+      new      never shown on this page, never read
+      unread   shown here before, never read
+      read     dealt with
+
+3. Give every feed a quota:  size x priority / (sum of priorities)
+
+4. Fill the page a band at a time — all the new, then all the unread, then the read —
+   taking each feed's quota from the front of its queue.
+   A feed that cannot fill its quota gives the places back, and they are shared out
+   again among the feeds that still have something. Repeat until the page is full
+   or every queue is dry.
+
+5. Shuffle within each band, so the page is not one publisher after another.
+```
+
+Seeded from a number stored with the edition, so the same page can be composed again.
+
+**Priority is a share, not an order.** A feed at 90 gets nine times the places of one at 10;
+neither is ever silenced, and zero means never. What priority is *not* is a ranking — nothing
+here sorts feeds and takes the top.
+
+**Volume buys nothing.** A quota is a number of articles, so a publisher posting two hundred
+times a day is allotted exactly what one posting twice is at the same priority. This is
+load-bearing rather than incidental: on a real subscription list, picking articles instead of
+feeds gave two feeds set to 25 and 10 forty-one places out of ninety, purely because between
+them they had a third of the articles.
+
+**Tags decide eligibility and nothing else.** Whether a feed can appear on a page is a
+question its tags answer. How much of the page it gets is a question only its own priority
+answers. Tag priority used to weigh the draw as well, and that meant a feed carrying three
+tags was drawn from three buckets and took a quarter of a page at the same slider setting as
+a feed carrying one — which is not something anybody asked for.
+
+**New first, everywhere.** Every new article from every feed is placed before any repeat from
+any feed. A page with room left over and nothing new for it looks broken rather than honest,
+so the later bands fill the rest — greyed if they were read, plain if they merely went past.
+When all three bands are dry the page really is short, which is still the honest answer.
 
 ### How far back a feed reaches
 
@@ -57,79 +109,52 @@ How long articles are kept follows the longest window set on any feed, floored a
 days and capped at a year. Without that the longer windows would be a lie: a feed set to
 reach back a year, with a month of articles kept, has nothing to reach into.
 
-### The buckets
+### Quotas rather than draws
 
-A **bucket** is a tag together with the subscriptions tagged directly with it. Every tag
-that has at least one subscription is a bucket, weighted by its `priority`. Subscriptions
-with no tag at all form one implicit bucket weighted at 50.
+The obvious implementation is a weighted draw repeated until the page is full. It has the
+same expectation and far more variance: five feeds at equal priority filling thirty places
+came out 11, 6, 5, 4, 4 — lopsided for no reason a reader could name. Quotas give 7, 6, 6, 6,
+5. A share that is the share it claims on *every* page beats one that is right on average
+over a month.
 
-**`parent_id` does not participate in selection.** It groups tags in the manage interface
-and nothing more. Sampling is flat over the buckets, which is the plain reading of "first
-tag priority, then feed priority" and the one whose behaviour a person can predict from
-the numbers in front of them.
+The randomness that remains is in which places the leftovers go to, and that part is
+load-bearing. Shares almost never come out whole, so some places are always left over after
+the whole parts are handed out. Giving them to the largest fractions — the textbook answer —
+**silences**: a feed whose share is 0.4 of a place has the same fraction on every page, loses
+every time, and never appears at all. So the leftovers are drawn, weighted by the fractions,
+with a floor under feeds that were allotted nothing. Expectation unchanged, no dead zone in
+the slider.
 
-The alternative — descending the tree, so a parent damps everything beneath it — is a
-real design and is written down in [Open questions](#open-questions). It is not what is
-built.
+### When a feed cannot fill its quota
 
-### Drawing one item
-
-1. **Pick a bucket**, weighted by tag priority.
-2. **Pick a subscription** within that bucket, weighted by subscription priority.
-3. **Take the newest unshown item** from that subscription's feed.
-4. Record it, and repeat.
-
-Repeat until the edition holds `settings.edition_size` items or no candidates remain.
-
-Priority is a **probability of being drawn, not a sort order**. A feed at 90 appears more
-often than one at 10 across editions without ever silencing it — which is what the draft
-asks for and what a strict ordering would fail to give. Two feeds at 50 and 50 are not
-tied; they are equally likely, which over a week looks like variety rather than a fixed
-running order.
-
-Priority `0` means never. It is a real setting — how somebody keeps a feed subscribed but
-out of rotation — and zero-weight entries are **removed from the pool before sampling**
-rather than drawn and discarded, so an all-zero configuration terminates instead of
-spinning.
+Its places go back and are shared out again over the feeds that still have something, and
+again, until the page is full or everything is dry. Without that a page is short whenever any
+feed is thin, which is most pages.
 
 ### Guards
 
-- **No per-feed cap, and none is needed.** There was one, on the stated grounds that a
-  prolific publisher should not be able to take the page. It cannot: a draw picks a *feed*
-  and then takes one article from it, so a feed with five hundred articles is drawn exactly
-  as often as one with five at the same priority. Volume buys nothing; only priority does.
+- **Zero means never.** A feed at zero is dropped before quotas are worked out, rather than
+  allotted nothing — otherwise it could still pick up a leftover place.
+- **One article, one place.** A feed's three bands are one queue and an article placed in an
+  earlier pass is stepped over in a later one. The page cannot show the same article twice.
+- **Termination.** Every round either places an article or stops. A round that places nothing
+  — every remaining queue holding only articles already on the page — ends the pass.
 
-  The cap was guarding against something the sampler already makes impossible, and it was
-  not free. Any cap expressed as a fraction of the page flattens the mix whenever there are
-  few enough feeds that the caps alone can fill it — at a fifth and the default page of
-  sixty, that was **everybody following five feeds or fewer**, for whom the priority
-  sliders did precisely nothing. A feed's share of the page is now its share of the
-  weights, which is what the slider says it is.
+### Bands are positions in a queue, not separate pools
 
-- **Empty buckets are dropped** as they exhaust, and a bucket whose every subscription is
-  capped or dry is dropped with them. The pool only ever shrinks, so the loop terminates.
-- **A page with room left over is filled from what has been seen.** When the fresh pool
-  runs dry and the page is not full, the rest is drawn from articles this person has
-  already been shown — by the same weighting, so a page that has to repeat itself repeats
-  the feeds somebody said they cared about.
+This is worth stating because it was a bug for as long as it was not true. The new articles
+and the repeats used to be two independently built pools, each carrying its own tag buckets,
+and a feed missing from one silently vanished from the other. A page of comics read right
+through reached one feed out of five and came back with four articles out of a possible
+sixty-one.
 
-  This used to be a refusal: "never padded with articles already shown". It was the wrong
-  call. A half-empty page reads as broken rather than principled, and those articles were
-  going to be pruned unread either way.
+Two related things were wrong with the same shape. "Shown" is per page and "read" is per
+person: an article read on one page has never been shown on another, so it must not arrive
+there as though it were new — but it was also excluded from the repeats, which only held
+articles with a `shown` row *for that page*. Five of the comics page's sixty-six articles were
+in neither pool and could not appear at all.
 
-  Two things keep it honest. **Seen-but-never-read comes first** — an article that went
-  past unread is closer to new than one somebody has already finished with. And **a repeat
-  keeps its read mark**: `ReplaceEdition` carries `read_at` over from the month-long
-  record, so something read last week arrives greyed rather than pretending to be new.
-  That is the one thing a page that repeats itself must not do.
-
-  When both pools are dry the page really is short, which is still the honest answer.
-
-### A subscription in several tags gets several chances
-
-A feed tagged both "Art" and "World News" sits in two buckets and is drawn from either.
-This is a genuine effect, not an accident: tagging a feed more broadly does make it
-appear more often. The per-feed cap is what keeps it from becoming the page.
+One queue with three bands has no room for either mistake.
 
 ## Layout
 
@@ -249,8 +274,9 @@ for all of that and there used to be two; see
 [entities.md](entities.md#edition_items) for what the second one was and why it went.
 
 It has a second job beyond greying a card: an article somebody has read is never offered to any
-of their pages again — `Candidates` excludes it — which is what stops a story coming back a
-year later as though it were new.
+of their pages as *new* again — it drops to the last band, behind everything unread — which is
+what stops a story coming back a year later as though it were fresh. It can still return as a
+repeat when a page has nothing else, and it arrives greyed when it does.
 
 ## Open questions
 

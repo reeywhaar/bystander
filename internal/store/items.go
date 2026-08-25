@@ -269,146 +269,102 @@ func (s *Store) ItemByID(ctx context.Context, id string) (*Item, error) {
 	return item, err
 }
 
-// Candidates returns, per feed, the newest articles this page has not shown and this person has
-// not read.
+// Queue is one feed's articles for a page being composed, in the order that page wants them.
 //
-// The exclusion is done in Go rather than in SQL because the shown table stores a digest
-// of the guid and SQLite has no sha256: there is nothing to join on. Reading one feed's
-// hashes and filtering as the rows come back costs a set lookup per row, against a table
-// that holds at most a few thousand entries per person.
-// notOlderThan bounds how far back a candidate may be published, per feed — the window is
-// the feed's, not the reader's. A missing or zero entry is no bound.
-func (s *Store) Candidates(ctx context.Context, pageID, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time) (map[string][]*Item, error) {
-	out := make(map[string][]*Item, len(feedIDs))
-	for _, feedID := range feedIDs {
-		seen, err := s.shownHashes(ctx, pageID, feedID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Reading more than perFeed, because some of what comes back will be filtered
-		// out here: taking exactly perFeed would leave a feed whose recent articles have
-		// all been shown looking empty when it is not.
-		// The age bound is in the query rather than in the loop below: an article too old
-		// to appear is not a candidate that gets filtered, it is not a candidate — and
-		// leaving it to the loop would let a feed's whole window be spent on articles
-		// that were never eligible.
-		since := int64(0)
-		if cutoff, ok := notOlderThan[feedID]; ok && !cutoff.IsZero() {
-			since = unix(cutoff)
-		}
-		// Nothing this person has already read, on any of their pages.
-		//
-		// "Shown" is per page and "read" is per person, and with one front page the second
-		// was a subset of the first — you could only have read what that page had shown you.
-		// With several it is not: an article read on a page of comics has never been shown on
-		// the page of everything, so it arrives there as a candidate, is drawn as though it
-		// were new, and lands greyed because the read mark follows the person. A freshly
-		// composed page half full of things somebody has already finished with is the exact
-		// opposite of what composing one is for.
-		//
-		// It can still come back through Backfill, which is where a repeat belongs: greyed,
-		// last in the order, and only when there is nothing fresher to show.
-		rows, err := s.derived.QueryContext(ctx,
-			`SELECT `+itemColumns+` FROM items
-			  WHERE feed_id = ? AND published_at >= ?
-			    AND id NOT IN (SELECT item_id FROM read_articles WHERE principal_id = ?)
-			  ORDER BY published_at DESC LIMIT ?`,
-			feedID, since, principalID, perFeed*4)
-		if err != nil {
-			return nil, err
-		}
-
-		var items []*Item
-		for rows.Next() {
-			item, err := scanItem(rows)
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if seen[string(GUIDHash(item.GUID))] {
-				continue
-			}
-			items = append(items, item)
-			if len(items) == perFeed {
-				break
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-		if len(items) > 0 {
-			out[feedID] = items
-		}
-	}
-	return out, nil
+// Three bands, in the order the page wants them, and the split is the whole of the sampler's
+// input:
+//
+//   - Fresh — never shown on this page and never read by this person. What composing a page
+//     is for.
+//   - Unread — shown here before and never read. A repeat, but the good kind: it went past
+//     without being dealt with, which is closer to new than to finished.
+//   - Read — dealt with. Comes back greyed, and only when there is nothing else.
+//
+// Three bands rather than two independently built pools, and that is not tidying. They were
+// two — candidates and backfill — each with its own tag buckets, and a feed missing from one
+// of them silently vanished from the other: a page whose feeds had all been read through
+// reached one feed out of five. A band is a position in a queue, not a separate collection.
+type Queue struct {
+	Fresh  []*Item
+	Unread []*Item
+	Read   []*Item
 }
 
-// Backfill returns, per feed, the newest articles this principal has already been shown.
+// Queues reads what each feed can offer the page being composed.
 //
-// The complement of Candidates, and the reason it exists: a page with room left over and
-// nothing fresh to put in it looks broken rather than honest. Filling the rest with things
-// already seen keeps the shape of a front page, and costs nothing — those articles were
-// going to be pruned unread either way.
+// "Shown" is per page and "read" is per person, and with one front page the second was a
+// subset of the first — you could only have read what that page had shown you. With several
+// it is not, and the two have to be tracked apart: an article read on a page of comics has
+// never been shown on the page of everything, so it must not arrive there as though it were
+// new and land greyed. It is a repeat, which is a band, not an exclusion — leaving it out of
+// both was how five of the comics page's sixty-six articles became unreachable entirely.
 //
-// exclude is what the page already holds, so an article drawn fresh is not offered back.
-func (s *Store) Backfill(ctx context.Context, pageID, principalID string, feedIDs []string, perFeed int, notOlderThan map[string]time.Time, exclude map[string]bool) (map[string][]*Item, error) {
-	out := make(map[string][]*Item, len(feedIDs))
+// The banding is done in Go rather than in SQL because the shown table stores a digest of the
+// guid and SQLite has no sha256: there is nothing to join on. Reading one feed's hashes and
+// sorting the rows as they come back costs a set lookup per row, against a table that holds
+// at most a few thousand entries per person.
+//
+// notOlderThan bounds how far back an article may be published, per feed — the window is the
+// feed's, not the reader's. A missing or zero entry is no bound.
+func (s *Store) Queues(ctx context.Context, pageID, principalID string, feedIDs []string, perFeed int,
+	notOlderThan map[string]time.Time) (map[string]*Queue, error) {
+	out := make(map[string]*Queue, len(feedIDs))
 
 	for _, feedID := range feedIDs {
 		seen, err := s.shownHashes(ctx, pageID, feedID)
 		if err != nil {
 			return nil, err
 		}
-		if len(seen) == 0 {
-			continue
-		}
 
 		since := int64(0)
 		if cutoff, ok := notOlderThan[feedID]; ok && !cutoff.IsZero() {
 			since = unix(cutoff)
 		}
-		// Things seen but never read come first.
-		//
-		// Both are repeats, but they are not equally good ones: an article that went past
-		// unread is closer to new than one somebody has already finished with. read_articles
-		// lives in this same database, so the preference is a join rather than a second
-		// query and a sort in Go.
+
+		// Newest first, and more than perFeed because they are about to be sorted into three
+		// bands and only one of them is wanted whole. Reading exactly perFeed would leave a
+		// feed whose recent articles have all been shown looking as though it had nothing.
 		rows, err := s.derived.QueryContext(ctx,
-			`SELECT `+prefixed(itemColumns, "i")+`
+			`SELECT `+prefixed(itemColumns, "i")+`, r.item_id IS NOT NULL
 			   FROM items i
 			   LEFT JOIN read_articles r ON r.item_id = i.id AND r.principal_id = ?
 			  WHERE i.feed_id = ? AND i.published_at >= ?
-			  ORDER BY (r.item_id IS NOT NULL), i.published_at DESC
-			  LIMIT ?`,
+			  ORDER BY i.published_at DESC LIMIT ?`,
 			principalID, feedID, since, perFeed*4)
 		if err != nil {
 			return nil, err
 		}
 
-		var items []*Item
+		q := &Queue{}
 		for rows.Next() {
-			item, err := scanItem(rows)
+			var wasRead bool
+			item, err := scanItem(rows, &wasRead)
 			if err != nil {
 				rows.Close()
 				return nil, err
 			}
-			// Only what has been shown, and not what is already on the page.
-			if !seen[string(GUIDHash(item.GUID))] || exclude[item.ID] {
-				continue
-			}
-			items = append(items, item)
-			if len(items) == perFeed {
-				break
+			// The rows arrive newest first, so appending keeps each band in that order.
+			switch shown := seen[string(GUIDHash(item.GUID))]; {
+			case wasRead:
+				q.Read = append(q.Read, item)
+			case shown:
+				q.Unread = append(q.Unread, item)
+			default:
+				q.Fresh = append(q.Fresh, item)
 			}
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		if len(items) > 0 {
-			out[feedID] = items
+
+		for _, band := range []*[]*Item{&q.Fresh, &q.Unread, &q.Read} {
+			if len(*band) > perFeed {
+				*band = (*band)[:perFeed]
+			}
+		}
+		if len(q.Fresh)+len(q.Unread)+len(q.Read) > 0 {
+			out[feedID] = q
 		}
 	}
 	return out, nil
