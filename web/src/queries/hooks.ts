@@ -95,6 +95,21 @@ export function useMe() {
  * comes back to a front page expecting to find it where they left it, and re-fetching would
  * also mean re-drawing the seeded layout from scratch.
  */
+/**
+ * The page as it was when this tab loaded it, and it stays that way.
+ *
+ * Deliberately not polled, and not refetched on focus — see the defaults in mount.tsx. The
+ * server composes a new edition when a page comes due, so a tab left open across a page turn
+ * is showing an edition that is no longer the current one. That is the intended behaviour: a
+ * page arriving under somebody mid-read would rearrange what they are looking at and take
+ * their read marks with it, since a read mark belongs to the composition it was made on. The
+ * whole premise of this reader is that nothing on the page moves.
+ *
+ * So a page turns when it is next loaded. Reloading is the gesture, and it is the reader's.
+ *
+ * Regenerating is the exception and not a counter-example: the response *is* the new page and
+ * it is written straight into the cache — but somebody asked for it, which is the difference.
+ */
 export function useEdition(page = "") {
   const callApi = useApiCall();
   return useQuery({
