@@ -7,6 +7,8 @@ import (
 	"image"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	// Registered for their DecodeConfig, which is the whole point: each reads a header and
@@ -14,6 +16,14 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+
+	// WebP, which the standard library has no decoder for and half the web now serves. Two of
+	// the four pictures that genuinely could not be measured on a real instance were WebP —
+	// one from a stock CDN, one from an art magazine — and both measure fine with this.
+	//
+	// Registered for its side effect like the three above it: nothing here decodes an image,
+	// it only reads the header, and image.DecodeConfig picks the decoder by sniffing.
+	_ "golang.org/x/image/webp"
 
 	"bystander/internal/jobs"
 	"bystander/internal/store"
@@ -37,9 +47,10 @@ const measureBudget = 64 << 10
 // holding a connection open to a slow server is holding it open on their side too.
 //
 // The cost is real and worth knowing — a cold TLS handshake to a distant host can take most of
-// this on its own, so some perfectly healthy servers will time out and be retried. They are
-// retried twice more, hours apart, and if a picture is never measured the page uses the shape
-// it drew and looks exactly as it does now.
+// this on its own, so some perfectly healthy servers will time out. They are asked again within
+// the hour, which is what makes a short timeout affordable; this comment used to claim a retry
+// that did not exist, and every picture that timed out here was never measured again. See
+// MeasureRetrySoon.
 const measureTimeout = 5 * time.Second
 
 type measurePayload struct {
@@ -53,14 +64,87 @@ type measurePayload struct {
 // no outcome is worth a second request to somebody else's server. A host that happens to be
 // down during its one moment is never measured, and that is a page that looks like the page
 // already looks.
-func giveUp(ctx context.Context, st *store.Store, url string, err error) error {
-	if mark := st.GiveUpOnImage(ctx, url); mark != nil {
+// How long a picture is left alone after each kind of failure.
+//
+// Two answers, because the failures are two kinds. A refused connection, a timeout, a 429 or a
+// 5xx are all a host saying "not now" — it was having a moment, or it thinks we are asking too
+// often, and an hour later it will very likely answer. A 404, a body that is not an image, a
+// format with no decoder: those are settled answers, and asking again within the hour would
+// just be the same answer at the host's expense.
+//
+// Neither is permanent, and that is the point — this used to be a flag that meant never again.
+// A 404 today is a picture that moved; an undecodable format today is a format nothing had a
+// decoder for until somebody added one, which is exactly what happened to WebP here.
+const (
+	MeasureRetrySoon  = time.Hour
+	MeasureRetryLater = 24 * time.Hour
+)
+
+// Why a picture could not be measured, as a category rather than a message.
+//
+// A message is for reading once. A category is something a later version of this program can
+// act on: add a decoder for a format there was none for, and the migration that adds it can
+// re-offer every picture that failed as Undecodable and nothing else. Without that the choice
+// is between re-probing the whole database and re-probing none of it.
+//
+// Kept deliberately coarse. These are the distinctions that change what anybody would *do*;
+// finer ones would be a taxonomy nobody reads.
+const (
+	// Gone is a 404 or a 410: the host is fine and the picture is not there.
+	Gone = "gone"
+	// Refused is a 401 or a 403 — hotlink protection, most often.
+	Refused = "refused"
+	// Busy is a 429 or a 5xx: the host is having a moment and said so.
+	Busy = "busy"
+	// Unreachable is a request that never got an answer — DNS, a refused connection, or the
+	// five-second timeout, which a cold handshake to a distant host can spend on its own.
+	Unreachable = "unreachable"
+	// Undecodable is an answer that arrived and was not a picture this build can read. AVIF
+	// and SVG land here; WebP did until a decoder was registered for it.
+	Undecodable = "undecodable"
+	// Empty is a picture that decoded and claimed no size.
+	Empty = "empty"
+)
+
+// postpone records that a picture could not be measured, why, and when to try it again.
+func postpone(ctx context.Context, st *store.Store, url, reason string, after time.Duration, err error) error {
+	if mark := st.PostponeImage(ctx, url, reason, after); mark != nil {
 		// The write failed, so the queue will offer this again. Returning the write error
 		// rather than the drop keeps that visible instead of losing it behind a job that
 		// looks deliberately abandoned.
 		return mark
 	}
 	return fmt.Errorf("%w: %v", jobs.Drop, err)
+}
+
+// retryAfter is how long a host asked to be left alone, when it said.
+//
+// Sent with 429 and 503, in seconds or as a date, and worth honouring: a host that troubles to
+// say when it will be ready is a host worth not annoying. Bounded at both ends — a zero or a
+// date in the past would mean asking straight back, and some hosts answer with a day and a
+// half, which is longer than the article will be interesting for.
+func retryAfter(res *http.Response, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(res.Header.Get("Retry-After"))
+	if raw == "" {
+		return fallback
+	}
+
+	var wait time.Duration
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		wait = time.Duration(seconds) * time.Second
+	} else if at, err := http.ParseTime(raw); err == nil {
+		wait = time.Until(at)
+	} else {
+		return fallback
+	}
+
+	if wait < time.Minute {
+		return time.Minute
+	}
+	if wait > MeasureRetryLater {
+		return MeasureRetryLater
+	}
+	return wait
 }
 
 // Measure asks how big a picture is, without downloading it.
@@ -87,7 +171,9 @@ func Measure(st *store.Store, agent string) jobs.Handler {
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, job.URL, nil)
 		if err != nil {
-			return giveUp(ctx, st, job.URL, err)
+			// A URL that will not even become a request. Nothing about it will be different
+			// in an hour, so it waits out the long one.
+			return postpone(ctx, st, job.URL, Undecodable, MeasureRetryLater, err)
 		}
 		req.Header.Set("User-Agent", agent)
 		req.Header.Set("Accept", "image/*")
@@ -96,27 +182,39 @@ func Measure(st *store.Store, agent string) jobs.Handler {
 
 		res, err := client.Do(req)
 		if err != nil {
-			// A refused connection, a DNS failure, a timeout. Some of these would be
-			// different tomorrow and none of them is worth finding out.
-			return giveUp(ctx, st, job.URL, err)
+			// A refused connection, a DNS failure, a timeout — most often the timeout,
+			// which is five seconds and which a cold handshake to a distant host can spend
+			// on its own. All of them are "not now" rather than "not ever".
+			return postpone(ctx, st, job.URL, Unreachable, MeasureRetrySoon, err)
 		}
 		defer res.Body.Close()
 
-		// Every answer other than the picture is the same answer: this one is not measured.
-		// A 429 and a 404 differ in what they mean and not at all in what to do about them,
-		// once nothing is being retried.
+		// Every answer other than the picture means this one is not measured now. How long
+		// it stays that way is the difference between a host in trouble and a settled
+		// answer: a 429 or a 5xx is a bad minute and is asked again within the hour — with
+		// whatever the host itself said, when it said — and everything else waits a day.
 		if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusPartialContent {
-			return giveUp(ctx, st, job.URL, fmt.Errorf("%s said %s", job.URL, res.Status))
+			reason, wait := Refused, MeasureRetryLater
+			switch {
+			case res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500:
+				reason, wait = Busy, retryAfter(res, MeasureRetrySoon)
+			case res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone:
+				reason = Gone
+			}
+			return postpone(ctx, st, job.URL, reason, wait,
+				fmt.Errorf("%s said %s", job.URL, res.Status))
 		}
 
 		cfg, _, err := image.DecodeConfig(io.LimitReader(res.Body, measureBudget))
 		if err != nil {
 			// Not an image, or a format with no decoder registered — AVIF and SVG both land
-			// here.
-			return giveUp(ctx, st, job.URL, fmt.Errorf("could not read %s: %v", job.URL, err))
+			// here. A settled answer for today, and not for ever: WebP was in this list
+			// until a decoder was registered for it.
+			return postpone(ctx, st, job.URL, Undecodable, MeasureRetryLater,
+				fmt.Errorf("could not read %s: %v", job.URL, err))
 		}
 		if cfg.Width <= 0 || cfg.Height <= 0 {
-			return giveUp(ctx, st, job.URL,
+			return postpone(ctx, st, job.URL, Empty, MeasureRetryLater,
 				fmt.Errorf("%s is %dx%d", job.URL, cfg.Width, cfg.Height))
 		}
 

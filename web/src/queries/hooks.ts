@@ -37,6 +37,7 @@ import {
   type MarkSpan,
 } from "@app/api/actions/feeds";
 import { postFeedsDiscover, postFeedsPreview } from "@app/api/actions/discover";
+import { getImages, postImagesRetry } from "@app/api/actions/images";
 import {
   postFeedsExport,
   postFeedsImport,
@@ -648,5 +649,31 @@ export function useTestSmtp() {
   return useMutation({
     mutationFn: ({ to, relay }: { to: string; relay?: SmtpForm }) =>
       callApi(postAdminSmtpTest(to, relay)),
+  });
+}
+
+/** How the pictures on this instance are getting on. Administrators only. */
+export function useImages() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.adminImages,
+    queryFn: ({ signal }) => callApi(getImages(), signal),
+  });
+}
+
+/**
+ * Offers unmeasured pictures back to the measuring queue.
+ *
+ * The count that comes back is a promise rather than a result: the queue takes them one every
+ * few seconds, which is the politeness the whole thing is arranged around. So the tally is
+ * invalidated to show the new state of play, and it will keep moving afterwards on its own.
+ */
+export function useRetryImages() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (reason: string) => callApi(postImagesRetry(reason)),
+    onSuccess: () =>
+      void client.invalidateQueries({ queryKey: qk.adminImages }),
   });
 }

@@ -6,6 +6,7 @@ import { RequireSession } from "@app/components/RequireSession";
 import { Alert } from "@app/components/ui/Alert";
 import { TabStrip } from "@app/components/ui/TabStrip";
 
+import { ImagesPage } from "@app/apps/admin/ImagesPage";
 import { InvitesPage } from "@app/apps/admin/InvitesPage";
 import { MailPage } from "@app/apps/admin/MailPage";
 import { UsersPage } from "@app/apps/admin/UsersPage";
@@ -29,12 +30,14 @@ export function App() {
                       { to: "/admin", label: "People", end: true },
                       { to: "/admin/invites", label: "Invitations" },
                       { to: "/admin/mail", label: "Mail" },
+                      { to: "/admin/images", label: "Images" },
                     ]}
                   />
                   <Routes>
                     <Route path="/admin" element={<UsersPage me={me} />} />
                     <Route path="/admin/invites" element={<InvitesPage />} />
                     <Route path="/admin/mail" element={<MailPage />} />
+                    <Route path="/admin/images" element={<ImagesPage />} />
                     <Route
                       path="*"
                       element={<Navigate to="/admin" replace />}

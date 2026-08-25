@@ -40,6 +40,8 @@ export const qk = {
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
   adminSmtp: ["admin", "smtp"] as const,
+  /** How the pictures on this instance are getting on. */
+  adminImages: ["admin", "images"] as const,
 
   /** Keyed by the token, because two links are two different answers. */
   invite: (token: string) => ["invite", token] as const,

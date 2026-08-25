@@ -331,3 +331,24 @@ export interface FeedPreview {
   /** The most recent first, capped by the server. */
   items: PreviewItem[];
 }
+
+/** One reason pictures are unmeasured, and how many. */
+export interface ImageFailure {
+  /**
+   * Empty for pictures nothing has asked about yet — a queue that has not caught up rather
+   * than a failure. The others are the categories the measurer records: gone, refused, busy,
+   * unreachable, undecodable, empty.
+   */
+  reason: string;
+  count: number;
+}
+
+/** How the pictures on this instance are getting on. */
+export interface ImageTally {
+  /** Distinct pictures, because one is measured once however many articles use it. */
+  pictures: number;
+  measured: number;
+  unmeasured: number;
+  /** Largest group first: it is the answer more often than not. */
+  failures: ImageFailure[];
+}

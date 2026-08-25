@@ -231,7 +231,7 @@ func TestOneMeasurementAnswersForEveryArticleSharingThePicture(t *testing.T) {
 }
 
 // A picture nothing can measure must stop being asked about.
-func TestAPictureThatCannotBeMeasuredIsNotAskedAboutForever(t *testing.T) {
+func TestAPictureThatFailedIsLeftAloneAndThenAskedAgain(t *testing.T) {
 	st := testStore(t)
 	feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
 	if err != nil {
@@ -245,9 +245,9 @@ func TestAPictureThatCannotBeMeasuredIsNotAskedAboutForever(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The job runs, fails for good, and is dropped from the queue.
-	if err := st.GiveUpOnImage(t.Context(), "https://example.com/gone.png"); err != nil {
-		t.Fatalf("GiveUpOnImage(): %v", err)
+	// The job runs, gets a settled answer, and is put out of reach for the day.
+	if err := st.PostponeImage(t.Context(), "https://example.com/gone.png", Gone, MeasureRetryLater); err != nil {
+		t.Fatalf("PostponeImage(): %v", err)
 	}
 
 	// The queue must not offer it again on the next top-up.
@@ -257,6 +257,55 @@ func TestAPictureThatCannotBeMeasuredIsNotAskedAboutForever(t *testing.T) {
 	}
 	if len(urls) != 0 {
 		t.Errorf("a picture that was given up on is queued again: %v", urls)
+	}
+
+	// But it is offered again a day later, which is the whole difference between "not now"
+	// and "not ever". This test used to stop at the line above, and the thing it was
+	// guarding turned out to be a trap: any failure — one timeout, one rate limit, one bad
+	// minute at a CDN — cost that picture its size for as long as the article existed.
+	//
+	// Fifteen of the nineteen pictures on a real comics page were stuck this way, and when
+	// they were replayed by hand against the same hosts with the same headers, every one of
+	// them measured on the first try.
+	st.SetClock(func() time.Time { return time.Now().Add(MeasureRetryLater + time.Minute) })
+
+	urls, err = st.UnmeasuredImages(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(urls) != 1 {
+		t.Errorf("a picture left alone for a day is still not offered again: %v", urls)
+	}
+}
+
+// A picture that answered is never asked again, however long ago it answered.
+//
+// The retry is keyed on the size still being missing rather than on how long ago the asking
+// happened — otherwise every measured picture on the instance would come back round once a
+// day, which is the same rudeness the queue exists to avoid, at the scale of the whole
+// database.
+func TestAMeasuredPictureIsNeverAskedAgain(t *testing.T) {
+	st := testStore(t)
+	feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if _, err := st.SaveItems(t.Context(), []*store.Item{{
+		ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+		ImageURL: "https://example.com/measured.png", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetImageSize(t.Context(), "https://example.com/measured.png", 800, 600); err != nil {
+		t.Fatalf("SetImageSize(): %v", err)
+	}
+
+	st.SetClock(func() time.Time { return time.Now().Add(30 * 24 * time.Hour) })
+
+	if urls, err := st.UnmeasuredImages(t.Context(), 10); err != nil || len(urls) != 0 {
+		t.Errorf("a measured picture came back round: %v (%v)", urls, err)
 	}
 }
 
@@ -351,4 +400,142 @@ func TestWideningAFeedsReachFindsPicturesAlreadyMeasured(t *testing.T) {
 	if left, err := st.UnmeasuredImages(t.Context(), 50); err != nil || len(left) != 0 {
 		t.Errorf("still unmeasured: %v (%v)", left, err)
 	}
+}
+
+// A host having a bad minute is asked again within the hour, not the next day.
+//
+// The two failures are not the same kind of thing. A 503 or a 429 is a host saying "not now" —
+// it was under load, or it thinks we are asking too often — and an hour later it very likely
+// answers. A 404 is a settled answer, and asking again within the hour is the same answer at
+// the host's expense.
+func TestAHostInTroubleIsAskedAgainSoonerThanOneThatSaidNo(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		header string
+		want   time.Duration
+		reason string
+	}{
+		{"a server error", http.StatusServiceUnavailable, "", MeasureRetrySoon, Busy},
+		{"too many requests", http.StatusTooManyRequests, "", MeasureRetrySoon, Busy},
+		{"gone", http.StatusNotFound, "", MeasureRetryLater, Gone},
+		{"refused", http.StatusForbidden, "", MeasureRetryLater, Refused},
+		// A host that troubles to say when it will be ready is worth not annoying.
+		{"asked for ten minutes", http.StatusTooManyRequests, "600", 10 * time.Minute, Busy},
+		// Bounded at both ends: a zero would mean asking straight back, and a week is longer
+		// than the article stays interesting.
+		{"asked for no time at all", http.StatusTooManyRequests, "0", time.Minute, Busy},
+		{"asked for a week", http.StatusServiceUnavailable, "604800", MeasureRetryLater, Busy},
+		{"asked in gibberish", http.StatusServiceUnavailable, "soon", MeasureRetrySoon, Busy},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.header != "" {
+					w.Header().Set("Retry-After", tc.header)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer host.Close()
+
+			st := testStore(t)
+			now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+			st.SetClock(func() time.Time { return now })
+
+			feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.SaveItems(t.Context(), []*store.Item{{
+				ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+				ImageURL: host.URL + "/pic.png", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+			}}); err != nil {
+				t.Fatal(err)
+			}
+
+			payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
+			if err := Measure(st, "bystander/test")(t.Context(), string(payload)); err == nil {
+				t.Fatal("a refusal was reported as a measurement")
+			}
+
+			// Why, and not just when — because that is what a later version acts on: add a
+			// decoder for a format there was none for, and only the pictures that failed
+			// for that reason need asking again.
+			if got := reasonFor(t, st, host.URL+"/pic.png"); got != tc.reason {
+				t.Errorf("recorded %q, want %q", got, tc.reason)
+			}
+
+			// Not yet: a moment before it is due, the queue still holds it back.
+			st.SetClock(func() time.Time { return now.Add(tc.want - time.Minute) })
+			if urls, err := st.UnmeasuredImages(t.Context(), 10); err != nil || len(urls) != 0 {
+				t.Errorf("offered again after %s, want to wait %s", tc.want-time.Minute, tc.want)
+			}
+
+			// And then it is.
+			st.SetClock(func() time.Time { return now.Add(tc.want + time.Minute) })
+			if urls, err := st.UnmeasuredImages(t.Context(), 10); err != nil || len(urls) != 1 {
+				t.Errorf("still not offered after %s, want asking again: %v", tc.want+time.Minute, urls)
+			}
+		})
+	}
+}
+
+// WebP, which the standard library cannot read and half the web now serves.
+//
+// Two of the four pictures that genuinely could not be measured on a real instance were WebP —
+// one from a stock CDN, one from an art magazine. Both are 640x640 comics' neighbours on the
+// same page, and both measured the moment a decoder was registered.
+func TestAWebPPictureIsMeasured(t *testing.T) {
+	// A minimal lossy WebP: a RIFF container, a VP8 chunk, and a keyframe header saying 16x16.
+	pic := []byte{
+		'R', 'I', 'F', 'F', 0x1a, 0, 0, 0, 'W', 'E', 'B', 'P',
+		'V', 'P', '8', ' ', 0x0e, 0, 0, 0,
+		0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00, 0x10, 0x00, 0, 0, 0, 0,
+	}
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/webp")
+		w.Write(pic)
+	}))
+	defer host.Close()
+
+	st := testStore(t)
+	feed, err := st.UpsertFeed(t.Context(), "https://example.com/feed.xml", "The Example", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := st.SaveItems(t.Context(), []*store.Item{{
+		ID: "a_1", FeedID: feed.ID, GUID: "g1", Title: "One", Link: "https://example.com/1",
+		ImageURL: host.URL + "/pic.webp", PublishedAt: now.Add(-time.Hour), FetchedAt: now,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.webp"})
+	if err := Measure(st, "bystander/test")(t.Context(), string(payload)); err != nil {
+		t.Fatalf("Measure(): %v", err)
+	}
+
+	// Read back the way the page would: an article's id is derived from its feed and guid,
+	// so the one handed to SaveItems is not the one it is stored under.
+	got, err := st.Candidates(t.Context(), "", "", []string{feed.ID}, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got[feed.ID]) != 1 {
+		t.Fatalf("%d articles back, want the one that was saved", len(got[feed.ID]))
+	}
+	if item := got[feed.ID][0]; item.ImageWidth != 16 || item.ImageHeight != 16 {
+		t.Errorf("measured %dx%d, want 16x16 — the WebP decoder is not registered",
+			item.ImageWidth, item.ImageHeight)
+	}
+}
+
+// reasonFor is the category recorded against a picture that could not be measured.
+func reasonFor(t *testing.T, st *store.Store, url string) string {
+	t.Helper()
+	got, err := st.ImageFailures(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("ImageFailures(): %v", err)
+	}
+	return got[url]
 }

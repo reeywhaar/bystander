@@ -146,6 +146,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/smtp", s.requireAdmin(s.putSMTP))
 	mux.Handle("DELETE /api/admin/smtp", s.requireAdmin(s.deleteSMTP))
 	mux.Handle("POST /api/admin/smtp/test", s.requireAdmin(s.testSMTP))
+	mux.Handle("GET /api/admin/images", s.requireAdmin(s.images))
+	mux.Handle("POST /api/admin/images/retry", s.requireAdmin(s.retryImages))
 
 	// A mistyped API path must never fall through to the SPA: an HTML document returned
 	// to a fetch presents as a JSON parse error with no hint of what actually happened.
