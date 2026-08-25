@@ -46,8 +46,12 @@ const (
 
 // Principal is an account.
 type Principal struct {
-	ID         string
-	Username   string
+	ID       string
+	Username string
+	// Slug is the name this person's published pages live under, empty until they choose
+	// one. Not the username, and deliberately: a username is a credential half the world
+	// reuses, and publishing a page should not oblige anybody to announce theirs.
+	Slug       string
 	Role       Role
 	CreatedAt  time.Time
 	DisabledAt time.Time // zero when enabled
@@ -138,7 +142,7 @@ func insertPrincipal(ctx context.Context, tx *sql.Tx, p *Principal, now time.Tim
 	return p, nil
 }
 
-const principalColumns = `id, username, password_hash, role, created_at, disabled_at`
+const principalColumns = `id, username, slug, password_hash, role, created_at, disabled_at`
 
 func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 	var (
@@ -147,7 +151,7 @@ func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 		created  int64
 		disabled sql.NullInt64
 	)
-	if err := row.Scan(&p.ID, &p.Username, &p.hash, &role, &created, &disabled); err != nil {
+	if err := row.Scan(&p.ID, &p.Username, &p.Slug, &p.hash, &role, &created, &disabled); err != nil {
 		return nil, err
 	}
 	p.Role = Role(role)
@@ -409,4 +413,49 @@ func ValidatePassword(password string) error {
 		return Invalid("a password is at most %d bytes", MaxPasswordLen)
 	}
 	return nil
+}
+
+// MaxSlug is how long a public name may be, either half of an address.
+//
+// Forty, which is what a page's own address already allows and more than anybody types twice.
+const MaxSlug = 40
+
+// SetPublicName gives somebody the name their published pages live under, changes it, or takes
+// it away.
+//
+// A second name, not the username. Two names for two jobs: one to sign in with, one to be known
+// by — and the one to sign in with is a credential half the world reuses, which is not a thing
+// publishing a page should oblige anybody to announce.
+//
+// Changing it moves every published page at once, and there is no code here that does that: a
+// public address is built from this name each time it is asked for, never stored alongside the
+// page. The cost is the honest one — the old addresses stop working, which is what changing
+// your name means.
+//
+// Empty takes the name away. Nothing here can be published yet, so nothing has to be taken
+// down with it; when publishing arrives, this is where that belongs.
+//
+// Taken is reported as a fact about the name rather than about who holds it. Whether somebody
+// else exists here, and under what name, is not this caller's business; the answer they need is
+// the same either way, which is "pick another".
+func (s *Store) SetPublicName(ctx context.Context, principalID, slug string) error {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug != "" {
+		if len(slug) > MaxSlug {
+			return Invalid("a public name is at most %d characters", MaxSlug)
+		}
+		if !slugPattern.MatchString(slug) {
+			return Invalid("a public name may use lowercase letters, numbers and hyphens")
+		}
+	}
+
+	res, err := s.main.ExecContext(ctx,
+		`UPDATE principals SET slug = ? WHERE id = ?`, slug, principalID)
+	if isUnique(err) {
+		return Conflict("%q is taken", slug)
+	}
+	if err != nil {
+		return err
+	}
+	return expectOne(res, NotFound("no account %s", principalID))
 }

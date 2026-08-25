@@ -53,3 +53,16 @@ export function postAccountPassword(passwords: {
     d.call({ method: "POST", path: "/api/account/password", body: passwords }),
   );
 }
+
+/**
+ * `PUT /api/account/public-name` — the name this account's published pages live under.
+ *
+ * An empty name gives it up. Changing it moves every published page at once, because a public
+ * address is built from the name rather than stored beside the page — so the old addresses stop
+ * working, which is what changing your name means.
+ */
+export function putAccountPublicName(name: string): ApiAction<Account> {
+  return createApiAction((d) =>
+    d.call({ method: "PUT", path: "/api/account/public-name", body: { name } }),
+  );
+}

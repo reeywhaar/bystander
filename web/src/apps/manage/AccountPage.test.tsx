@@ -12,6 +12,7 @@ function account(overrides: Partial<Account> = {}): Account {
     username: "alice",
     role: "user",
     created_at: Math.floor(Date.now() / 1000) - 86400 * 30,
+    public_name: "",
     recovery_email: "",
     recovery_pending: "",
     mail_configured: true,
@@ -226,6 +227,84 @@ describe("AccountPage", () => {
           (c) => c.method === "DELETE" && c.path === "/api/account/recovery",
         ),
       ).toBe(true),
+    );
+  });
+});
+
+/*
+ * The name somebody's published pages will live under.
+ *
+ * A second name, not the username: a username is a credential half the world reuses, and
+ * publishing a page is no reason to oblige anybody to announce theirs.
+ */
+describe("AccountPage, the public name", () => {
+  it("says there is none, and asks for one", async () => {
+    const { transport } = renderWith(<AccountPage />, {
+      "GET /api/account": { body: account() },
+      "PUT /api/account/public-name": {
+        body: account({ public_name: "misha" }),
+      },
+    });
+
+    expect(await screen.findByText(/None yet/)).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Choose a name" }),
+    );
+    // Typed however somebody likes, and tidied into something that can sit in a URL.
+    await userEvent.type(
+      await screen.findByLabelText("Public name"),
+      "Misha V",
+    );
+    expect(
+      screen.getByText("Your pages will be at /p/misha-v/…"),
+    ).toBeInTheDocument();
+
+    const dialog = screen.getByText("Choose a public name").closest("dialog")!;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(
+        transport.calls.find((c) => c.path === "/api/account/public-name")
+          ?.body,
+      ).toEqual({ name: "misha-v" }),
+    );
+  });
+
+  // Nothing stores the address — it is built from the name each time — so changing the name
+  // moves every published page, and every link anybody already has stops working.
+  it("warns that changing it moves every published page", async () => {
+    renderWith(<AccountPage />, {
+      "GET /api/account": { body: account({ public_name: "misha" }) },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Change name" }),
+    );
+    const field = await screen.findByLabelText("Public name");
+    expect(screen.queryByText(/Links to the old address/)).toBeNull();
+
+    await userEvent.clear(field);
+    await userEvent.type(field, "mv");
+    expect(
+      await screen.findByText(/Links to the old address/),
+    ).toBeInTheDocument();
+  });
+
+  it("gives the name up", async () => {
+    const { transport } = renderWith(<AccountPage />, {
+      "GET /api/account": { body: account({ public_name: "misha" }) },
+      "PUT /api/account/public-name": { body: account() },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Give it up" }),
+    );
+    await waitFor(() =>
+      expect(
+        transport.calls.find((c) => c.path === "/api/account/public-name")
+          ?.body,
+      ).toEqual({ name: "" }),
     );
   });
 });

@@ -30,6 +30,13 @@ export interface Account {
   username: string;
   role: Role;
   created_at: number;
+  /**
+   * The name this account's published pages live under, or empty.
+   *
+   * Its own name and not the username, which is a credential half the world reuses:
+   * publishing a page should not oblige anybody to announce theirs.
+   */
+  public_name: string;
   /** An address this account has *proved* it can read, or empty. */
   recovery_email: string;
   /**

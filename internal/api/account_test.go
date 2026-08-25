@@ -327,3 +327,57 @@ func TestAccountIsYourOwnOnly(t *testing.T) {
 		res.Body.Close()
 	}
 }
+
+// The name somebody's published pages will live under.
+func TestAPublicNameIsChosenAndGivenUp(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	var account accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &account)
+	if account.PublicName != "" {
+		t.Errorf("a new account already answers to %q", account.PublicName)
+	}
+
+	// The response is the account read fresh, so the screen never has to ask again to find
+	// out whether the write landed.
+	h.expect(h.do(http.MethodPut, "/api/account/public-name",
+		map[string]string{"name": "Misha"}), http.StatusOK, &account)
+	if account.PublicName != "misha" {
+		t.Errorf("public name = %q, want it folded to lower case", account.PublicName)
+	}
+
+	h.expect(h.do(http.MethodPut, "/api/account/public-name",
+		map[string]string{"name": ""}), http.StatusOK, &account)
+	if account.PublicName != "" {
+		t.Errorf("public name = %q, want it given up", account.PublicName)
+	}
+}
+
+func TestAPublicNameCannotBeTakenTwice(t *testing.T) {
+	h := newHarness(t)
+
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPut, "/api/account/public-name",
+		map[string]string{"name": "misha"}), http.StatusOK, nil)
+
+	h.signIn(store.RoleUser, "bob")
+	res := h.do(http.MethodPut, "/api/account/public-name", map[string]string{"name": "misha"})
+	h.expect(res, http.StatusConflict, nil)
+}
+
+func TestAPublicNameHasToLookLikeOne(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	for _, bad := range []string{"Misha Vyrtsev", "misha/comics", "misha_v", "-misha"} {
+		h.expect(h.do(http.MethodPut, "/api/account/public-name",
+			map[string]string{"name": bad}), http.StatusBadRequest, nil)
+	}
+}
+
+func TestAPublicNameNeedsASession(t *testing.T) {
+	h := newHarness(t)
+	h.expect(h.do(http.MethodPut, "/api/account/public-name",
+		map[string]string{"name": "misha"}), http.StatusUnauthorized, nil)
+}

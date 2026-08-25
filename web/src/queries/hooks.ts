@@ -7,6 +7,7 @@ import {
   postAccountPassword,
   postAccountRecovery,
   postAccountRecoveryConfirm,
+  putAccountPublicName,
 } from "@app/api/actions/account";
 import {
   deleteAdminInvitesById,
@@ -675,5 +676,21 @@ export function useRetryImages() {
     mutationFn: (reason: string) => callApi(postImagesRetry(reason)),
     onSuccess: () =>
       void client.invalidateQueries({ queryKey: qk.adminImages }),
+  });
+}
+
+/**
+ * Sets the name this account's published pages live under, or gives it up.
+ *
+ * The response is the account read fresh, so it is written straight into the cache rather than
+ * invalidated and asked for again — the screen never has a moment where the write has landed
+ * and the page still says otherwise.
+ */
+export function useSetPublicName() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => callApi(putAccountPublicName(name)),
+    onSuccess: (account) => client.setQueryData(qk.account, account),
   });
 }

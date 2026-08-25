@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/account", s.requireSession(s.account))
 	mux.Handle("POST /api/account/password", s.requireSession(s.changePassword))
+	mux.Handle("PUT /api/account/public-name", s.requireSession(s.setPublicName))
 	mux.Handle("POST /api/account/recovery", s.requireSession(s.beginRecovery))
 	mux.Handle("POST /api/account/recovery/confirm", s.requireSession(s.confirmRecovery))
 	mux.Handle("DELETE /api/account/recovery", s.requireSession(s.clearRecovery))

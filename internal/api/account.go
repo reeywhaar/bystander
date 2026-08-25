@@ -28,6 +28,11 @@ type accountBody struct {
 	// So a page reopened mid-flow says which address it is waiting on rather than starting
 	// somebody over on a code they are already holding.
 	RecoveryPending string `json:"recovery_pending"`
+	// PublicName is the name this account's published pages live under, or empty.
+	//
+	// Its own name and not the username, which is a credential half the world reuses:
+	// publishing a page should not oblige anybody to announce theirs.
+	PublicName string `json:"public_name"`
 	// MailConfigured is whether a relay exists at all.
 	//
 	// Here because a recovery address is worth nothing without one, and a page that
@@ -73,10 +78,42 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, id string)
 		Username:        p.Username,
 		Role:            string(p.Role),
 		CreatedAt:       p.CreatedAt.Unix(),
+		PublicName:      p.Slug,
 		RecoveryEmail:   proved,
 		RecoveryPending: pending,
 		MailConfigured:  relay,
 	})
+}
+
+type publicNameRequest struct {
+	// Name is empty to give the name up.
+	Name string `json:"name"`
+}
+
+// setPublicName chooses the name this account's published pages live under, changes it, or
+// takes it away.
+//
+// A second name rather than the username, because a username is a credential half the world
+// reuses and publishing should not oblige anybody to announce theirs.
+//
+// Changing it moves every published page at once, and nothing here does that work: a public
+// address is built from the name each time it is asked for and never stored beside the page.
+// The cost is the honest one — the old addresses stop working, which is what changing your name
+// means, and the interface says so before it is pressed.
+func (s *Server) setPublicName(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r)
+
+	var body publicNameRequest
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := s.store.SetPublicName(r.Context(), p.ID, body.Name); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	s.log.Info("a public name was set", "principal", p.ID, "name", body.Name)
+	s.writeAccount(w, r, p.ID)
 }
 
 type beginRecoveryRequest struct {

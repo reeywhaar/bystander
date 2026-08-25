@@ -77,6 +77,7 @@ var Main = []Migration{
 	mainFeedFetchInterval,
 	mainJobLabel,
 	mainPageFilterLists,
+	mainPrincipalSlug,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db
