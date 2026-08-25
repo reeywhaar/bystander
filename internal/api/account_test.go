@@ -189,7 +189,7 @@ func TestProvingAnAddressTakesItFromWhoeverHadIt(t *testing.T) {
 		map[string]any{"code": relay.codeSentTo(t, "shared@example.com")}), http.StatusOK, nil)
 
 	// A second account, signed in through its own jar.
-	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "")
+	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -112,6 +112,8 @@ export function InvitePage() {
     }
   }
 
+  const sentTo = invite.data.email;
+
   return (
     <Frame
       title="Choose a name and a password"
@@ -126,6 +128,19 @@ export function InvitePage() {
         className="flex flex-col gap-4"
       >
         {error ? <Alert>{error}</Alert> : null}
+
+        {/* Said before the account exists, not after. This link reached that inbox, which is
+            the whole proof, so accepting attaches the address to the account without asking
+            for it again — and somebody should be told what their account is being attached to
+            while they can still close the tab. */}
+        {sentTo ? (
+          <p className="text-sm text-ink-muted">
+            This invitation was sent to{" "}
+            <span className="text-ink">{sentTo}</span>, so it becomes the
+            recovery address for your account. You can change it later under
+            Settings.
+          </p>
+        ) : null}
 
         <Field
           label="Name"

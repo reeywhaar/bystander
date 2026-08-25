@@ -81,6 +81,11 @@ type inviteBody struct {
 	Usable    bool   `json:"usable"`
 	Accepted  bool   `json:"accepted"`
 	Expired   bool   `json:"expired"`
+	// Email is the address this invitation was sent to, or empty for one handed over. Shown
+	// to whoever holds the token — which, for an emailed one, is whoever can read that inbox
+	// — so the page can say that it will become the account's recovery address. Somebody
+	// should be told what an account of theirs is about to be attached to.
+	Email string `json:"email"`
 }
 
 // invite reports what state a link is in, before somebody types a password into it.
@@ -98,6 +103,7 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 	now := s.store.Now()
 	writeJSON(w, http.StatusOK, inviteBody{
 		Role:      string(inv.Role),
+		Email:     inv.Email,
 		ExpiresAt: inv.ExpiresAt.Unix(),
 		Usable:    inv.Usable(now),
 		Accepted:  inv.Accepted(),
@@ -122,10 +128,17 @@ func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := s.store.AcceptInvite(r.Context(), r.PathValue("token"), body.Username, body.Password)
+	p, displaced, err := s.store.AcceptInvite(r.Context(), r.PathValue("token"), body.Username, body.Password)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	// An emailed invitation's address is bound to the new account, and one address belongs to
+	// one account — so this may have taken it off another. There is nowhere to tell them: the
+	// only address on file for them is the one they just lost.
+	if displaced != "" {
+		s.log.Warn("a recovery address moved to a new account that was invited at it",
+			"from", displaced, "to", p.ID)
 	}
 	if err := s.sessions.Issue(r.Context(), w, p.ID); err != nil {
 		s.fail(w, r, err)

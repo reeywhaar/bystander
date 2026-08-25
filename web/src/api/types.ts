@@ -96,6 +96,13 @@ export interface Invite {
   usable: boolean;
   accepted: boolean;
   expired: boolean;
+  /**
+   * The address this invitation was sent to, or empty for one handed over.
+   *
+   * It becomes the account's recovery address on acceptance, so the person about to accept is
+   * told what their account is being attached to.
+   */
+  email: string;
 }
 
 export interface FeedStub {
@@ -299,10 +306,18 @@ export interface AdminInvite {
   role: Role;
   created_at: number;
   expires_at: number;
+  /** The address it was sent to, or empty for one minted to be handed over. */
+  email: string;
   accepted_at: number | null;
   /** Who the invitation became, once accepted. */
   username: string;
-  /** Present only in the response that minted it. It is never readable again. */
+  /**
+   * Present only in the response that minted a link to hand over, and never readable again.
+   *
+   * An emailed invitation never carries it, deliberately: accepting one binds that address to
+   * the new account as a proved recovery address, and the proof is that the link went to that
+   * inbox and nowhere else.
+   */
   url?: string;
 }
 

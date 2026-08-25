@@ -34,6 +34,13 @@ type Invite struct {
 	ExpiresAt   time.Time
 	AcceptedAt  time.Time // zero while outstanding
 	PrincipalID string    // the account it produced, once accepted
+
+	// Email is the address this invitation was sent to, or empty for one handed over.
+	//
+	// It is what makes accepting an emailed invitation *proof* of an address: the link went
+	// there and nowhere else, so whoever used it read that inbox. AcceptInvite binds it as
+	// the new account's recovery address on the strength of that.
+	Email string
 }
 
 // Accepted reports whether this invitation has already been used.
@@ -50,9 +57,20 @@ func (i *Invite) Usable(now time.Time) bool { return !i.Accepted() && !i.Expired
 // The token is returned exactly once, here. What is stored is its hash, so a link that
 // gets lost is reissued rather than recovered — the same stance as sessions, and for the
 // same reason: nothing in the database should be replayable by whoever can read it.
-func (s *Store) CreateInvite(ctx context.Context, role Role, createdBy string) (*Invite, string, error) {
+// email is the address it will be sent to, or empty for a link to be handed over. It is kept
+// so that accepting the invitation can bind it as a proved recovery address — see Invite.Email
+// — and it is normalised the same way a recovery address is, because the two end up in the
+// same column and a difference in spelling would be a difference in identity.
+func (s *Store) CreateInvite(ctx context.Context, role Role, createdBy, email string) (*Invite, string, error) {
 	if !role.Valid() {
 		return nil, "", Invalid("%q is not a role", role)
+	}
+	if email != "" {
+		address, err := checkAddress(email)
+		if err != nil {
+			return nil, "", err
+		}
+		email = address
 	}
 
 	buf := make([]byte, inviteTokenBytes)
@@ -68,6 +86,7 @@ func (s *Store) CreateInvite(ctx context.Context, role Role, createdBy string) (
 		CreatedBy: createdBy,
 		CreatedAt: now,
 		ExpiresAt: now.Add(InviteTTL),
+		Email:     email,
 	}
 
 	// A NULL created_by is the bootstrap invitation: nobody issued it, the program did.
@@ -76,15 +95,16 @@ func (s *Store) CreateInvite(ctx context.Context, role Role, createdBy string) (
 		creator = createdBy
 	}
 	if _, err := s.main.ExecContext(ctx,
-		`INSERT INTO invites (id, token_hash, role, created_by, created_at, expires_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		inv.ID, hashToken(token), string(role), creator, unix(inv.CreatedAt), unix(inv.ExpiresAt)); err != nil {
+		`INSERT INTO invites (id, token_hash, role, created_by, created_at, expires_at, email)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		inv.ID, hashToken(token), string(role), creator,
+		unix(inv.CreatedAt), unix(inv.ExpiresAt), inv.Email); err != nil {
 		return nil, "", fmt.Errorf("create invite: %w", err)
 	}
 	return inv, token, nil
 }
 
-const inviteColumns = `id, role, created_by, created_at, expires_at, accepted_at, principal_id`
+const inviteColumns = `id, role, created_by, created_at, expires_at, accepted_at, principal_id, email`
 
 func scanInvite(row interface{ Scan(...any) error }) (*Invite, error) {
 	var (
@@ -96,7 +116,7 @@ func scanInvite(row interface{ Scan(...any) error }) (*Invite, error) {
 		accepted  sql.NullInt64
 		principal sql.NullString
 	)
-	if err := row.Scan(&inv.ID, &role, &createdBy, &created, &expires, &accepted, &principal); err != nil {
+	if err := row.Scan(&inv.ID, &role, &createdBy, &created, &expires, &accepted, &principal, &inv.Email); err != nil {
 		return nil, err
 	}
 	inv.Role = Role(role)
@@ -145,43 +165,49 @@ func (s *Store) ListInvites(ctx context.Context) ([]*Invite, error) {
 //
 // One transaction: the account and the stamp on the invitation cannot come apart, so a
 // token cannot create two accounts however many times it is submitted, and an account
-// cannot exist whose invitation still reads as outstanding.
-func (s *Store) AcceptInvite(ctx context.Context, token, username, password string) (*Principal, error) {
+// cannot exist whose invitation still reads as outstanding. An emailed invitation's address
+// is bound in the same one, for the same reason — an account either exists with the recovery
+// address it was promised or does not exist.
+//
+// The second return is the account whose recovery address this one took over, if any, for the
+// caller to log. There is nowhere to tell them: that would be a mail to the address they just
+// lost. Same rule and same reason as proving an address with a code — see takeOverAddress.
+func (s *Store) AcceptInvite(ctx context.Context, token, username, password string) (*Principal, string, error) {
 	// Validate before opening a transaction and before hashing: bcrypt at cost 12 on an
 	// endpoint anybody can reach is a reason not to reach it with nonsense.
 	if err := ValidateUsername(username); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := ValidatePassword(password); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	tx, err := s.main.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer tx.Rollback()
 
 	inv, err := scanInvite(tx.QueryRowContext(ctx,
 		`SELECT `+inviteColumns+` FROM invites WHERE token_hash = ?`, hashToken(token)))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFound("that invitation link is not one of ours")
+		return nil, "", NotFound("that invitation link is not one of ours")
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	now := s.Now()
 	switch {
 	case inv.Accepted():
-		return nil, Conflict("that invitation has already been used")
+		return nil, "", Conflict("that invitation has already been used")
 	case inv.Expired(now):
-		return nil, Invalid("that invitation expired on %s; ask for a new link", inv.ExpiresAt.Format(time.DateOnly))
+		return nil, "", Invalid("that invitation expired on %s; ask for a new link", inv.ExpiresAt.Format(time.DateOnly))
 	}
 
 	hashed, err := hashPassword(password)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	p, err := insertPrincipal(ctx, tx, &Principal{
 		ID:        ids.New(ids.Principal),
@@ -191,18 +217,43 @@ func (s *Store) AcceptInvite(ctx context.Context, token, username, password stri
 		hash:      hashed,
 	}, now)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE invites SET accepted_at = ?, principal_id = ? WHERE id = ?`,
 		unix(now), p.ID, inv.ID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
+
+	// An emailed invitation proves its address, so the account starts with a recovery address
+	// already on it rather than being asked to prove the same inbox a second time with a code.
+	// The proof is the same one a code gives — somebody read that inbox — obtained from a mail
+	// that had to be sent anyway.
+	//
+	// In this transaction, so an account either exists with its address or does not exist. A
+	// second write afterwards could fail and leave somebody signed in believing they have a
+	// recovery address, which is the belief this whole area exists to make true.
+	var displaced string
+	if inv.Email != "" {
+		// Same rule as proving an address by code: the last account to prove it holds it.
+		// Whoever can read that inbox today is who recovery through it would reach.
+		taken, err := takeOverAddress(ctx, tx, p.ID, inv.Email)
+		if err != nil {
+			return nil, "", err
+		}
+		displaced = taken
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO user_recovery (principal_id, email, confirmed_at) VALUES (?, ?, ?)`,
+			p.ID, inv.Email, unix(now)); err != nil {
+			return nil, "", err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return p, nil
+	return p, displaced, nil
 }
 
 // DeleteInvite withdraws an outstanding invitation.

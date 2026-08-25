@@ -597,7 +597,8 @@ export function useCreateInvite() {
   const callApi = useApiCall();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (role: Role) => callApi(postAdminInvites(role)),
+    mutationFn: ({ role, email }: { role: Role; email?: string }) =>
+      callApi(postAdminInvites(role, email ?? "")),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.adminInvites });
     },

@@ -101,7 +101,8 @@ CREATE TABLE invites (
   created_at   INTEGER NOT NULL,
   expires_at   INTEGER NOT NULL,
   accepted_at  INTEGER,
-  principal_id TEXT    REFERENCES principals(id) ON DELETE CASCADE
+  principal_id TEXT    REFERENCES principals(id) ON DELETE CASCADE,
+  email        TEXT    NOT NULL DEFAULT ''             -- '' when handed over rather than sent
 );
 ```
 
@@ -111,6 +112,11 @@ invitation.
 
 An accepted invite keeps its row and points at the principal it produced. That is the
 audit trail, and it is the reason accepting sets `accepted_at` rather than deleting.
+
+`email` is the address it was sent to, and accepting binds it to the new account as a
+**proved** recovery address — straight into `user_recovery`, with no code to type. The proof
+is that the link went to that inbox and nowhere else, which is why the API does not hand the
+link back for an invitation it sent. See [mail.md](mail.md#invitations).
 
 ### `tags`
 

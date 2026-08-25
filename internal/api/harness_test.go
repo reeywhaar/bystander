@@ -114,6 +114,28 @@ func (s *sentMail) record(_ context.Context, _ mailer.Settings, m mailer.Message
 	return nil
 }
 
+// lastTo is the last message sent to an address.
+func (s *sentMail) lastTo(t *testing.T, address string) mailer.Message {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := len(s.sent) - 1; i >= 0; i-- {
+		if strings.EqualFold(s.sent[i].To, address) {
+			return s.sent[i]
+		}
+	}
+	t.Fatalf("nothing was sent to %s", address)
+	return mailer.Message{}
+}
+
+// count is how many messages went out at all, for asserting that none did.
+func (s *sentMail) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sent)
+}
+
 // codeSentTo digs the confirmation code out of the last message sent to an address.
 //
 // Read from the message rather than from the database, because the database only has its
@@ -216,7 +238,7 @@ func (h *harness) expect(res *http.Response, status int, out any) {
 func (h *harness) signIn(role store.Role, username string) {
 	h.t.Helper()
 
-	_, token, err := h.store.CreateInvite(h.t.Context(), role, "")
+	_, token, err := h.store.CreateInvite(h.t.Context(), role, "", "")
 	if err != nil {
 		h.t.Fatalf("CreateInvite(): %v", err)
 	}
@@ -268,7 +290,7 @@ func (h *harness) mainPage() string {
 func (h *harness) signInAsSomebodyElse(username string) *http.Client {
 	h.t.Helper()
 
-	_, token, err := h.store.CreateInvite(h.t.Context(), store.RoleUser, "")
+	_, token, err := h.store.CreateInvite(h.t.Context(), store.RoleUser, "", "")
 	if err != nil {
 		h.t.Fatalf("CreateInvite(): %v", err)
 	}

@@ -197,7 +197,7 @@ func bootstrap(ctx context.Context, cfg *config.Config, st *store.Store, log *sl
 		}
 	}
 
-	inv, token, err := st.CreateInvite(ctx, store.RoleAdmin, "")
+	inv, token, err := st.CreateInvite(ctx, store.RoleAdmin, "", "")
 	if err != nil {
 		return fmt.Errorf("create the first invitation: %w", err)
 	}

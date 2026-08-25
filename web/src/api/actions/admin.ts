@@ -45,9 +45,24 @@ export function getAdminInvites(): ApiAction<AdminInvite[]> {
 }
 
 /** `POST /api/admin/invites` — the one response that carries the link. */
-export function postAdminInvites(role: Role): ApiAction<AdminInvite> {
+/**
+ * `POST /api/admin/invites` — mint a link, or send one.
+ *
+ * With an address the server sends the link there and the reply carries no URL. Without one it
+ * hands the URL back, that once. The two are exclusive: a link an administrator can also read
+ * proves nothing about who accepted it, and accepting an emailed invitation is what binds the
+ * address to the account.
+ */
+export function postAdminInvites(
+  role: Role,
+  email = "",
+): ApiAction<AdminInvite> {
   return createApiAction((d) =>
-    d.call({ method: "POST", path: "/api/admin/invites", body: { role } }),
+    d.call({
+      method: "POST",
+      path: "/api/admin/invites",
+      body: { role, email },
+    }),
   );
 }
 

@@ -33,7 +33,7 @@ func TestASharedLinkOffersWhatWasShared(t *testing.T) {
 	}
 
 	// Somebody else, on this instance.
-	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "")
+	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

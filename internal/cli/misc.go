@@ -35,7 +35,7 @@ func inviteCmd() *cobra.Command {
 				role = store.RoleUser
 			}
 
-			inv, token, err := st.CreateInvite(cmd.Context(), role, "")
+			inv, token, err := st.CreateInvite(cmd.Context(), role, "", "")
 			if err != nil {
 				return err
 			}

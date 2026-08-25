@@ -28,7 +28,7 @@ func TestInviteToFrontPage(t *testing.T) {
 	feed := newFeedServer(t, 8)
 
 	// An invitation reports its own state before anybody types a password into it.
-	_, token, err := h.store.CreateInvite(t.Context(), store.RoleAdmin, "")
+	_, token, err := h.store.CreateInvite(t.Context(), store.RoleAdmin, "", "")
 	if err != nil {
 		t.Fatalf("CreateInvite(): %v", err)
 	}

@@ -51,7 +51,7 @@ func TestLoginAndLogout(t *testing.T) {
 func TestTheSessionCookieIsProtected(t *testing.T) {
 	h := newHarness(t)
 
-	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "")
+	_, token, err := h.store.CreateInvite(t.Context(), store.RoleUser, "", "")
 	if err != nil {
 		t.Fatalf("CreateInvite(): %v", err)
 	}

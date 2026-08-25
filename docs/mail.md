@@ -4,10 +4,10 @@ bystander does not deliver mail. It hands a message to a relay an operator alrea
 their mail provider, or a sending service — and that relay does the rest. Everything here is
 about the handing over.
 
-Nothing sends mail yet except the test button. The relay exists first because the thing that
-needs it — a recovery address somebody can actually recover through — is worthless without
-it: an address stored against a relay that does not exist is a promise the product cannot
-keep, and the person finds that out at the worst possible moment.
+Two things send: a recovery code, and an invitation. Both are refused outright when no relay
+is configured, before anything is written — an address stored against a relay that does not
+exist is a promise the product cannot keep, and the person finds that out at the worst
+possible moment.
 
 ## Where the configuration lives
 
@@ -116,7 +116,42 @@ on it.
 
 Nothing sends to a proved address yet — that is the reset flow, which does not exist.
 
+## Invitations
+
+An invitation is either **handed over** or **sent**, and the two are exclusive by
+construction.
+
+Handed over, the reply carries the full URL and that is the only time the token is readable.
+Sent, the reply carries **no URL at all** — and that omission is the feature. Accepting a sent
+invitation binds its address to the new account as a proved recovery address, with no code to
+type, and the proof is precisely that the link went to that inbox and nowhere else. Hand the
+same link to the administrator as well and the proof is gone: whoever accepted it need never
+have read the address it is now attached to.
+
+So an administrator who wants to pass a link along themselves mints one without an address; one
+who has an address sends it there. A mail that bounces is a new invitation, not a link to fall
+back on.
+
+It is the same proof a code gives — somebody read that inbox — out of a mail that had to be
+sent anyway, which is why it is worth having rather than making somebody prove the same address
+twice in five minutes.
+
+The binding happens **inside the transaction that creates the account**, so an account either
+exists with the address it was promised or does not exist. One address still belongs to one
+account, held by whoever proved it last, so an invitation sent to an address already on file
+takes it over exactly as confirming a code does — silently, and logged, because the only
+address on file for the displaced account is the one they just lost.
+
+A send that fails **withdraws the invitation**. Left in place it would sit in the list looking
+issued while its only copy of the link is gone, and the way out of that state is minting
+another one anyway.
+
+The interface does not grey the control when no relay is configured; choosing to send says why
+and offers the other route. A disabled button that gives no reason sends somebody looking for
+it in the wrong place.
+
 ```
+postAdminInvites            POST   /api/admin/invites              with an address, sends it and returns no link
 postAccountRecovery         POST   /api/account/recovery           sends a code, records nothing
 postAccountRecoveryConfirm  POST   /api/account/recovery/confirm   the only step that changes anything
 deleteAccountRecovery       DELETE /api/account/recovery           forgets both

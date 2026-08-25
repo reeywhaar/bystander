@@ -55,6 +55,7 @@ var released = []struct{ name, sha string }{
 	{"20260825040000_main_principal_slug", "1fbde99d0ef1f0e696a13c8eacdc9325962fd6d8cc0699d773b9c4585e09304b"},
 	{"20260825062029_main_public_pages", "90122553cc925e840a238c6f6c7813b7c470bc54d563ec6bbbe5d9febfd546a5"},
 	{"20260825064927_derived_read_is_not_the_editions", "c7124047c8ba466ad70a31395f2935546affca7eeb64cf89c188ea94de4f7ec7"},
+	{"20260825224030_main_invite_email", "8d45fa9c9ad7537fbeeedf1d05c4087ebb34d0d9637448476f82126cdcdcb8e7"},
 }
 
 func all() []Migration {
