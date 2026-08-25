@@ -728,7 +728,10 @@ away from everybody permanently. Not a trade worth making to save two pixels of 
   `Segmented` is the same question when there are only two or three answers and the answer
   changes what the rest of the form is — a select hides its options behind a press, and seeing
   both at once is most of what makes such a form legible. It takes plain strings and an index,
-  because the caller already has the meanings in an array to render from.
+  because the caller already has the meanings in an array to render from; `null` means nothing
+  chosen yet, and an index past either end is clamped rather than lighting nothing. `block`
+  fills the width, which is what stacked controls in a form want and what a control in a row
+  of other controls does not.
 - `src/components/` — shared composites.
 - `src/apps/<island>/` — everything belonging to one island.
 

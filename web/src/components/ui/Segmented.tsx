@@ -16,6 +16,12 @@ import { useId } from "react";
  * that was valid when it was set, and a control showing no answer to a question that has one
  * is a worse lie than one showing the nearest.
  *
+ * `block` fills the width and divides it evenly between the answers, which is what a form
+ * wants: sized to their own labels, one control as wide as "Ordinary | Administrator" above
+ * another as wide as "Link | Email" reads as two unrelated things rather than two answers to
+ * the same form. Off by default, because a control in a row of other controls should be its
+ * own size — opted into, like every other switch on these primitives.
+ *
  * A `radiogroup` rather than buttons that happen to look chosen: it is one question with one
  * answer, and that is what a screen reader should be told. The pressed segment is tinted the
  * same way the tab strips are — two controls meaning "you are on this one" should not be two
@@ -26,6 +32,7 @@ export function Segmented({
   value,
   onChange,
   label,
+  block = false,
   disabled = false,
 }: {
   options: string[];
@@ -34,6 +41,8 @@ export function Segmented({
   onChange: (index: number) => void;
   /** What the question is, read out before the answers. */
   label: string;
+  /** Fill the width, dividing it evenly between the answers. */
+  block?: boolean;
   disabled?: boolean;
 }) {
   const id = useId();
@@ -48,7 +57,9 @@ export function Segmented({
       <div
         role="radiogroup"
         aria-labelledby={id}
-        className="inline-flex w-fit gap-1 rounded-md border border-rule bg-paper-sunken p-1"
+        className={`gap-1 rounded-md border border-rule bg-paper-sunken p-1 ${
+          block ? "flex w-full" : "inline-flex w-fit"
+        }`}
       >
         {options.map((option, index) => (
           <button
@@ -59,6 +70,8 @@ export function Segmented({
             disabled={disabled}
             onClick={() => onChange(index)}
             className={`rounded px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50 ${
+              block ? "flex-1" : ""
+            } ${
               index === at
                 ? "bg-accent/10 text-accent"
                 : "text-ink-muted hover:text-ink"

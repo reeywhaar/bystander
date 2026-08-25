@@ -43,6 +43,9 @@ export function ImageListDialog({
       flush
       footer={
         <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
           {/* Nothing to reset on the ones nothing has asked about: they are already due,
               and the only thing between them and a measurement is the queue's own pace. */}
           {reason ? (
@@ -53,9 +56,6 @@ export function ImageListDialog({
               {retry.isPending ? "Resetting…" : `Reset all ${failure?.count}`}
             </Button>
           ) : null}
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
         </div>
       }
     >

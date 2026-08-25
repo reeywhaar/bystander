@@ -83,13 +83,14 @@ export function InviteDialog({
         <div className="flex flex-wrap items-center gap-3">
           {done ? (
             <>
+              <Button onClick={reset}>Make another</Button>
               <Button variant="primary" onClick={close}>
                 Done
               </Button>
-              <Button onClick={reset}>Make another</Button>
             </>
           ) : (
             <>
+              <Button onClick={close}>Cancel</Button>
               <Button
                 variant="primary"
                 type="submit"
@@ -102,7 +103,6 @@ export function InviteDialog({
                     : "Minting…"
                   : "Create"}
               </Button>
-              <Button onClick={close}>Cancel</Button>
             </>
           )}
         </div>
@@ -135,6 +135,7 @@ export function InviteDialog({
         >
           <Segmented
             label="What kind of account"
+            block
             options={["Ordinary", "Administrator"]}
             value={role === "admin" ? 1 : 0}
             onChange={(index) => setRole(index === 1 ? "admin" : "user")}
@@ -142,6 +143,7 @@ export function InviteDialog({
 
           <Segmented
             label="How it reaches them"
+            block
             options={["Link", "Email"]}
             value={byEmail ? 1 : 0}
             onChange={(index) => setByEmail(index === 1)}
