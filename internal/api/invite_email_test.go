@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
+	"sync"
 	"testing"
 
 	"bystander/internal/store"
@@ -208,5 +210,85 @@ func TestAnInvitationToNonsenseIsRefused(t *testing.T) {
 		http.StatusBadRequest, nil)
 	if n := out.count(); n != 0 {
 		t.Errorf("%d messages sent for an address that cannot exist", n)
+	}
+}
+
+// A link that has been used is refused, and the refusal is a 409 rather than a 500.
+//
+// The store makes it single-use; this is the same claim through the door somebody actually
+// knocks on, including the state the acceptance page reads before it offers a form.
+func TestAnInvitationLinkCannotBeUsedTwice(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+
+	var created adminInviteBody
+	h.expect(h.do(http.MethodPost, "/api/admin/invites", map[string]string{"role": "user"}),
+		http.StatusCreated, &created)
+	token := tokenFromMail(t, *created.URL)
+
+	h.expect(h.do(http.MethodPost, "/api/invites/"+token+"/accept",
+		map[string]string{"username": "first", "password": "correct-horse"}),
+		http.StatusNoContent, nil)
+
+	// Somebody else with the same link, or the same person pressing twice.
+	h.expect(h.do(http.MethodPost, "/api/invites/"+token+"/accept",
+		map[string]string{"username": "second", "password": "correct-horse"}),
+		http.StatusConflict, nil)
+
+	// And the page that reads the link before offering a form says so, rather than
+	// presenting one that cannot work.
+	var offered inviteBody
+	h.expect(h.do(http.MethodGet, "/api/invites/"+token, nil), http.StatusOK, &offered)
+	if !offered.Accepted || offered.Usable {
+		t.Errorf("the link reads as accepted=%v usable=%v after being used", offered.Accepted, offered.Usable)
+	}
+
+	if _, err := h.store.PrincipalByUsername(t.Context(), "second"); err == nil {
+		t.Error("the second acceptance made an account anyway")
+	}
+}
+
+// A link raced by several people at once still makes one account.
+func TestOneInvitationSurvivesBeingRaced(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+
+	var created adminInviteBody
+	h.expect(h.do(http.MethodPost, "/api/admin/invites", map[string]string{"role": "user"}),
+		http.StatusCreated, &created)
+	token := tokenFromMail(t, *created.URL)
+
+	const racers = 6
+	var wg sync.WaitGroup
+	codes := make([]int, racers)
+	start := make(chan struct{})
+	for i := range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			res := h.do(http.MethodPost, "/api/invites/"+token+"/accept",
+				map[string]any{"username": fmt.Sprintf("racer%d", i), "password": "correct-horse"})
+			defer res.Body.Close()
+			codes[i] = res.StatusCode
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	won := 0
+	for i, code := range codes {
+		switch code {
+		case http.StatusNoContent:
+			won++
+		case http.StatusConflict, http.StatusTooManyRequests:
+			// Accepting runs bcrypt on an unauthenticated endpoint, so it shares the login
+			// limiter — six at once is exactly what that ceiling is for.
+		default:
+			t.Errorf("racer %d got %d, want 204, 409 or 429", i, code)
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d of %d racers made an account, want exactly one", won, racers)
 	}
 }
