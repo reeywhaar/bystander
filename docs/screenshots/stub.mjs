@@ -308,9 +308,13 @@ function seeded(text) {
 /**
  * One abstract plate: four families of composition, chosen by the seed.
  *
- * 1200×675 for every card whatever its slot, because the cards are `object-cover` and crop
- * what they do not need. Drawing one image per aspect ratio would be work in service of a
- * crop nobody can see.
+ * Square, 1200×1200, for every card whatever its slot. One image per aspect ratio would be
+ * work in service of a crop nobody can see — but the *source* shape is not nothing, because
+ * `object-cover` scales before it crops. A 16:9 plate in the nearly-square box the shot ladder
+ * often draws has to be scaled up about a quarter to cover it, so what a big card showed was a
+ * magnified fragment of the middle: the strokes came out coarse and the composition was mostly
+ * off-frame. Square is the shape that never has to be enlarged, whatever the ladder draws,
+ * because it is at least as tall as it is wide and the cards are never taller than square.
  *
  * Kept deliberately faint. The first version of these was op-art — dense, high-contrast,
  * and the only thing on the front page anybody looked at, which is the exact opposite of
@@ -321,7 +325,7 @@ function plate(id) {
   const rnd = seeded(id);
   const pick = (list) => list[Math.floor(rnd() * list.length)];
   const W = 1200;
-  const H = 675;
+  const H = 1200;
   const shapes = [];
 
   // Which composition, taken from the article's position in the corpus rather than from its
@@ -360,17 +364,53 @@ function plate(id) {
       }
     }
   } else if (family === 2) {
-    // Stacked bars, like a column of type seen from too far away to read.
-    let y = 30 + rnd() * 40;
-    while (y < H - 40) {
-      const h = 8 + rnd() * 34;
-      const x = 40 + rnd() * 160;
-      const w = (W - x - 60) * (0.35 + rnd() * 0.65);
+    // Overlapping planes, tilted off the axes.
+    //
+    // This was stacked horizontal bars — "a column of type seen from too far away to read" —
+    // and the idea did not survive contact with a card the width of the page. Left-aligned
+    // grey bars of ragged length are what every loading skeleton in the world looks like, so
+    // the plate that was standing in for a photograph read as a photograph that had not
+    // arrived yet. A screenshot cannot afford that: the whole claim of these pictures is that
+    // they are pictures.
+    //
+    // Tilted is most of the fix. Nothing in an interface sits at seven degrees, so a rotated
+    // plane cannot be mistaken for a component however grey it is, and overlapping them at
+    // different opacities gives the depth a flat stack of bars never had.
+    // Smaller and more numerous than the first attempt, which used three or four planes at
+    // half the plate each and came out as a wash: at the size the opening card is drawn, a
+    // composition of four flat shapes has nothing in it to look at twice. Detail has to
+    // survive being enlarged, so most of these are outlines rather than fills — a stroke keeps
+    // its edge at any scale, and a 12% grey rectangle at half a page is fog.
+    const planes = 6 + Math.floor(rnd() * 4);
+    for (let i = 0; i < planes; i++) {
+      const w = W * (0.14 + rnd() * 0.3);
+      const h = H * (0.14 + rnd() * 0.3);
+      // Placed so some of them run off the plate. A composition whose every element is
+      // comfortably inside the frame reads as a diagram of a composition.
+      const x = -W * 0.12 + rnd() * W;
+      const y = -H * 0.12 + rnd() * H;
+      const angle = (rnd() * 2 - 1) * 16;
+      // Roughly one in three is filled; the rest are drawn. Nothing in an interface sits at
+      // sixteen degrees, which is most of why this can no longer be mistaken for a skeleton.
+      const filled = rnd() > 0.66;
+      const ink = i % 5 === 4 ? "var(--a)" : "var(--i)";
       shapes.push(
         `<rect x="${x.toFixed(0)}" y="${y.toFixed(0)}" width="${w.toFixed(0)}" height="${h.toFixed(0)}" ` +
-          `fill="${rnd() > 0.86 ? "var(--a)" : "var(--i)"}" opacity="${(0.1 + rnd() * 0.3).toFixed(2)}"/>`,
+          `transform="rotate(${angle.toFixed(1)} ${(x + w / 2).toFixed(0)} ${(y + h / 2).toFixed(0)})" ` +
+          (filled
+            ? `fill="${ink}" opacity="${(0.1 + rnd() * 0.18).toFixed(2)}"/>`
+            : `fill="none" stroke="${ink}" stroke-width="${(2 + rnd() * 5).toFixed(1)}" ` +
+              `opacity="${(0.2 + rnd() * 0.3).toFixed(2)}"/>`),
       );
-      y += h + 10 + rnd() * 30;
+    }
+    // Two hard edges across the whole plate, so the drifting shapes have something to sit
+    // against and the eye has somewhere to start.
+    for (const at of [0.28 + rnd() * 0.2, 0.62 + rnd() * 0.2]) {
+      const ly = H * at;
+      shapes.push(
+        `<line x1="0" y1="${ly.toFixed(0)}" x2="${W}" y2="${(ly + (rnd() * 2 - 1) * H * 0.14).toFixed(0)}" ` +
+          `stroke="var(--i)" stroke-width="${(2 + rnd() * 4).toFixed(1)}" opacity="0.32"/>`,
+      );
     }
   } else {
     // A diagonal weave.
@@ -484,8 +524,26 @@ const FAMILY = new Map(
   PAPERS.flatMap((paper) => paper.items).map((item, i) => [item.id, i % 4]),
 );
 
+/** The four, by the number they are drawn as, so the capture can ask for one by name. */
+const FAMILIES = ["arcs", "halftone", "planes", "weave"];
+
 createServer((req, res) => {
   const path = new URL(req.url, ORIGIN).pathname;
+
+  // Which composition each article's plate is drawn in.
+  //
+  // Published so the capture can insist that the card opening the page carries the arcs — the
+  // strongest of the four, and the one worth putting at the size the opener is drawn at. The
+  // alternative was for capture.mjs to recompute the family from the id, which means two
+  // copies of this rule and a screenshot that quietly stops being what it says it is the first
+  // time one of them changes.
+  if (path === "/plates.json") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify(Object.fromEntries([...FAMILY].map(([id, n]) => [id, FAMILIES[n]]))),
+    );
+    return;
+  }
 
   const feed = /^\/f\/([a-z]+)\.xml$/.exec(path);
   if (feed && bySlug.has(feed[1])) {

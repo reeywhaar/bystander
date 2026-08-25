@@ -3,17 +3,20 @@
 // No Playwright and no browser download: Chromium ships its own headless mode and Node has
 // a WebSocket client, so the whole driver is the handful of CDP calls below.
 //
-// Invoked by capture.sh, which starts everything this expects. Environment:
+// Invoked by capture.mjs, which starts everything this expects. Environment:
 //   BASE            base URL of a running instance    (default http://localhost)
 //   SESSION_COOKIE  value of a valid bystander_auth cookie
 //   OUT             directory to write PNGs into      (default .)
 //   WIDTH           CSS width for the front page      (default 1240)
-//   HEIGHT          CSS height for the front page     (default 1120)
+//   HEIGHT          how much of the front page to photograph (default 1500)
+//   VIEW            how tall the front page's window is      (default 900)
 //   NARROW          CSS width for everything else     (default 880)
 //   THEME           light | dark                      (default light)
 //   OPEN_FEED       name of the feed whose dialog is captured
 import { writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
+
+import { connect } from "./cdp.mjs";
 
 const BASE = process.env.BASE ?? "http://localhost";
 const OUT = process.env.OUT ?? ".";
@@ -21,69 +24,15 @@ const COOKIE = process.env.SESSION_COOKIE;
 const WIDTH = Number(process.env.WIDTH ?? 1240);
 const HEIGHT = Number(process.env.HEIGHT ?? 1120);
 const NARROW = Number(process.env.NARROW ?? 880);
+// How tall the front page believes its window is, which is not how much of it is photographed.
+// An ordinary laptop window, because `vh` bounds are measured against it.
+const VIEW = Number(process.env.VIEW ?? 900);
 const THEME = process.env.THEME ?? "light";
 const OPEN_FEED = process.env.OPEN_FEED ?? "The Meridian";
 
 if (!COOKIE) throw new Error("SESSION_COOKIE is required");
 
-const target = await (async () => {
-  for (let i = 0; i < 50; i++) {
-    try {
-      const list = await (await fetch("http://127.0.0.1:9222/json/list")).json();
-      const page = list.find((t) => t.type === "page");
-      if (page?.webSocketDebuggerUrl) return page;
-    } catch {
-      /* not up yet */
-    }
-    await sleep(200);
-  }
-  throw new Error("chromium devtools endpoint never came up on :9222");
-})();
-
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((ok, bad) => {
-  ws.onopen = ok;
-  ws.onerror = bad;
-});
-
-let nextId = 1;
-const pending = new Map();
-const listeners = new Map();
-
-ws.onmessage = (ev) => {
-  const msg = JSON.parse(ev.data);
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id);
-    pending.delete(msg.id);
-    msg.error ? reject(new Error(JSON.stringify(msg.error))) : resolve(msg.result);
-  } else if (msg.method && listeners.has(msg.method)) {
-    listeners.get(msg.method).forEach((fn) => fn(msg.params));
-    listeners.delete(msg.method);
-  }
-};
-
-const send = (method, params = {}) =>
-  new Promise((resolve, reject) => {
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
-    ws.send(JSON.stringify({ id, method, params }));
-  });
-
-const once = (method) =>
-  new Promise((resolve) => {
-    if (!listeners.has(method)) listeners.set(method, []);
-    listeners.get(method).push(resolve);
-  });
-
-async function evaluate(expression) {
-  const { result, exceptionDetails } = await send("Runtime.evaluate", {
-    expression,
-    awaitPromise: true,
-    returnByValue: true,
-  });
-  if (exceptionDetails) throw new Error(`${exceptionDetails.text}\n${expression}`);
-  return result.value;
-}
+const { send, once, evaluate, close } = await connect(9222);
 
 /**
  * Poll for a selector rather than sleeping a fixed amount: every page here suspends on its
@@ -173,13 +122,19 @@ async function fitDialogHeight(width, max = 2000) {
   await sleep(300);
 }
 
-async function shot(name) {
+async function shot(name, clip) {
   // The headline faces are the point of half these screenshots, and they arrive after the
   // first paint — `font-display: swap` means a shot taken too early is a shot of the
   // fallback serif. Nothing else in this file would have noticed.
   await evaluate("document.fonts.ready.then(() => true)");
   await evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))");
-  const { data } = await send("Page.captureScreenshot", { format: "png" });
+  const { data } = await send("Page.captureScreenshot", {
+    format: "png",
+    // `captureBeyondViewport` photographs a region taller than the window without resizing
+    // the window, which is the only way to take a tall picture of a page that is allowed to
+    // know how tall the window is. See the front page shot.
+    ...(clip ? { clip: { x: 0, y: 0, ...clip, scale: 1 }, captureBeyondViewport: true } : {}),
+  });
   writeFileSync(`${OUT}/${name}.png`, Buffer.from(data, "base64"));
   console.log(`  wrote ${name}.png`);
 }
@@ -220,15 +175,21 @@ await send("Network.setCookie", {
 
 // --- 2. the front page ---
 //
-// A fixed window rather than fitHeight, and it is the one shot where that is right. A page
-// of twenty-eight articles is several thousand pixels tall; captured whole it becomes a
-// ribbon that a README renders two inches wide. This is what somebody sees when they open
-// the thing.
-await setViewport(WIDTH, HEIGHT);
+// A fixed region rather than fitHeight, and it is the one shot where that is right. A page of
+// twenty-eight articles is several thousand pixels tall; captured whole it becomes a ribbon
+// that a README renders two inches wide.
+//
+// The window and the picture are different sizes on purpose, and this is the part that was
+// wrong. Setting the viewport to the height of the picture tells the page it is in a window
+// 1500px tall, and the page believes it: no card's picture is taller than 70vh, so every
+// capped picture came out 1050px — half again what anybody with a real screen ever sees, and
+// the lead's picture pushed its own headline out of the shot. The page is given an ordinary
+// window and photographed past the bottom of it instead.
+await setViewport(WIDTH, VIEW);
 await navigate("/");
 await waitFor(".page-grid article h2");
 await sleep(900); // the plates are lazy-loaded images
-await shot("frontpage");
+await shot("frontpage", { width: WIDTH, height: HEIGHT });
 
 // --- 3. the feeds somebody follows ---
 await navigate("/manage");
@@ -281,7 +242,7 @@ await sleep(200);
 // --- 7. what has already been read ---
 //
 // The one list in the product, and the argument for why it is not an unread count in
-// disguise: it counts nothing and holds only what somebody has finished with. capture.sh marks
+// disguise: it counts nothing and holds only what somebody has finished with. capture.mjs marks
 // a few articles read so there is something here.
 await navigate("/manage/read");
 await waitFor("main ul li a");
@@ -289,6 +250,6 @@ await sleep(400);
 await fitHeight(NARROW);
 await shot("read");
 
-ws.close();
+close();
 console.log("done");
 process.exit(0);

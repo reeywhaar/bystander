@@ -29,7 +29,7 @@ are not all in one face; that is [Typography](#typography), below.
 | What you have already read — the only list here | The way in, which is an invitation and never a default password |
 
 Real captures of the real reader; only the publications are invented. They are regenerated
-by [`docs/screenshots/capture.sh`](docs/screenshots/), which builds the thing, runs it
+by [`docs/screenshots/capture.mjs`](docs/screenshots/), which builds the thing, runs it
 against eight stand-in publishers and drives headless Chromium at the result.
 
 ## Why
@@ -369,7 +369,7 @@ go test ./...                    # works with no frontend build present
 cd web && npm ci && npm test
 cd web && npm run build          # then rebuild the binary to embed it
 
-docs/screenshots/capture.sh      # regenerate the screenshots above
+docs/screenshots/capture.mjs      # regenerate the screenshots above
 web/scripts/fetch-fonts.sh       # re-download the headline faces
 ```
 
