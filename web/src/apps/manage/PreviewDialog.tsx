@@ -118,7 +118,11 @@ function Preview({ items }: { items: PreviewItem[] }) {
         */
         <article
           key={item.link || item.title}
-          className="slot-feature border-b border-rule py-4 first:pt-0 last:border-b-0 last:pb-0"
+          // `-of-type` rather than `first`/`last`: the spacer below is the last child now, so
+          // `last:border-b-0` stopped matching the last article and it drew a rule of its own
+          // right above the footer's. Matching on the element type is what makes the rules
+          // about articles rather than about whatever happens to be last in the box.
+          className="slot-feature border-b border-rule py-4 first-of-type:pt-0 last-of-type:border-b-0 last-of-type:pb-0"
         >
           {/*
             One voice for all ten rather than the page's per-article draw. On the page the
@@ -172,6 +176,9 @@ function Preview({ items }: { items: PreviewItem[] }) {
           ) : null}
         </article>
       ))}
+
+      {/* The room after the last article — see above for why it is not padding. */}
+      <div aria-hidden className="h-5" />
     </div>
   );
 }
