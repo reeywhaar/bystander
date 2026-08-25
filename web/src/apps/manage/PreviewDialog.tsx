@@ -95,18 +95,38 @@ function Preview({ items }: { items: PreviewItem[] }) {
   }
 
   return (
-    <div className="flex flex-col">
+    /*
+      The articles scroll inside the dialog rather than taking it with them.
+      
+      Ten of them with pictures is several screens, and the whole dialog scrolling meant
+      reaching Add by scrolling past everything — the button that ends the job was the hardest
+      thing in the dialog to reach. Bounded in viewport units because the content is tall and
+      a fixed height would be wrong on both a phone and a desktop; 55 leaves room for the
+      title above and the buttons below at any size worth designing for.
+    */
+    <div className="max-h-[55dvh] overflow-y-auto overscroll-contain pr-1">
       {items.map((item) => (
+        /*
+          The page's own article styling, not a plainer one invented here. This is a sample of
+          what these would look like once followed, so it is set the way they would be: the
+          slot decides the sizes, the voice decides the face.
+          
+          `slot-feature` also carries a grid span, which does nothing outside the grid — it is
+          here for the sizes it brings with it, which is the whole reason the slot is a class
+          rather than four separate ones.
+        */
         <article
           key={item.link || item.title}
-          className="border-b border-rule py-4 first:pt-0 last:border-b-0 last:pb-0"
+          className="slot-feature border-b border-rule py-4 first:pt-0 last:border-b-0 last:pb-0"
         >
           {/*
-            The reading serif and the same ladder the page uses, because this is a sample of
-            what the page would look like — a preview set in the interface sans would be
-            showing something other than what arrives.
+            One voice for all ten rather than the page's per-article draw. On the page the
+            faces vary because the cards do — different widths, different sizes, spread across
+            a grid; ten of them stacked in one column at one width would be a ransom note.
+            The workhorse is the one that says nothing about itself, which is right here: the
+            subject is the feed, not the typography.
           */}
-          <h3 className="font-serif text-lg leading-snug text-ink">
+          <h3 className="headline voice-workhorse text-ink">
             <a
               href={item.link}
               target="_blank"
@@ -145,7 +165,7 @@ function Preview({ items }: { items: PreviewItem[] }) {
             // second thing to be wrong, and the safe form is what was sent. See
             // internal/feeds/sanitize.go.
             <div
-              className="prose-summary mt-2 text-ink-muted"
+              className="prose-summary prose-step-1 mt-2 text-ink-muted"
               dangerouslySetInnerHTML={{ __html: item.summary }}
             />
           ) : null}
