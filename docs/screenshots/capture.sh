@@ -191,11 +191,11 @@ Culture|60|undercurrent:65 slowcraft:50
 Local|40|harbour:45
 SECTIONS
 
-# The poller's first cycle is a minute after startup, and these feeds were added after that,
-# so without this wait every row on the feeds page says "not fetched yet" underneath a feed
-# whose articles are already on the front page. Adding a feed saves the articles that
-# discovery already parsed — which is why there is a page at all — but it is the poller that
-# records a successful fetch.
+# Fetching is a job kind and its refill runs on a cadence, so a feed added just after a sweep
+# waits for the next one. Without this wait every row on the feeds page says "not fetched yet"
+# underneath a feed whose articles are already on the front page. Adding a feed saves the
+# articles that discovery already parsed — which is why there is a page at all — but it is the
+# fetch job that records a successful fetch.
 echo "==> waiting for the first poll"
 total=$(api "$BASE/api/feeds" | jget "d.length")
 fetched=0
@@ -210,9 +210,9 @@ done
   exit 1
 }
 
-# Twenty-eight rather than the default: a lead, two features and the rest, which is the
-# shape the grid was designed around. Eight per cent of the page is features, so anything
-# under twenty-five gets exactly one and the second row never appears.
+# Twenty-eight rather than the default: enough that the roughly-one-in-four rule puts several
+# wide cards down the page rather than one at the top, which is the shape the grid was designed
+# around. Under about twenty the page is an opener and a field of columns.
 echo "==> setting the page size"
 front=$(api "$BASE/api/pages" | jget "d.find(p => p.is_main).id")
 api -X PATCH "$BASE/api/pages/$front" -d '{"edition_size":28}' -o /dev/null
@@ -230,7 +230,7 @@ echo "==> making a second front page"
 culture_tag=$(api "$BASE/api/tags" | jget "d.find(t => t.name === 'Culture').id")
 culture=$(api -X POST "$BASE/api/pages" -d '{"name":"Culture","slug":"culture"}' | jget "d.id")
 api -X PATCH "$BASE/api/pages/$culture" \
-  -d "{\"tag_filter\":\"including\",\"tag_ids\":[\"$culture_tag\"],\"edition_interval\":604800,\"edition_size\":12}" \
+  -d "{\"include_tag_ids\":[\"$culture_tag\"],\"edition_interval\":604800,\"edition_size\":12}" \
   -o /dev/null
 culture_items=$(api "$BASE/api/edition?page=culture" | jget "d.items.length")
 [ "$culture_items" -gt 0 ] || {

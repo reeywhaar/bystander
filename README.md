@@ -136,17 +136,25 @@ Two things bound it:
   went past unread first, and anything you actually read comes back greyed rather than
   pretending to be new. When there is nothing left at all, the page really is short.
 
-Each article is given a **slot** — lead, feature, standard or brief — when the page is
-made, and stored. The browser renders slots; it does not choose them. That is why the page
-you leave is the page you come back to, down to the position of every card.
+Each article is given a **slot** — how much of the page's sixteen tracks it takes: lead is
+all of them, then wide, feature, and an ordinary column. It is decided when the page is made
+and stored. The browser renders slots; it does not choose them. That is why the page you leave
+is the page you come back to, down to the position of every card.
+
+Roughly one card in four gets more than its column, the first one always, and the rest
+scattered down the page rather than stacked at the top. How wide each of them goes follows its
+picture: a band much wider than it is tall is given room across, an upright one is held to half
+the page because width costs it height it cannot spend, and a picture nobody has measured is
+laid out the way this laid out every picture before anything measured them.
 
 Marking an article read greys it **in place**. It does not move, collapse or disappear:
 where an article sits is how you remember where you were, and rearranging under you would
 be the unread-count problem wearing a different hat.
 
-A read mark belongs to the composition it was made on, and goes when that page turns. Reading
-is still about you rather than about the tab you were looking at, so marking an article read
-marks it on every front page it is currently on — and the record below outlives all of them.
+A read mark is a fact about **you and an article**, and nothing else. Not about the page it was
+made on, not about the composition. So it survives the page turning, greys that article on
+every other page currently carrying it, and works the same on a page somebody else published.
+It ends when you unfollow the feed.
 
 ### More than one front page
 
@@ -207,8 +215,9 @@ The face is not the only thing drawn per article. A card may be **boxed** — on
 in a line, weight, ink and inset each drawn separately, so no two boxes on a page are quite
 the same object. A long body may be set in **two, three or four columns**, as many as its
 width can carry. A picture is cut to its own shape where anything has measured it, and to a
-drawn one where nothing has. A boxed card may set its picture **beside** the story rather
-than above it. And a **rule** runs across the page every fifty cards or so, which is what
+drawn one where nothing has — never taller than about two thirds of a screen, and a panorama
+drawn as the panorama it is rather than squared into a column. A boxed card may set its picture
+**beside** the story rather than above it. And a **rule** runs across the page every fifty cards or so, which is what
 breaks a long page into bands.
 
 All of it comes off one seeded stream per card, keyed on the edition and the article
@@ -312,9 +321,8 @@ does not require an account already.
 ```
 
 That asymmetry is the point of the split. Losing `derived.db` costs one fetch cycle;
-losing `main.db` loses the product. It is also what lets read marks live where they do —
-on the page rather than on the article — so nothing has to be migrated or reconciled when
-a page is discarded.
+losing `main.db` loses the product — and what is in it is small: accounts, feeds and the
+settings around them, not the articles.
 
 Back `main.db` up with `sqlite3 main.db ".backup out.db"` or a filesystem snapshot, not
 `cp`: a plain copy of a WAL database while it is being written is a copy of an inconsistent
@@ -372,5 +380,7 @@ that "where did these come from" has an answer that can be re-run.
 directory: `//go:embed all:dist` needs something to match, or a fresh clone fails to
 compile before Node has ever run.
 
-Design notes live in `private/docs/` — the entity model, the selection algorithm, the API
-conventions, and the reasoning behind each.
+Design notes live in [`docs/`](docs/) — the entity model, the selection algorithm, the API
+conventions, and the reasoning behind each. [`docs/meta.txt`](docs/meta.txt) records the commit
+each was last checked against, so "what has changed since anybody read this" is a `git log`
+range rather than a re-read.

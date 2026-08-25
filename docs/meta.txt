@@ -1,0 +1,13 @@
+# What the documentation was last checked against.
+#
+# Each line is a thing that goes stale, the commit it was brought up to date with, and the
+# date. To find what has happened since:
+#
+#     git log <commit>..HEAD
+#
+# Update the line in the same commit that updates the document. A document nobody trusts is
+# worse than no document, because it costs a reader the time to find out.
+
+readme         7679b7a  2026-08-25
+design-notes   7679b7a  2026-08-25
+screenshots    7679b7a  2026-08-25

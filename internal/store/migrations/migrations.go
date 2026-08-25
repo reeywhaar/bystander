@@ -2,8 +2,7 @@
 //
 // Files are named `<timestamp>_<database>_<snake_case_name>.go` and each declares a single
 // Migration. The timestamp orders them and stops two people who add a migration on the same
-// day from colliding; the database name says which of the two it belongs to. Same shape as
-// ../../../../secretio/crates/secretio-store/src/migrations, in Go.
+// day from colliding; the database name says which of the two it belongs to.
 //
 // # Why Go rather than .sql files
 //

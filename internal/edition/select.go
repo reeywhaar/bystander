@@ -7,7 +7,7 @@
 // interesting part of this program can be reasoned about without one.
 //
 // The argument for the algorithm — why probability rather than ordering, why a per-feed
-// cap, why the tag hierarchy takes no part — is in private/docs/edition.md.
+// cap, why the tag hierarchy takes no part — is in docs/edition.md.
 package edition
 
 import (

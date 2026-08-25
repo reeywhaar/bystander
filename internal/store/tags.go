@@ -21,7 +21,7 @@ const MaxTagNameLen = 48
 // Tag is one bucket in somebody's taxonomy.
 //
 // ParentID groups tags in the interface and takes no part in selecting a page — see
-// private/docs/edition.md for what the hierarchical alternative would cost.
+// docs/edition.md for what the hierarchical alternative would cost.
 type Tag struct {
 	ID          string
 	PrincipalID string

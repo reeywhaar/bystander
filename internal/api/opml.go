@@ -50,7 +50,7 @@ func (s *Server) exportFeeds(w http.ResponseWriter, r *http.Request) {
 
 	// JSON carrying the document, rather than the document itself with a
 	// Content-Disposition. This API is JSON in and JSON out, and one endpoint that is not
-	// would mean the dispatcher had to know which — see private/docs/api_design.md. The
+	// would mean the dispatcher had to know which — see docs/api_design.md. The
 	// interface shows the text to be copied and builds a download from the same string,
 	// so nothing is lost by handing it over this way.
 	writeJSON(w, http.StatusOK, map[string]any{

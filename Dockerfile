@@ -52,7 +52,7 @@ RUN go mod download
 
 # Copied path by path rather than `COPY . .` with a .dockerignore: an allowlist cannot
 # accidentally admit web/node_modules, a local data/ directory with real accounts in it, or
-# the private/ directory.
+# any of the untracked working directories a checkout tends to grow.
 COPY main.go ./
 COPY internal ./internal
 COPY web/embed.go ./web/embed.go

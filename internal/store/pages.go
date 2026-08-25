@@ -18,7 +18,7 @@ import (
 // all your pages. A newspaper's front page is *the* front page and its other sections are
 // called something, which is exactly the shape of this.
 //
-// See private/docs/conventions.md for front page, Front Page and edition, which are three
+// See docs/conventions.md for front page, Front Page and edition, which are three
 // different things.
 const MainPageName = "Front Page"
 

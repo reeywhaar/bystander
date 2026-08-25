@@ -25,7 +25,7 @@ export function getEdition(page = ""): ApiAction<Edition> {
  *
  * Refuses with 409 when the feeds have published nothing since the current page was made,
  * and 404 when there is nothing at all yet. Two different situations, two different
- * sentences — see private/docs/api_design.md.
+ * sentences — see docs/api_design.md.
  */
 export function postEditionRegenerate(page = ""): ApiAction<Edition> {
   return createApiAction((d) =>

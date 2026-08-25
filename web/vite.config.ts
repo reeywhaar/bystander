@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 // These are four applications with four audiences. The login shell is the only document an
 // unauthenticated visitor receives, so the reader's code is never shipped to somebody who
 // has not signed in; the admin bundle is not merely hidden from a subscriber but never
-// sent to them. See private/docs/frontend.md.
+// sent to them. See docs/frontend.md.
 //
 // Naming all four here means a missing one is a hard error rather than a quietly smaller
 // build — and the Dockerfile asserts each is non-empty afterwards.

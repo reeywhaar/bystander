@@ -49,7 +49,7 @@ type SPA struct {
 	// Four documents rather than one, because these are four applications with four
 	// audiences. The login shell is the only one an unauthenticated visitor receives, and
 	// the admin bundle is not merely hidden from a subscriber — it is never sent to them.
-	// See web/vite.config.ts and private/docs/frontend.md.
+	// See web/vite.config.ts and docs/frontend.md.
 	index  asset
 	login  asset
 	manage asset

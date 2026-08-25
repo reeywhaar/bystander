@@ -263,13 +263,15 @@ await shot("pages");
 
 // --- 6. what a front page draws from ---
 //
-// The filter, which is the whole of what makes a second page worth having. It is a dialog with
-// one save rather than controls that apply as they are touched, because a mode changed without
-// its list is a page drawing from the wrong things — briefly, and then for a week.
+// The filter, which is the whole of what makes a second page worth having: one list of tags and
+// one of feeds, each name on a switch with three positions — left to drop it, right to take it,
+// and the middle to say nothing about it. A dialog with one save rather than controls that
+// apply as they are touched, because half a filter is a page drawing from the wrong things —
+// briefly, and then for a week.
 await clickText("main nav button", "Culture");
 await sleep(300);
 await clickText("main button", "Edit");
-await waitFor("dialog[open] input");
+await waitFor('dialog[open] [role="radiogroup"]');
 await sleep(400);
 await fitDialogHeight(NARROW);
 await shot("page");
@@ -279,8 +281,8 @@ await sleep(200);
 // --- 7. what has already been read ---
 //
 // The one list in the product, and the argument for why it is not an unread count in
-// disguise: it counts nothing, it holds only what somebody has finished with, and it
-// expires. capture.sh marks a few articles read so there is something here.
+// disguise: it counts nothing and holds only what somebody has finished with. capture.sh marks
+// a few articles read so there is something here.
 await navigate("/manage/read");
 await waitFor("main ul li a");
 await sleep(400);
