@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Colophon } from "@app/components/Colophon";
+
 /** The card every unauthenticated screen sits in. */
 export function Frame({
   title,
@@ -18,6 +20,8 @@ export function Frame({
         <div className="mt-2 text-sm text-ink-muted">{intro}</div>
       ) : null}
       <div className="mt-6 flex flex-col gap-4">{children}</div>
+      {/* Under the card rather than in it: it belongs to the page, not to the form. */}
+      <Colophon className="mt-10" />
     </main>
   );
 }

@@ -88,3 +88,19 @@ export function describePriority(priority: number): string {
   if (priority < 85) return "more often";
   return "often";
 }
+
+/**
+ * What this is and who made it, for the places that say so.
+ *
+ * Here rather than written into each of them, because it is written into three and the kind
+ * of thing that changes once and has to change everywhere: a repository that moves, a name
+ * that is spelled differently in one corner.
+ *
+ * Capitalised here and lowercase in the nameplate, which is not an inconsistency — the
+ * nameplate is a wordmark and this is a sentence.
+ */
+export const PRODUCT = {
+  name: "Bystander",
+  url: "https://github.com/reeywhaar/bystander",
+  author: { name: "Misha Vyrtsev", url: "https://vyrtsev.com" },
+};

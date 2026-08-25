@@ -8,6 +8,7 @@ import { useApiCall } from "@app/api/provider";
 import { ArticleCard } from "@app/apps/reader/ArticleCard";
 import { Masthead as AppMasthead } from "@app/components/Masthead";
 import { Boundary } from "@app/components/Boundary";
+import { Colophon } from "@app/components/Colophon";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useMasonry } from "@app/lib/masonry";
 import { useMe, useSetRead } from "@app/queries/hooks";
@@ -171,6 +172,10 @@ function PublicPage({ person, page }: { person: string; page: string }) {
             </div>
           </>
         )}
+        {/* The one of the three placements that is doing the whole job: somebody here may
+            never have seen this application, and the wordmark above leads to a sign-in they
+            have no account for. */}
+        <Colophon className="mt-16 border-t border-rule pt-6" />
       </main>
 
       <SignInDialog

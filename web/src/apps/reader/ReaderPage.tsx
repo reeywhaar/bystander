@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 
 import { ApiError } from "@app/api/error";
 import type { Me, Page } from "@app/api/types";
+import { Colophon } from "@app/components/Colophon";
 import { Masthead } from "@app/components/Masthead";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
@@ -199,6 +200,12 @@ export function ReaderPage({ me }: { me: Me }) {
             </div>
           </footer>
         ) : null}
+
+        {/* Outside the footer, because the footer is only there when there is a page — and a
+            new account with nothing composed yet is exactly somebody who might want to know
+            what this is. No rule of its own: the footer above already draws one, and two
+            within a few lines reads as a mistake. */}
+        <Colophon className="mt-10" />
       </main>
     </>
   );
