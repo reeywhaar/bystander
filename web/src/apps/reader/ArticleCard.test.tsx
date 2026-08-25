@@ -173,12 +173,34 @@ describe("ArticleCard pictures", () => {
     expect(img.className).toContain("shot-3");
   });
 
-  // A full-width picture at its own shape could be a screen-high photograph above the story
-  // it belongs to. The lead's ratio is what stops the picture becoming the page.
-  it("keeps the lead's own cinematic shape whatever it measures", () => {
-    show(1000, 4000, "lead");
+  // The ladder goes up to square, and a square picture the width of the page is a picture as
+  // tall as the page is wide above the story it belongs to. 21:9 is the better guess at that
+  // width — for a picture nobody has measured.
+  it("guesses the lead's shape cinematically when nothing has measured it", () => {
+    render(
+      <ArticleCard
+        article={article({ image_width: 0, image_height: 0, slot: "lead" })}
+        style={plain({ shot: 4 })}
+        voice="didone"
+        onRead={vi.fn()}
+      />,
+    );
     const img = document.querySelector("img")!;
     expect(img.className).toContain("aspect-[21/9]");
+    expect(img.className).not.toContain("shot-4");
+  });
+
+  // And once it has been measured the lead is like every other card: its own shape, bounded.
+  //
+  // This is worth a test of its own because the code read the other way round for a long
+  // time — the lead was given `aspect-[21/9]` whatever it measured, and an inline
+  // aspect-ratio that silently won. The class was dead and the comment above it was wrong,
+  // and a test asserting the class was there passed the whole time.
+  it("draws a measured lead at its own shape, not at the guess", () => {
+    show(4000, 1000, "lead");
+    const img = document.querySelector("img")!;
+    expect(img.className).not.toContain("aspect-[21/9]");
+    expect(drawnRatio()).toBeCloseTo(4);
   });
 });
 
@@ -206,6 +228,47 @@ describe("ArticleCard layout", () => {
     document.body.innerHTML = "";
     render1(plain({ frame: null, aside: true }), "feature");
     expect(document.querySelector("article")!.className).not.toContain(
+      "card-aside",
+    );
+  });
+
+  // A band cannot survive being two fifths of a card. The aside floor is nine rem, so a 10:1
+  // picture in a 367px column — which wants to be 37px tall — is cropped to 144px, and three
+  // quarters of the file is thrown away to fill a hole it was never going to fill. Full width
+  // above the story the same picture is a band across the card, which is what it already was.
+  it("never sets a band beside a story", () => {
+    for (const slot of ["feature", "wide"] as const) {
+      document.body.innerHTML = "";
+      render(
+        <ArticleCard
+          article={article({ image_width: 4000, image_height: 800, slot })}
+          style={plain({ frame: boxed, aside: true })}
+          voice="didone"
+          onRead={vi.fn()}
+        />,
+      );
+      expect(document.querySelector("article")!.className).not.toContain(
+        "card-aside",
+      );
+    }
+  });
+
+  // The bound is on the shape, not on having been measured: an ordinary landscape photograph
+  // is exactly what the aside layout is for, and this must not have quietly turned it off.
+  it("still sets an ordinary picture beside a story", () => {
+    render(
+      <ArticleCard
+        article={article({
+          image_width: 1600,
+          image_height: 1200,
+          slot: "feature",
+        })}
+        style={plain({ frame: boxed, aside: true })}
+        voice="didone"
+        onRead={vi.fn()}
+      />,
+    );
+    expect(document.querySelector("article")!.className).toContain(
       "card-aside",
     );
   });

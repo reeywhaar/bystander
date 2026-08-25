@@ -68,6 +68,10 @@ export function ArticleCard({
   // the last few minutes. See internal/jobs.
   const measured = article.image_width > 0 && article.image_height > 0;
   const showSummary = article.summary !== "" && article.slot !== "brief";
+  // Much wider than it is tall, and known to be — the same bound the composer widens a card
+  // for, in internal/edition/select.go.
+  const panorama =
+    measured && article.image_width / article.image_height > WIDEST;
 
   // The picture beside the story rather than above it.
   //
@@ -82,10 +86,17 @@ export function ArticleCard({
   //
   // Never the lead either. That one runs the width of the page and its picture opens the page,
   // which is a different job from illustrating a column.
+  //
+  // And never a band. Beside a story the picture is two fifths of the card with a nine-rem
+  // floor under it, and a floor is a crop: a 10:1 picture in a 367px column wants to be
+  // thirty-seven pixels tall, so the floor takes it to a hundred and forty-four and throws
+  // away three quarters of the file to do it. Run full width above the story the same picture
+  // is a band across the card, which is the shape it already was.
   const aside =
     showImage &&
     frame !== null &&
     style.aside &&
+    !panorama &&
     (article.slot === "feature" || article.slot === "wide");
 
   // A picture beside the story has taken the width the columns would have been set in, so the
@@ -112,10 +123,16 @@ export function ArticleCard({
             src={article.image_url}
             alt=""
             loading="lazy"
-            // The lead keeps a shape of its own. It runs the width of the page, so a crop
-            // from the ladder would put a picture three quarters of a screen tall above the
-            // story it belongs to — the cinematic ratio is what keeps a full-width picture
-            // from becoming the page.
+            // An unmeasured lead keeps a shape of its own. It runs the width of the page, so
+            // a crop from the ladder — which goes up to square — would put a picture as tall
+            // as the page is wide above the story it belongs to. The cinematic ratio is the
+            // better guess at that width.
+            //
+            // Only unmeasured. A lead whose picture has been measured is drawn at its own
+            // shape like every other card, and `max-h-[70vh]` is what stops it becoming the
+            // page. This used to read as though the lead were always 21:9 and it never was:
+            // the inline aspect-ratio below wins over the class, so for a measured picture
+            // the class was doing nothing at all. Now it is not written.
             // Written out rather than built from `style.fit`. Tailwind generates a class
             // only if it can find the whole name in the source, so `object-${fit}` produced
             // neither — the images had no object-fit at all and were stretching to their
@@ -152,10 +169,10 @@ export function ArticleCard({
                 ? "object-contain"
                 : "object-cover"
             } ${
-              article.slot === "lead"
-                ? "aspect-[21/9]"
-                : measured
-                  ? ""
+              measured
+                ? ""
+                : article.slot === "lead"
+                  ? "aspect-[21/9]"
                   : `shot-${style.shot}`
             }`}
             // The picture's own shape, when anything has measured it.
@@ -257,6 +274,16 @@ export function ArticleCard({
     </article>
   );
 }
+
+/**
+ * The shape past which a picture is a band rather than a picture.
+ *
+ * Not a bound on how it is drawn — a panorama is drawn as whatever it is. It is the line at
+ * which the *card* changes: past this the picture is never set beside the story, because two
+ * fifths of a card is not a width a band can survive. The composer uses the same number to
+ * decide how wide to lay the card out in the first place — see internal/edition/select.go.
+ */
+const WIDEST = 5 / 2;
 
 /**
  * The tallest a measured picture is drawn at, as width over height.

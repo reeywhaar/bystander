@@ -337,3 +337,68 @@ func TestUntaggedBucketIsOrdinary(t *testing.T) {
 		t.Fatalf("Select() returned %d articles from the untagged bucket, want 5", len(got))
 	}
 }
+
+// shaped is a feed whose every picture is the same measured shape.
+func shaped(id string, priority, n, w, h int) *Source {
+	src := feed(id, priority, n)
+	for _, item := range src.Items {
+		item.ImageWidth, item.ImageHeight = w, h
+	}
+	return src
+}
+
+// slotsFrom lays out several pages and reports which widths the wide cards came out at.
+func slotsFrom(t *testing.T, src *Source, seeds int) map[store.Slot]int {
+	t.Helper()
+	tally := map[store.Slot]int{}
+	for seed := int64(1); seed <= int64(seeds); seed++ {
+		picks := Select([]Bucket{{TagID: "t1", Priority: 50, FeedIDs: []string{src.FeedID}}},
+			sources(src), nil, 50, seed)
+		if len(picks) < 20 {
+			t.Fatalf("seed %d: only %d articles; this test needs a full page", seed, len(picks))
+		}
+		for _, p := range picks {
+			switch p.Slot {
+			case store.SlotLead, store.SlotWide, store.SlotFeature:
+				tally[p.Slot]++
+			}
+		}
+	}
+	return tally
+}
+
+// How wide a card is laid out follows what its picture is shaped like.
+//
+// Which cards are widened is a question about the page — where the landmarks fall, how often —
+// and is answered without looking at any of them. This is the other question: given that this
+// one is being widened, how wide. A 10:1 band and a portrait want opposite answers, and the
+// old rule drew the same weighted number for both.
+func TestHowWideACardGoesFollowsItsPicture(t *testing.T) {
+	// A band. Widened towards the widths that give it somewhere to be — across a quarter-page
+	// column a 10:1 picture is sixty-five pixels of photograph over a headline.
+	bands := slotsFrom(t, shaped("band", 50, 200, 2000, 200), 12)
+	if bands[store.SlotFeature] >= bands[store.SlotLead]+bands[store.SlotWide] {
+		t.Errorf("bands went narrow: lead %d, wide %d, feature %d",
+			bands[store.SlotLead], bands[store.SlotWide], bands[store.SlotFeature])
+	}
+
+	// A portrait. Always the narrowest of the three, because width costs an upright picture
+	// height it cannot spend: across the full page it is bounded at 70vh and what survives is
+	// a slice through the middle of it.
+	uprights := slotsFrom(t, shaped("tall", 50, 200, 800, 1200), 12)
+	if uprights[store.SlotLead] != 0 || uprights[store.SlotWide] != 0 {
+		t.Errorf("an upright picture was laid out across the page: lead %d, wide %d, feature %d",
+			uprights[store.SlotLead], uprights[store.SlotWide], uprights[store.SlotFeature])
+	}
+	if uprights[store.SlotFeature] == 0 {
+		t.Error("upright pictures stopped being widened at all; they should still be landmarks")
+	}
+
+	// And a page that has measured nothing is laid out exactly as it always was — every
+	// picture on it is `pictureOrdinary`, which is the case this rule must not disturb.
+	plain := slotsFrom(t, feed("plain", 50, 200), 12)
+	if plain[store.SlotLead] == 0 || plain[store.SlotWide] == 0 || plain[store.SlotFeature] == 0 {
+		t.Errorf("unmeasured pictures stopped drawing the full range: lead %d, wide %d, feature %d",
+			plain[store.SlotLead], plain[store.SlotWide], plain[store.SlotFeature])
+	}
+}

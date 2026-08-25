@@ -223,7 +223,64 @@ var (
 	// are a reasonable way to begin.
 	openerWeights = []int{1, 1, 1}
 	bodyWeights   = []int{1, 2, 3}
+
+	// panoramaWeights are for a card whose picture is a band — much wider than it is tall.
+	//
+	// Weighted towards the widths that give a band somewhere to be. A 10:1 picture in a
+	// quarter-page column is sixty-five pixels of photograph over a headline, which reads as
+	// a rule that has gone wrong rather than as a picture; across twelve tracks the same file
+	// is a hundred and fifty, which is a band across a page and a thing newspapers have done
+	// for a century.
+	panoramaWeights = []int{2, 3, 1}
+
+	// uprightWeights are for a card whose picture stands taller than it is wide, and they are
+	// not weights at all: the narrowest of the three, always.
+	//
+	// The opposite problem to a panorama, and it is the worse one. Width costs an upright
+	// picture height it cannot spend — across the full page a portrait is bounded at 70vh and
+	// what survives is a slice through the middle of somebody's photograph. Eight tracks is
+	// where the two rules stop fighting: still one of the wide slots, so the card is a
+	// landmark and the page keeps the count of them it was laid out with, and narrow enough
+	// that the picture is a picture. It is also the width at which a picture can be set beside
+	// its story rather than above it, which is the one arrangement an upright picture is
+	// better in than a square one. See ArticleCard.
+	uprightWeights = []int{0, 0, 1}
 )
+
+// panoramaRatio is the shape past which a picture is a band rather than a picture.
+//
+// Five to two, which is the same number the reader stops drawing its own shapes at — see
+// shapeOf in web/src/apps/reader/ArticleCard.tsx. The two are not required to agree and it
+// would be strange if they did not: past this the client draws a picture as whatever it is
+// instead of squaring it, and this is the width that gives it room to be that.
+const panoramaRatio = 5.0 / 2.0
+
+// pictureShape is what a picture's proportions say about how wide to lay its card out.
+type pictureShape int
+
+const (
+	// pictureOrdinary is everything between the two — and everything nothing has measured,
+	// which is the ordinary case for anything published in the last few minutes. An unmeasured
+	// picture is laid out exactly as this always laid pictures out; a measurement is what buys
+	// the other two.
+	pictureOrdinary pictureShape = iota
+	pictureWide
+	pictureUpright
+)
+
+func shapeOfPicture(item *store.Item) pictureShape {
+	if item == nil || item.ImageURL == "" || item.ImageWidth <= 0 || item.ImageHeight <= 0 {
+		return pictureOrdinary
+	}
+	switch ratio := float64(item.ImageWidth) / float64(item.ImageHeight); {
+	case ratio > panoramaRatio:
+		return pictureWide
+	case ratio < 1:
+		return pictureUpright
+	default:
+		return pictureOrdinary
+	}
+}
 
 // drawSlot picks a width by weight.
 func drawSlot(rng *rand.Rand, weights []int) store.Slot {
@@ -326,6 +383,16 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 		weights := bodyWeights
 		if pos == 0 {
 			weights = openerWeights
+		}
+		// What the picture is shaped like decides the width, over both of those. Which cards
+		// are widened is a question about the page — where the landmarks fall, how often —
+		// and it is answered above without looking at any of them. How wide *this* one goes
+		// is a question about this article, and the picture is the part of it with a shape.
+		switch shapeOfPicture(picks[pos].Item) {
+		case pictureWide:
+			weights = panoramaWeights
+		case pictureUpright:
+			weights = uprightWeights
 		}
 		picks[pos].Slot = drawSlot(rng, weights)
 	}
