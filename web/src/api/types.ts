@@ -397,6 +397,13 @@ export interface ImageTally {
  * none, so every article arrives unmarked.
  */
 export interface PublicPage {
+  /**
+   * The edition's id, which is what every card's appearance is drawn from.
+   *
+   * The page has to be seeded with it and nothing else, or the same edition renders
+   * differently for a stranger than for the person who published it.
+   */
+  id: string;
   name: string;
   generated_at: number;
   /**

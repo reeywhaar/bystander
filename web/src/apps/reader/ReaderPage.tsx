@@ -10,7 +10,6 @@ import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute, until } from "@app/lib/time";
 import { useMasonry } from "@app/lib/masonry";
-import { assignVoices, styleFor } from "@app/lib/voice";
 import {
   useEdition,
   useFeeds,
@@ -19,7 +18,7 @@ import {
   useSetRead,
 } from "@app/queries/hooks";
 
-import { ArticleCard } from "@app/apps/reader/ArticleCard";
+import { PageGrid } from "@app/apps/reader/PageGrid";
 import { PageTabs } from "@app/apps/reader/PageTabs";
 
 export function ReaderPage({ me }: { me: Me }) {
@@ -99,48 +98,12 @@ export function ReaderPage({ me }: { me: Me }) {
         ) : null}
 
         {hasPage ? (
-          <div className="page-grid" ref={grid}>
-            {/* One seeded stream per card, keyed on the edition and the article together —
-                so the page is identical on reload and different tomorrow. The voices are
-                then settled over the whole page, because "no two headlines in a row share a
-                face" is a fact about the sequence and a card cannot see it. */}
-            {(() => {
-              const styles = page.items.map((article) =>
-                styleFor(page.id, article.id, article.summary),
-              );
-              const voices = assignVoices(styles);
-
-              // A rule spans every track, so a card caught between two of them sits alone
-              // with three quarters of its row empty. The draw is per card and cannot know
-              // where the last rule fell, so the run enforces the floor — the same shape as
-              // the no-two-faces-in-a-row rule, and for the same reason: it is a fact about
-              // the sequence, not about any one card.
-              let ruledAt = 0;
-
-              return page.items.flatMap((article, i) => {
-                const card = (
-                  <ArticleCard
-                    key={article.id}
-                    article={article}
-                    style={styles[i]!}
-                    voice={voices[i]!}
-                    onRead={(id, read) => setRead.mutate({ id, read })}
-                  />
-                );
-                // A rule above the cards that drew one, so the page reads as bands rather
-                // than as one field. Never above the first — a page does not open with a
-                // rule over its lead — and never within four cards of the last one.
-                if (i > 0 && styles[i]!.rule && i - ruledAt >= 4) {
-                  ruledAt = i;
-                  return [
-                    <hr key={`rule-${article.id}`} className="page-rule" />,
-                    card,
-                  ];
-                }
-                return [card];
-              });
-            })()}
-          </div>
+          <PageGrid
+            editionID={page.id}
+            items={page.items}
+            onRead={(id, read) => setRead.mutate({ id, read })}
+            gridRef={grid}
+          />
         ) : (
           <EmptyPage
             hasFeeds={(feeds.data?.length ?? 0) > 0}

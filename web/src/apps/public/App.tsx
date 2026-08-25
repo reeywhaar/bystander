@@ -5,14 +5,13 @@ import type { PublicPage } from "@app/api/types";
 import { getPublicPage } from "@app/api/actions/public";
 import { SignInDialog } from "@app/apps/public/SignInDialog";
 import { useApiCall } from "@app/api/provider";
-import { ArticleCard } from "@app/apps/reader/ArticleCard";
+import { PageGrid } from "@app/apps/reader/PageGrid";
 import { Masthead as AppMasthead } from "@app/components/Masthead";
 import { Boundary } from "@app/components/Boundary";
 import { Colophon } from "@app/components/Colophon";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useMasonry } from "@app/lib/masonry";
 import { useMe, useSetRead } from "@app/queries/hooks";
-import { assignVoices, styleFor } from "@app/lib/voice";
 
 /**
  * Somebody's published page, to anybody at all.
@@ -132,44 +131,15 @@ function PublicPage({ person, page }: { person: string; page: string }) {
             <h1 className="mb-8 font-serif text-3xl text-ink">
               {published.data.name}
             </h1>
-            <div className="page-grid" ref={grid}>
-              {(() => {
-                const items = published.data.items;
-                // Seeded on the composition and the article together, exactly as the owner's
-                // own page is — so a published page looks the same to everybody who opens it,
-                // and the same as it does to the person who published it.
-                const seed = String(published.data.generated_at);
-                const styles = items.map((article) =>
-                  styleFor(seed, article.id, article.summary),
-                );
-                const voices = assignVoices(styles);
-
-                let ruledAt = 0;
-                return items.flatMap((article, i) => {
-                  // Offered only to somebody with an account. A stranger gets no control
-                  // rather than one that refuses — the card leaves it out entirely, which
-                  // is also what stops the page advertising what an account would let you
-                  // do.
-                  const card = (
-                    <ArticleCard
-                      key={article.id}
-                      article={article}
-                      style={styles[i]!}
-                      voice={voices[i]!}
-                      onRead={published.data.signed_in ? mark : undefined}
-                    />
-                  );
-                  if (i > 0 && styles[i]!.rule && i - ruledAt >= 4) {
-                    ruledAt = i;
-                    return [
-                      <hr key={`rule-${article.id}`} className="page-rule" />,
-                      card,
-                    ];
-                  }
-                  return [card];
-                });
-              })()}
-            </div>
+            <PageGrid
+              editionID={published.data.id}
+              items={published.data.items}
+              // Offered only to somebody with an account. Marking something read on
+              // somebody else's page records it against *you* — reading is a fact about a
+              // person and an article, and whose page it was seen on does not come into it.
+              onRead={published.data.signed_in ? mark : undefined}
+              gridRef={grid}
+            />
           </>
         )}
         {/* The one of the three placements that is doing the whole job: somebody here may

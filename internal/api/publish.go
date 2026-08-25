@@ -154,6 +154,11 @@ type publicPageBody struct {
 	// Name is what the page is called. Whose it is appears in the address and nowhere else:
 	// the public name is the only identity somebody chose to expose, and putting a username
 	// beside it would expose one they did not.
+	// ID is the edition's, and it is here for one reason: every card's appearance is drawn
+	// from it. Seed the page with anything else and the same edition renders differently for
+	// a stranger than for the person who published it — same articles, different faces,
+	// different widths, different boxes — which is not a published page, it is a second one.
+	ID          string `json:"id"`
 	Name        string `json:"name"`
 	GeneratedAt int64  `json:"generated_at"`
 	// Indexable is whether a search engine may keep this. Both the owner and the instance
@@ -231,6 +236,7 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}
 	}
 
+	body.ID = ed.ID
 	body.GeneratedAt = ed.GeneratedAt.Unix()
 	for _, entry := range items {
 		article := articleBody{

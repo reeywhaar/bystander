@@ -268,3 +268,50 @@ func TestOnlySomebodyWithAnAccountMarksAnythingRead(t *testing.T) {
 	h.expect(h.doAs(nobody, http.MethodPut,
 		"/api/edition/items/"+page.Items[0].ID+"/read", nil), http.StatusUnauthorized, nil)
 }
+
+// A published page is the page, down to how each card looks.
+//
+// Every card's appearance — its voice, its width, whether it is boxed — is drawn by the client
+// from the edition's id and the article's, so the id is not incidental metadata here: it is
+// what makes a stranger's copy of the page the same object as the owner's. Publishing a page
+// that carries the same articles under different faces produces a second page that happens to
+// have the same contents, which is not what publishing means.
+//
+// This was wrong once. The public body left the id out and the client seeded itself on the
+// composition time instead, which is stable — the same visitor saw the same thing twice — and
+// completely different from what the owner saw. Stability is not the property that was needed.
+func TestAPublishedPageIsDrawnFromTheSameEdition(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 8)
+
+	h.signIn(store.RoleUser, "alice")
+	h.allowPublishing(t, false)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+
+	var owner editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &owner)
+	h.expect(h.do(http.MethodPut, "/api/account/public-name", map[string]string{"name": "misha"}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPut, "/api/pages/"+h.mainPage()+"/publish",
+		map[string]any{"slug": "front"}), http.StatusOK, nil)
+
+	var public publicPageBody
+	h.expect(h.doAs(h.stranger(), http.MethodGet, "/api/public/misha/front", nil), http.StatusOK, &public)
+
+	if public.ID == "" {
+		t.Fatal("the published page carries no edition id, so a visitor cannot draw the page the owner sees")
+	}
+	if public.ID != owner.ID {
+		t.Errorf("published id = %q, owner's = %q", public.ID, owner.ID)
+	}
+
+	// The other half of the same seed. Both ids go into the draw, so the articles have to
+	// arrive in the same order under the same ids for the pairs to match up.
+	if len(public.Items) != len(owner.Items) {
+		t.Fatalf("published %d items, the owner sees %d", len(public.Items), len(owner.Items))
+	}
+	for i, item := range public.Items {
+		if item.ID != owner.Items[i].ID {
+			t.Errorf("item %d: published %q, owner's %q", i, item.ID, owner.Items[i].ID)
+		}
+	}
+}
