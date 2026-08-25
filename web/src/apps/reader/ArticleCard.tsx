@@ -123,14 +123,28 @@ export function ArticleCard({
             // A measured picture is always filled, never fitted.
             //
             // Its box is its own ratio, so for nearly all of them `contain` and `cover` draw
-            // exactly the same thing. They differ only on a picture too wide or too tall for
-            // this page, whose box has been squared — and there `contain` would letterbox a
-            // panorama into a square hole, which is the shape the squaring was avoiding.
+            // exactly the same thing. They differ in two places: a picture too tall for this
+            // page, whose box has been squared, and any picture whose own shape would carry it
+            // past `max-h-[70vh]`. In both the box is no longer the picture's shape, and
+            // `contain` would answer that by letterboxing it inside bars it did not ask for.
             // Filling takes the middle of the picture instead.
             //
             // The fit still varies on pictures nothing has measured, where the box is a
             // guess and showing one whole is as good an answer as cropping it.
-            className={`w-full rounded-sm border border-rule ${aside ? "" : "mb-3"} ${
+            // Nothing on this page is ever more than about two thirds of a screen tall, and
+            // that is a rule about the page rather than about any one picture: a card whose
+            // image fills the window stops being a card in a page of them, and whatever is
+            // under it — the headline it belongs to, most of all — is off screen when it is
+            // read. It was the full-width slots that made this obvious, but a square picture
+            // in a half-page card on a short window does the same thing, so the bound is on
+            // every picture rather than on the wide ones.
+            //
+            // `vh` rather than `dvh`. `dvh` follows a phone's toolbar as it hides and shows,
+            // which would change every capped picture's height mid-scroll — and the masonry
+            // sets its row spans from measured heights, so that is not a nicer number, it is
+            // a page that reshuffles under the reader. `vh` is the largest viewport and does
+            // not move.
+            className={`max-h-[70vh] w-full rounded-sm border border-rule ${aside ? "" : "mb-3"} ${
               // Never fitted beside a story. The box there has a floor under its height, so it
               // is a crop rather than the picture's own shape — and `contain` would answer that
               // by letterboxing the picture inside white bars it did not ask for.
@@ -245,39 +259,43 @@ export function ArticleCard({
 }
 
 /**
- * The widest and tallest a measured picture is drawn at, as width over height.
+ * The tallest a measured picture is drawn at, as width over height.
  *
- * Two and a half to one either way — a wide landscape through square to a tall portrait. Far
- * looser than the drawn ladder, which only ever runs from five-by-three to square, and
- * deliberately so: the ladder is what to do knowing nothing, and a measurement is not nothing.
- * A photograph that is genuinely a panorama should look like one, and a portrait should stand
- * up. Holding every measured picture inside the guess's range would be measuring them and then
- * declining to believe the answer.
+ * Two and a half to one — a portrait standing up. Far looser than the drawn ladder, which only
+ * ever runs from five-by-three to square, and deliberately so: the ladder is what to do knowing
+ * nothing, and a measurement is not nothing. Holding every measured picture inside the guess's
+ * range would be measuring them and then declining to believe the answer.
+ *
+ * There is deliberately no bound at the wide end. There was one, and it squared anything wider
+ * than five to two — which meant a panorama, the one shape whose whole point is its width, was
+ * the shape most aggressively cropped. A very wide picture is drawn at whatever it is; in a
+ * narrow column that makes it a band rather than an illustration, and a band is what the
+ * publisher sent. Beside a story a floor keeps it from thinning to a rule — see `.card-aside`
+ * in styles.css.
  */
-const WIDEST = 5 / 2;
 const TALLEST = 2 / 5;
 
 /**
  * The shape a measured picture is drawn in.
  *
- * Inside the bounds a picture is drawn at its own ratio, whatever that is. Outside them it is
- * drawn square and filled, which crops it — and square rather than the nearest bound, which is
- * what this used to do.
+ * At or above the bound a picture is drawn at its own ratio, whatever that is. Below it — a
+ * picture more than two and a half times as tall as it is wide — it is drawn square and
+ * filled, which crops it. Square rather than the bound itself, which is what this used to do.
  *
  * That difference is worth being clear about, because clamping sounds like the gentler of the
- * two and is not. A 4:1 publisher's banner clamped to the widest allowed shape is still very
- * nearly a 4:1 banner: it keeps the letterbox proportions that made it wrong for a column of
- * stories, and only stops just short of them. Squaring it admits the page has no room for that
- * shape at all and takes the middle of the picture instead. The same holds for the tall end,
- * where clamping leaves a product shot still tall enough to push its own headline off screen.
+ * two and is not. A 1:4 product shot clamped to the tallest allowed shape is still very nearly
+ * a 1:4 product shot: it keeps the proportions that made it wrong for a page of stories and
+ * only stops just short of them. Squaring it admits the page has no room for that shape at all
+ * and takes the middle of the picture instead.
  *
- * So the bounds are not a range to be squeezed into. They are the range this page can carry
- * honestly, and a picture outside it is cropped rather than distorted towards the edge.
+ * Height alone is not what this is for — `max-h-[70vh]` in [ArticleCard] bounds that, and
+ * bounds it for pictures inside these bounds too. This is about shape: a sliver of a
+ * photograph, cropped to fit a column, is not a picture of anything.
  */
 function shapeOf(ratio: number): number {
   // Square, and [ArticleCard] fills rather than fits every measured picture, so the crop
   // takes the middle instead of letterboxing what would not go.
-  if (ratio > WIDEST || ratio < TALLEST) return 1;
+  if (ratio < TALLEST) return 1;
   return ratio;
 }
 

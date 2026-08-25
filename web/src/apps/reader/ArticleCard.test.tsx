@@ -89,7 +89,7 @@ describe("ArticleCard pictures", () => {
     expect(drawnRatio()).toBeCloseTo(4 / 3);
   });
 
-  it("believes a panorama and a portrait, inside the bounds", () => {
+  it("believes a panorama and a portrait", () => {
     // Wider than anything the drawn ladder can express, and drawn as it is.
     show(2000, 800);
     expect(drawnRatio()).toBeCloseTo(2.5);
@@ -99,28 +99,62 @@ describe("ArticleCard pictures", () => {
     expect(drawnRatio()).toBeCloseTo(0.4);
   });
 
-  // Squared, not clamped to the nearest bound, and this is the case that distinguishes them.
-  // A 4:1 banner held at the widest allowed shape is still very nearly a 4:1 banner: it keeps
-  // the letterbox proportions that made it wrong for a column of stories.
-  it("squares a picture too wide for the page rather than nearly allowing it", () => {
+  // There is no bound at the wide end, and there was one: anything past five to two was
+  // squared, which meant a panorama — the one shape whose whole point is its width — was the
+  // shape cropped hardest. A band across a column is what the publisher sent.
+  it("draws a picture wider than the page expects at its own shape", () => {
     show(4000, 1000);
-    expect(drawnRatio()).toBe(1);
+    expect(drawnRatio()).toBeCloseTo(4);
+
+    // And on out to shapes that are barely pictures at all. Nothing here decides that a 10:1
+    // strip is a mistake — that is the publisher's business, and cropping it to a square
+    // invents a photograph they did not send.
+    document.body.innerHTML = "";
+    show(4000, 400);
+    expect(drawnRatio()).toBeCloseTo(10);
   });
 
-  it("squares a picture too tall for the page", () => {
+  // Squared, not clamped to the nearest bound, and this is the case that distinguishes them.
+  // A 1:4 product shot held at the tallest allowed shape is still very nearly a 1:4 product
+  // shot: it keeps the proportions that made it wrong for a page of stories.
+  it("squares a picture too tall for the page rather than nearly allowing it", () => {
     // Tall enough to push its own headline off the screen.
     show(1000, 4000);
     expect(drawnRatio()).toBe(1);
   });
 
   // Filled, so squaring takes the middle of the picture instead of letterboxing it into a
-  // square hole — which is the shape the squaring was avoiding.
+  // square hole — which is the shape the squaring was avoiding. The same holds wherever the
+  // height cap has taken the box off the picture's own ratio.
   it("fills a measured picture rather than fitting it", () => {
-    show(4000, 1000);
+    show(1000, 4000);
     expect(document.querySelector("img")!.className).toContain("object-cover");
     expect(document.querySelector("img")!.className).not.toContain(
       "object-contain",
     );
+  });
+
+  // Nothing on this page is ever more than about two thirds of a screen tall. jsdom has no
+  // layout, so what a test can hold here is that the bound is asked for on every picture —
+  // that it is honoured was measured in a browser, across three viewport heights.
+  //
+  // Every picture rather than the full-width ones the todo named: a square picture in a
+  // half-page card on a short window fills the window just as well.
+  it("bounds every picture's height, measured or not, in every slot", () => {
+    for (const slot of ["lead", "wide", "feature", "standard"] as Slot[]) {
+      for (const [w, h] of [
+        [1600, 1200],
+        [4000, 400],
+        [1000, 4000],
+        [0, 0],
+      ]) {
+        document.body.innerHTML = "";
+        show(w!, h!, slot);
+        expect(document.querySelector("img")!.className).toContain(
+          "max-h-[70vh]",
+        );
+      }
+    }
   });
 
   // The ladder is what to do knowing nothing, and it stays that: a drawn shape from
