@@ -206,9 +206,20 @@ func (s *Store) CreatePage(ctx context.Context, principalID, name, slug string) 
 		// Now rather than now plus the interval, for the same reason a new account's is: an
 		// empty page should fill on the next tick, not tomorrow.
 		EditionInterval: 24 * time.Hour,
-		EditionSize:     60,
-		NextEditionAt:   now,
-		CreatedAt:       now,
+		// Sixty, and it is a starting point rather than a recommendation.
+		//
+		// Measured against a real instance: nineteen feeds publish about eighty-five articles
+		// a day, and the two pages there had been moved to ninety and thirty — nobody sat on
+		// the default, and both editions filled to exactly their ceiling. So a daily page for
+		// somebody who reads a lot wants more than this, and a filtered one wants less.
+		//
+		// It stays low anyway. Too small is a slider somebody moves once; too large is a page
+		// that looks like a feed reader, which is the thing this is not. And it costs nothing
+		// to be shy: the size is a ceiling and never a quota, so a new account following four
+		// blogs gets the four blogs rather than sixty slots of disappointment.
+		EditionSize:   60,
+		NextEditionAt: now,
+		CreatedAt:     now,
 	}
 	_, err := s.main.ExecContext(ctx,
 		`INSERT INTO pages (id, principal_id, name, slug, is_main,
