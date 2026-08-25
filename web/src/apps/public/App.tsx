@@ -169,9 +169,9 @@ function PublicPage({ person, page }: { person: string; page: string }) {
 /**
  * The band across the top, and it is not the reader's.
  *
- * A wordmark and a way in, and nothing else. No settings, no account, no name of whoever
- * published this — the address already carries the one identity they chose to expose, and a
- * username beside it would expose one they did not.
+ * A wordmark and a way in, and nothing else. No settings, no account, no tagline, and no name
+ * of whoever published this — the address already carries the one identity they chose to
+ * expose, and a username beside it would expose one they did not.
  */
 function Masthead() {
   return (
@@ -180,9 +180,6 @@ function Masthead() {
         <a href="/" className="nameplate text-ink hover:text-accent">
           bystander
         </a>
-        <p className="basis-full text-sm text-ink-muted sm:basis-auto">
-          A reader with no unread count
-        </p>
         <div className="flex basis-full items-center gap-4 text-sm sm:ml-auto sm:basis-auto">
           <a href="/login" className="text-ink-muted hover:text-ink">
             Sign in
