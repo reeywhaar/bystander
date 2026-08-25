@@ -69,6 +69,21 @@ type Page struct {
 	// first.
 	ExcludeTagIDs []string
 
+	// PublishSlug is where this page lives on the open web, under its owner's public name:
+	// /p/<their name>/<this>. Kept when a page is taken down rather than cleared, so that
+	// publishing it again offers the address the links already point at.
+	//
+	// Separate from Slug, and it has to be: the main page has no Slug at all — it is served
+	// at / rather than at /f/:slug — and it is the page most people would publish first.
+	PublishSlug string
+	// Published is whether that address answers. Its own field rather than an empty slug,
+	// so taking a page down does not throw away where it was.
+	Published bool
+	// Indexable is the owner's answer to "should a search engine keep this". The instance's
+	// answer overrules it — see [InstanceSettings] — and where the instance says no this is
+	// never true on the way out, whatever is stored.
+	Indexable bool
+
 	// IncludeFeedIDs are on the page whatever the tags decided, and ExcludeFeedIDs are off it
 	// whatever they decided. An override rather than a second funnel, which is the difference
 	// between what somebody wants to say — "this one as well", "this one never" — and what a
@@ -463,7 +478,7 @@ func (s *Store) ScheduleNextEdition(ctx context.Context, pageID string, at time.
 	return err
 }
 
-const pageColumns = `id, principal_id, name, slug, is_main, edition_interval, edition_size, next_edition_at, max_article_age, created_at`
+const pageColumns = `id, principal_id, name, slug, is_main, edition_interval, edition_size, next_edition_at, max_article_age, publish_slug, published, indexable, created_at`
 
 func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 	var (
@@ -475,7 +490,8 @@ func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 		created  int64
 	)
 	if err := row.Scan(&page.ID, &page.PrincipalID, &page.Name, &page.Slug, &isMain,
-		&interval, &page.EditionSize, &next, &window, &created); err != nil {
+		&interval, &page.EditionSize, &next, &window,
+		&page.PublishSlug, &page.Published, &page.Indexable, &created); err != nil {
 		return nil, err
 	}
 	page.IsMain = isMain == 1

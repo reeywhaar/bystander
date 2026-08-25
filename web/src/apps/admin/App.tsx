@@ -8,6 +8,7 @@ import { TabStrip } from "@app/components/ui/TabStrip";
 
 import { ImagesPage } from "@app/apps/admin/ImagesPage";
 import { InvitesPage } from "@app/apps/admin/InvitesPage";
+import { PublishingPage } from "@app/apps/admin/PublishingPage";
 import { MailPage } from "@app/apps/admin/MailPage";
 import { UsersPage } from "@app/apps/admin/UsersPage";
 
@@ -31,6 +32,7 @@ export function App() {
                       { to: "/admin/invites", label: "Invitations" },
                       { to: "/admin/mail", label: "Mail" },
                       { to: "/admin/images", label: "Images" },
+                      { to: "/admin/publishing", label: "Publishing" },
                     ]}
                   />
                   <Routes>
@@ -38,6 +40,10 @@ export function App() {
                     <Route path="/admin/invites" element={<InvitesPage />} />
                     <Route path="/admin/mail" element={<MailPage />} />
                     <Route path="/admin/images" element={<ImagesPage />} />
+                    <Route
+                      path="/admin/publishing"
+                      element={<PublishingPage />}
+                    />
                     <Route
                       path="*"
                       element={<Navigate to="/admin" replace />}

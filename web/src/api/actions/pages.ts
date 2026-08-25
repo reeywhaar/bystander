@@ -59,3 +59,33 @@ export function deletePage(id: string): ApiAction<null> {
     d.call({ method: "DELETE", path: `/api/pages/${encodeURIComponent(id)}` }),
   );
 }
+
+/** `PUT /api/pages/{id}/publish` — puts a page on the open web, or moves it. */
+export function putPagePublish(
+  id: string,
+  slug: string,
+  indexable: boolean,
+): ApiAction<Page> {
+  return createApiAction((d) =>
+    d.call({
+      method: "PUT",
+      path: `/api/pages/${encodeURIComponent(id)}/publish`,
+      body: { slug, indexable },
+    }),
+  );
+}
+
+/**
+ * `DELETE /api/pages/{id}/publish` — takes it down, and remembers where it was.
+ *
+ * The address is kept so publishing it again offers the one the links already point at.
+ * Nobody reaches it in the meantime.
+ */
+export function deletePagePublish(id: string): ApiAction<Page> {
+  return createApiAction((d) =>
+    d.call({
+      method: "DELETE",
+      path: `/api/pages/${encodeURIComponent(id)}/publish`,
+    }),
+  );
+}

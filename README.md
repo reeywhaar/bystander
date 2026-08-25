@@ -75,6 +75,24 @@ until you say so. A title and an address are not a description: a site offering 
 "Comments" and "Notes" is three plausible names and one right answer, and the alternative is
 following one to find out and then unfollowing it again.
 
+### Putting a page on the open web
+
+A page can be published, at `/p/your-name/the-page`. Anyone with the address reads it: the same
+articles, the same arrangement, without any record of what *you* have read — whether you have
+read something is a fact about you, and publishing a page is not an offer to publish that too.
+
+Your public name is not your username. Two names for two jobs: one to sign in with, one to be
+known by, and the one to sign in with is a credential half the world reuses. Change it and every
+published page moves with it, because the address is built from the name rather than stored
+beside the page — so the old links stop working, which is what changing your name means. Give it
+up and the pages come down with it.
+
+**The instance decides whether any of this is possible**, under Admin → Publishing, and both
+answers start as no. Publishing is one switch; search-engine indexing is a second, and the
+asymmetry is deliberate. Taking a page down is a switch. Taking it out of somebody else's search
+index is a request nobody controls — so indexing needs two yeses, the instance's and the page
+owner's, and where the instance says no the choice is not offered at all.
+
 ### Bringing a list in, and getting one out
 
 **Import a list** under Settings → Feeds takes an OPML file or a pasted list of addresses.

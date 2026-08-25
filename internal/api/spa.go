@@ -24,6 +24,14 @@ const (
 	// already lives there, and what somebody does next is subscribe to things.
 	SharePath = "/share"
 	AdminPath = "/admin"
+
+	// PublicPath is where somebody's published pages live: /p/<their name>/<the page>.
+	//
+	// Its own island rather than the reader's, and the reason is what the reader is: an
+	// application for somebody with an account, which knows about sessions and settings and
+	// marking things read. A stranger opening a link should be handed a page, not the shell
+	// of a product they have no account for and half of whose controls would refuse them.
+	PublicPath = "/p/"
 )
 
 // SPA serves the built React bundle.
@@ -46,6 +54,7 @@ type SPA struct {
 	login  asset
 	manage asset
 	admin  asset
+	public asset
 
 	hasIndex bool
 	log      *slog.Logger
@@ -152,6 +161,7 @@ func NewSPA(dist fs.FS, log *slog.Logger) (*SPA, error) {
 		{"/login.html", &s.login, "login"},
 		{"/manage.html", &s.manage, "manage"},
 		{"/admin.html", &s.admin, "admin"},
+		{"/public.html", &s.public, "public"},
 	} {
 		if a, ok := s.assets[island.file]; ok {
 			*island.into = a
@@ -229,6 +239,11 @@ func (s *SPA) shellFor(clean string) asset {
 		return s.manage
 	case clean == AdminPath, strings.HasPrefix(clean, AdminPath+"/"):
 		return s.admin
+	// The bare "/p" goes here too, and answers "no page at this address" — which is what a
+	// truncated link looks like, and is both true and actionable. Falling through to the
+	// reader would show a stranger an application they have no account for.
+	case clean == strings.TrimSuffix(PublicPath, "/"), strings.HasPrefix(clean, PublicPath):
+		return s.public
 	default:
 		return s.index
 	}

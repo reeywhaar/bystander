@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bystander</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="color-scheme" content="light dark" />
+    <!--
+      Not indexed unless the page says otherwise, and it says otherwise by removing this at
+      runtime. The default is the safe one because the mistake is not reversible: a page that
+      has been crawled stays in somebody else's cache long after it is taken down, and no
+      switch here reaches that. Both the owner and the instance have to say yes — see
+      apps/public/App.tsx.
+    -->
+    <meta name="robots" content="noindex, nofollow" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/public.tsx"></script>
+  </body>
+</html>

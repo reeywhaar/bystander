@@ -15,19 +15,19 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
-# All four HTML entries. They are four applications with four audiences — the login shell is
-# the only document an unauthenticated visitor receives, and the admin bundle is never sent
-# to an ordinary account. vite.config.ts names all four, so a missing one is a hard error
-# rather than a quietly smaller build.
+# Every HTML entry. They are five applications with five audiences — the login shell and the
+# public one are the only documents somebody without an account receives, and the admin bundle
+# is never sent to an ordinary account. vite.config.ts names all five, so a missing one is a
+# hard error rather than a quietly smaller build.
 COPY web/tsconfig.json web/vite.config.ts ./
-COPY web/index.html web/login.html web/manage.html web/admin.html ./
+COPY web/index.html web/login.html web/manage.html web/admin.html web/public.html ./
 COPY web/public ./public
 COPY web/src ./src
 RUN npm run build
 
 # Fail here, not in production. An empty build is otherwise invisible until somebody loads a
 # page and gets the placeholder, or opens an invitation and gets the reader's shell.
-RUN for entry in index login manage admin; do \
+RUN for entry in index login manage admin public; do \
       test -s "dist/$entry.html" || { echo "dist/$entry.html is missing or empty"; exit 1; }; \
     done
 

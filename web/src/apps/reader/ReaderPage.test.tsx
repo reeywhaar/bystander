@@ -59,6 +59,9 @@ function page(overrides: Partial<Page> = {}): Page {
     exclude_tag_ids: [],
     include_feed_ids: [],
     exclude_feed_ids: [],
+    publish_slug: "",
+    published: false,
+    indexable: false,
     ...overrides,
   };
 }

@@ -13,6 +13,8 @@ function account(overrides: Partial<Account> = {}): Account {
     role: "user",
     created_at: Math.floor(Date.now() / 1000) - 86400 * 30,
     public_name: "",
+    public_pages: true,
+    public_indexing: false,
     recovery_email: "",
     recovery_pending: "",
     mail_configured: true,

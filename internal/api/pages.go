@@ -32,6 +32,15 @@ type pageBody struct {
 	ExcludeTagIDs  []string `json:"exclude_tag_ids"`
 	IncludeFeedIDs []string `json:"include_feed_ids"`
 	ExcludeFeedIDs []string `json:"exclude_feed_ids"`
+
+	// Where this page lives on the open web, and whether that address answers. The slug is
+	// kept when a page is taken down, so publishing it again offers the address the links
+	// already point at.
+	PublishSlug string `json:"publish_slug"`
+	Published   bool   `json:"published"`
+	// Indexable is the owner's answer about search engines, after the instance's answer has
+	// been applied to it: where the instance says no this is false whatever was stored.
+	Indexable bool `json:"indexable"`
 }
 
 func pageOf(page *store.Page) pageBody {
@@ -48,6 +57,9 @@ func pageOf(page *store.Page) pageBody {
 		ExcludeTagIDs:   orEmpty(page.ExcludeTagIDs),
 		IncludeFeedIDs:  orEmpty(page.IncludeFeedIDs),
 		ExcludeFeedIDs:  orEmpty(page.ExcludeFeedIDs),
+		PublishSlug:     page.PublishSlug,
+		Published:       page.Published,
+		Indexable:       page.Indexable,
 	}
 }
 

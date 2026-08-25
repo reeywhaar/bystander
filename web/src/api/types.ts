@@ -47,6 +47,21 @@ export interface Account {
    */
   recovery_pending: string;
   /**
+   * Whether this instance publishes pages at all.
+   *
+   * Here for the same reason `mail_configured` is: a screen offering somebody a public name
+   * on an instance that will never serve a public page is offering a thing that does not
+   * exist. So the whole section is hidden rather than shown and refused.
+   */
+  public_pages: boolean;
+  /**
+   * Whether a published page may ask to be indexed here.
+   *
+   * The administrator's answer, and the interface does not argue with it: where this is false
+   * the choice is absent from the publish dialog rather than shown and refused.
+   */
+  public_indexing: boolean;
+  /**
    * Whether a relay is configured at all.
    *
    * A recovery address is worth nothing without one, and a page that invited somebody to
@@ -257,6 +272,17 @@ export interface Page {
   exclude_tag_ids: string[];
   include_feed_ids: string[];
   exclude_feed_ids: string[];
+
+  /**
+   * Where this page lives on the open web, under its owner's public name:
+   * `/p/<their name>/<this>`. Kept when a page is taken down, so publishing it again offers
+   * the address the links already point at.
+   */
+  publish_slug: string;
+  /** Whether that address answers. */
+  published: boolean;
+  /** Whether a search engine may keep it, after both the owner and the instance were asked. */
+  indexable: boolean;
 }
 
 export interface User {
@@ -358,4 +384,35 @@ export interface ImageTally {
   unmeasured: number;
   /** Largest group first: it is the answer more often than not. */
   failures: ImageFailure[];
+}
+
+/**
+ * Somebody's published page, as a stranger sees it.
+ *
+ * Whose it is appears in the address and nowhere else: the public name is the only identity
+ * its owner chose to expose, and putting a username beside it would expose one they did not.
+ *
+ * The articles carry no `read_at` — not "unread", but absent. Whether the owner has read
+ * something is a fact about them, and publishing a page is not an offer to publish that too.
+ */
+export interface PublicPage {
+  name: string;
+  generated_at: number;
+  /** Whether a search engine may keep this, after both the owner and the instance were asked. */
+  indexable: boolean;
+  items: Article[];
+}
+
+/**
+ * The answers that belong to the instance rather than to anybody on it.
+ *
+ * Both off until an administrator says otherwise, and the asymmetry between them is the point:
+ * publishing is reversible and indexing is not. Taking a page down is a switch; taking it out
+ * of somebody else's search index is a request nobody controls.
+ */
+export interface InstanceSettings {
+  /** Whether anybody here may publish a page. Off takes every published page down. */
+  public_pages: boolean;
+  /** A ceiling on the per-page choice, not a default for it. */
+  public_indexing: boolean;
 }

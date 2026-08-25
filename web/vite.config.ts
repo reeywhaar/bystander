@@ -37,6 +37,7 @@ export default defineConfig({
         login: "login.html",
         manage: "manage.html",
         admin: "admin.html",
+        public: "public.html",
       },
     },
   },

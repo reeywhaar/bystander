@@ -432,30 +432,58 @@ const MaxSlug = 40
 // page. The cost is the honest one — the old addresses stop working, which is what changing
 // your name means.
 //
-// Empty takes the name away. Nothing here can be published yet, so nothing has to be taken
-// down with it; when publishing arrives, this is where that belongs.
+// Empty takes the name away, and takes every published page down with it. The name is what the
+// addresses are built from, so keeping the pages up without one would leave them reachable at
+// an address nothing can produce — and "I no longer want to be known here" is not a request to
+// keep serving the pages anonymously. How many went down is returned so the interface can say
+// so; the warning before it is pressed is the interface's own.
 //
 // Taken is reported as a fact about the name rather than about who holds it. Whether somebody
 // else exists here, and under what name, is not this caller's business; the answer they need is
 // the same either way, which is "pick another".
-func (s *Store) SetPublicName(ctx context.Context, principalID, slug string) error {
+func (s *Store) SetPublicName(ctx context.Context, principalID, slug string) (int, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if slug != "" {
 		if len(slug) > MaxSlug {
-			return Invalid("a public name is at most %d characters", MaxSlug)
+			return 0, Invalid("a public name is at most %d characters", MaxSlug)
 		}
 		if !slugPattern.MatchString(slug) {
-			return Invalid("a public name may use lowercase letters, numbers and hyphens")
+			return 0, Invalid("a public name may use lowercase letters, numbers and hyphens")
 		}
 	}
 
-	res, err := s.main.ExecContext(ctx,
+	tx, err := s.main.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
 		`UPDATE principals SET slug = ? WHERE id = ?`, slug, principalID)
 	if isUnique(err) {
-		return Conflict("%q is taken", slug)
+		return 0, Conflict("%q is taken", slug)
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return expectOne(res, NotFound("no account %s", principalID))
+	if err := expectOne(res, NotFound("no account %s", principalID)); err != nil {
+		return 0, err
+	}
+
+	// One transaction, because a name given up while its pages stayed published would leave
+	// them answering at an address that no longer belongs to anybody.
+	var down int
+	if slug == "" {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE pages SET published = 0 WHERE principal_id = ? AND published = 1`, principalID)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		down = int(n)
+	}
+	return down, tx.Commit()
 }

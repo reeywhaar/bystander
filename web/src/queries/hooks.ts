@@ -39,6 +39,7 @@ import {
 } from "@app/api/actions/feeds";
 import { postFeedsDiscover, postFeedsPreview } from "@app/api/actions/discover";
 import { getImages, postImagesRetry } from "@app/api/actions/images";
+import { getInstance, putInstance } from "@app/api/actions/instance";
 import {
   postFeedsExport,
   postFeedsImport,
@@ -53,6 +54,7 @@ import {
 } from "@app/api/actions/tags";
 import { useApiCall } from "@app/api/provider";
 import type {
+  InstanceSettings,
   Article,
   Edition,
   ImportSelection,
@@ -61,9 +63,11 @@ import type {
 } from "@app/api/types";
 import {
   deletePage,
+  deletePagePublish,
   getPages,
   patchPage,
   postPage,
+  putPagePublish,
   type PageChanges,
 } from "@app/api/actions/pages";
 import { qk } from "@app/queries/keys";
@@ -692,5 +696,44 @@ export function useSetPublicName() {
   return useMutation({
     mutationFn: (name: string) => callApi(putAccountPublicName(name)),
     onSuccess: (account) => client.setQueryData(qk.account, account),
+  });
+}
+
+/** What this instance serves to strangers. Administrators only. */
+export function useInstance() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.adminInstance,
+    queryFn: ({ signal }) => callApi(getInstance(), signal),
+  });
+}
+
+export function useSetInstance() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: InstanceSettings) => callApi(putInstance(settings)),
+    onSuccess: (saved) => client.setQueryData(qk.adminInstance, saved),
+  });
+}
+
+/**
+ * Puts a page on the open web, or takes it down.
+ *
+ * One hook for both, because they are one decision with two answers and the screen shows one
+ * button that changes its mind. The pages list is invalidated rather than patched: publishing
+ * is the sort of thing somebody wants to see reflected everywhere at once.
+ */
+export function usePublishPage() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; slug?: string; indexable?: boolean }) =>
+      input.slug === undefined
+        ? callApi(deletePagePublish(input.id))
+        : callApi(
+            putPagePublish(input.id, input.slug, input.indexable ?? false),
+          ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: qk.pages }),
   });
 }

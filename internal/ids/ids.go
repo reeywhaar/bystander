@@ -39,6 +39,9 @@ const (
 	Page         = "pg_"
 	SMTP         = "m_"
 	Job          = "j_"
+	// Instance is the one row of settings that belong to the instance rather than to
+	// anybody on it.
+	Instance = "in_"
 )
 
 // crockford omits I, L, O and U, so an id cannot be misread between similar glyphs or

@@ -47,7 +47,14 @@ export function ArticleCard({
   style: Style;
   /** The face, which is the one thing the page decides rather than the card. */
   voice: Voice;
-  onRead: (id: string, read: boolean) => void;
+  /**
+   * Left out where nobody can mark anything, which is a published page seen by a stranger.
+   *
+   * Absent rather than disabled: a control that refuses is still a control, and a page shown
+   * to somebody with no account should not be advertising what it would let an account do.
+   * The card is otherwise identical, because what is being shown is the same page.
+   */
+  onRead?: (id: string, read: boolean) => void;
 }) {
   const read = article.read_at !== null;
   // Null for most of them: a box is punctuation, and the padding belongs to the box rather
@@ -97,7 +104,7 @@ export function ArticleCard({
           href={article.link}
           target="_blank"
           rel="noopener noreferrer"
-          {...opening(() => onRead(article.id, true))}
+          {...opening(() => onRead?.(article.id, true))}
           tabIndex={-1}
           aria-hidden="true"
         >
@@ -180,7 +187,7 @@ export function ArticleCard({
             href={article.link}
             target="_blank"
             rel="noopener noreferrer"
-            {...opening(() => onRead(article.id, true))}
+            {...opening(() => onRead?.(article.id, true))}
             className="hover:underline underline-offset-4"
           >
             {article.title}
@@ -216,19 +223,22 @@ export function ArticleCard({
           gap and then the next card — and at twelve pixels above against twenty-eight
           below it read as belonging to neither. Six is unambiguous: it is nearer to the
           article it marks than that article is to anything else. */}
-        <div className="pt-1.5">
-          <button
-            type="button"
-            onClick={() => onRead(article.id, !read)}
-            // Always there, and dim. A control that exists only while the pointer is over it
-            // cannot be found by somebody who does not already know it is there, and cannot
-            // be reached by touch at all. Half weight keeps it out of the way of the reading
-            // without hiding it, and it does not brighten — nothing on this page moves.
-            className="text-xs text-ink-faint opacity-50"
-          >
-            {read ? "Mark unread" : "Mark read"}
-          </button>
-        </div>
+        {onRead ? (
+          <div className="pt-1.5">
+            <button
+              type="button"
+              onClick={() => onRead(article.id, !read)}
+              // Always there, and dim. A control that exists only while the pointer is over
+              // it cannot be found by somebody who does not already know it is there, and
+              // cannot be reached by touch at all. Half weight keeps it out of the way of
+              // the reading without hiding it, and it does not brighten — nothing on this
+              // page moves.
+              className="text-xs text-ink-faint opacity-50"
+            >
+              {read ? "Mark unread" : "Mark read"}
+            </button>
+          </div>
+        ) : null}
       </div>
     </article>
   );

@@ -33,6 +33,18 @@ type accountBody struct {
 	// Its own name and not the username, which is a credential half the world reuses:
 	// publishing a page should not oblige anybody to announce theirs.
 	PublicName string `json:"public_name"`
+	// PublicPages is whether this instance publishes pages at all.
+	//
+	// Here for the same reason MailConfigured is: a screen offering somebody a public name
+	// on an instance that will never serve a public page is offering a thing that does not
+	// exist. Not a secret — it is the first thing anybody would find out by pressing it.
+	PublicPages bool `json:"public_pages"`
+	// PublicIndexing is whether a published page may ask to be indexed here.
+	//
+	// Here so the publish dialog knows whether to offer the choice at all. It is the
+	// administrator's answer and the interface does not argue with it — where this is false
+	// the control is absent rather than shown and refused.
+	PublicIndexing bool `json:"public_indexing"`
 	// MailConfigured is whether a relay exists at all.
 	//
 	// Here because a recovery address is worth nothing without one, and a page that
@@ -63,6 +75,11 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, id string)
 		s.fail(w, r, err)
 		return
 	}
+	instance, err := s.store.Instance(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	proved, err := s.store.RecoveryEmail(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
@@ -79,6 +96,8 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, id string)
 		Role:            string(p.Role),
 		CreatedAt:       p.CreatedAt.Unix(),
 		PublicName:      p.Slug,
+		PublicPages:     instance.PublicPages,
+		PublicIndexing:  instance.PublicIndexing,
 		RecoveryEmail:   proved,
 		RecoveryPending: pending,
 		MailConfigured:  relay,
@@ -107,12 +126,17 @@ func (s *Server) setPublicName(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if err := s.store.SetPublicName(r.Context(), p.ID, body.Name); err != nil {
+	down, err := s.store.SetPublicName(r.Context(), p.ID, body.Name)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 
-	s.log.Info("a public name was set", "principal", p.ID, "name", body.Name)
+	// Counted in the log because it is the surprising half: somebody who gave up a name may
+	// not have connected that to the pages it was holding up, and the interface warns before
+	// it is pressed precisely so that they do.
+	s.log.Info("a public name was set",
+		"principal", p.ID, "name", body.Name, "pages_taken_down", down)
 	s.writeAccount(w, r, p.ID)
 }
 

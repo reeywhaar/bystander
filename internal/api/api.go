@@ -86,6 +86,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.healthz)
 
 	// Unauthenticated. Everything else on /api requires a session.
+	// No session: this is the whole point of publishing. Everything it can refuse, it
+	// refuses as not found — see publicPage.
+	mux.HandleFunc("GET /api/public/{person}/{page}", s.publicPage)
+
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("GET /api/invites/{token}", s.invite)
 	mux.HandleFunc("POST /api/invites/{token}/accept", s.acceptInvite)
@@ -105,6 +109,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/pages/{id}", s.requireSession(s.getPage))
 	mux.Handle("PATCH /api/pages/{id}", s.requireSession(s.patchPage))
 	mux.Handle("DELETE /api/pages/{id}", s.requireSession(s.deletePage))
+	mux.Handle("PUT /api/pages/{id}/publish", s.requireSession(s.publishPage))
+	mux.Handle("DELETE /api/pages/{id}/publish", s.requireSession(s.unpublishPage))
 
 	// Both of these take an optional ?page=, by id or by address. Without one they answer for
 	// the main page, which is what the reader asks for at /.
@@ -147,6 +153,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/smtp", s.requireAdmin(s.putSMTP))
 	mux.Handle("DELETE /api/admin/smtp", s.requireAdmin(s.deleteSMTP))
 	mux.Handle("POST /api/admin/smtp/test", s.requireAdmin(s.testSMTP))
+	mux.Handle("GET /api/admin/instance", s.requireAdmin(s.getInstance))
+	mux.Handle("PUT /api/admin/instance", s.requireAdmin(s.putInstance))
 	mux.Handle("GET /api/admin/images", s.requireAdmin(s.images))
 	mux.Handle("POST /api/admin/images/retry", s.requireAdmin(s.retryImages))
 

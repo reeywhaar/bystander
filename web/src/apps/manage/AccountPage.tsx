@@ -143,48 +143,54 @@ export function AccountPage() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-rule pt-8">
-        <h2 className="font-serif text-xl text-ink">Public name</h2>
-        <p className="max-w-prose text-sm text-ink-muted">
-          The name any page you publish lives under. Not the name you sign in
-          with — that one is a password's other half, and publishing a page is
-          no reason to hand it out. Nothing is public until you publish
-          something.
-        </p>
+      {/* Hidden, not disabled. An instance that publishes nothing has no use for a public
+          name, and offering one there would be offering a thing that does not exist — the
+          administrator's answer is the whole answer, and this is not a control that argues
+          with it. */}
+      {me.public_pages ? (
+        <section className="flex flex-col gap-3 border-t border-rule pt-8">
+          <h2 className="font-serif text-xl text-ink">Public name</h2>
+          <p className="max-w-prose text-sm text-ink-muted">
+            The name any page you publish lives under. Not the name you sign in
+            with — that one is a password's other half, and publishing a page is
+            no reason to hand it out. Nothing is public until you publish
+            something.
+          </p>
 
-        <p className="text-sm text-ink">
-          {me.public_name === "" ? (
-            <span className="text-ink-muted">
-              None yet. You will be asked for one the first time you publish a
-              page.
-            </span>
-          ) : (
-            <span className="font-mono text-xs text-ink-muted">
-              /p/<span className="text-ink">{me.public_name}</span>/…
-            </span>
-          )}
-        </p>
+          <p className="text-sm text-ink">
+            {me.public_name === "" ? (
+              <span className="text-ink-muted">
+                None yet. You will be asked for one the first time you publish a
+                page.
+              </span>
+            ) : (
+              <span className="font-mono text-xs text-ink-muted">
+                /p/<span className="text-ink">{me.public_name}</span>/…
+              </span>
+            )}
+          </p>
 
-        {name.error ? <Alert>{name.error.message}</Alert> : null}
+          {name.error ? <Alert>{name.error.message}</Alert> : null}
 
-        <div className="flex flex-wrap gap-2">
-          {/* "Change name" rather than "Change it": the recovery address below has a
+          <div className="flex flex-wrap gap-2">
+            {/* "Change name" rather than "Change it": the recovery address below has a
               "Change it" of its own, and two buttons with one accessible name on a page is a
               list a screen reader cannot tell apart. */}
-          <Button onClick={() => setNaming(true)}>
-            {me.public_name === "" ? "Choose a name" : "Change name"}
-          </Button>
-          {me.public_name !== "" ? (
-            <Button
-              variant="danger"
-              disabled={name.isPending}
-              onClick={() => name.mutate("")}
-            >
-              {name.isPending ? "Giving it up…" : "Give it up"}
+            <Button onClick={() => setNaming(true)}>
+              {me.public_name === "" ? "Choose a name" : "Change name"}
             </Button>
-          ) : null}
-        </div>
-      </section>
+            {me.public_name !== "" ? (
+              <Button
+                variant="danger"
+                disabled={name.isPending}
+                onClick={() => name.mutate("")}
+              >
+                {name.isPending ? "Giving it up…" : "Give it up"}
+              </Button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3 border-t border-rule pt-8">
         <h2 className="font-serif text-xl text-ink">Recovery address</h2>

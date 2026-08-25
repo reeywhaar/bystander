@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@app/api/error";
 import type { Page } from "@app/api/types";
 import { PageDialog } from "@app/apps/manage/PageDialog";
+import { PublicNameDialog } from "@app/apps/manage/PublicNameDialog";
+import { PublishDialog } from "@app/apps/manage/PublishDialog";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
+import { Modal } from "@app/components/ui/Modal";
 import { Slider } from "@app/components/ui/Slider";
 import { Spinner } from "@app/components/ui/Spinner";
 import {
@@ -14,8 +17,10 @@ import {
 } from "@app/lib/constants";
 import { until } from "@app/lib/time";
 import {
+  useAccount,
   useDeletePage,
   usePages,
+  usePublishPage,
   useRegenerate,
   useUpdatePage,
 } from "@app/queries/hooks";
@@ -27,11 +32,19 @@ function addressOf(page: Page): string {
 
 export function PagesPage() {
   const pages = usePages();
+  const account = useAccount();
   const remove = useDeletePage();
+  const publish = usePublishPage();
 
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<Page | null>(null);
   const [dialog, setDialog] = useState(false);
+  // Publishing asks two questions, and the first one is only asked when it has to be: a
+  // public name. Same dialog as the account page's, so the question looks the same wherever
+  // it is met.
+  const [publishing, setPublishing] = useState<Page | null>(null);
+  const [naming, setNaming] = useState<Page | null>(null);
+  const [takingDown, setTakingDown] = useState<Page | null>(null);
 
   const all = pages.data ?? [];
   // The main page until somebody chooses otherwise, and back to it if the chosen one goes.
@@ -41,8 +54,11 @@ export function PagesPage() {
     if (current && current.id !== selected) setSelected(current.id);
   }, [current, selected]);
 
-  if (pages.isPending) return <Spinner />;
+  if (pages.isPending || account.isPending) return <Spinner />;
   if (pages.error) throw pages.error;
+  if (account.error) throw account.error;
+  if (!account.data) return <Spinner />;
+  const me = account.data;
   if (!current) return <Spinner />;
 
   return (
@@ -118,6 +134,21 @@ export function PagesPage() {
             {" · "}
             {describe(current)}
           </p>
+
+          {/* Said where the page is described rather than inside the dialog that made it,
+              because after publishing this is the thing somebody comes back for. */}
+          {current.published && me.public_name !== "" ? (
+            <p className="mt-1 text-sm text-ink-muted">
+              Published at{" "}
+              <a
+                href={`/p/${me.public_name}/${current.publish_slug}`}
+                className="font-mono text-xs text-accent underline underline-offset-2"
+              >
+                /p/{me.public_name}/{current.publish_slug}
+              </a>
+              {current.indexable ? " · search engines may index it" : null}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -129,6 +160,25 @@ export function PagesPage() {
           >
             Edit
           </Button>
+          {/* Only where the instance publishes anything at all. Hidden rather than
+              disabled: an administrator has said no, and a button that refuses is still
+              advertising a thing that is not on offer. */}
+          {me.public_pages ? (
+            current.published ? (
+              <Button onClick={() => setTakingDown(current)}>Take down</Button>
+            ) : (
+              <Button
+                onClick={() =>
+                  me.public_name === ""
+                    ? setNaming(current)
+                    : setPublishing(current)
+                }
+              >
+                Publish
+              </Button>
+            )
+          ) : null}
+
           {/* The main page has no Remove, rather than one that refuses. */}
           {current.is_main ? null : (
             <Button
@@ -148,6 +198,56 @@ export function PagesPage() {
       {remove.error ? <Alert>{remove.error.message}</Alert> : null}
 
       <PageControls page={current} />
+
+      <PublishDialog
+        page={publishing}
+        account={me}
+        open={publishing !== null}
+        onClose={() => setPublishing(null)}
+      />
+
+      {/* Asked for a name only when publishing needs one, and then the publish dialog
+          follows on. Two steps because they are two questions, and rolling them into one
+          form would ask for a name in the middle of a sentence about a page. */}
+      <PublicNameDialog
+        account={me}
+        open={naming !== null}
+        onClose={(saved) => {
+          const page = naming;
+          setNaming(null);
+          if (saved && page) setPublishing(page);
+        }}
+      />
+
+      <Modal
+        open={takingDown !== null}
+        onClose={() => setTakingDown(null)}
+        title={takingDown ? `Take down ${takingDown.name}` : "Take down"}
+        footer={
+          <>
+            <Button onClick={() => setTakingDown(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={publish.isPending}
+              onClick={() =>
+                takingDown &&
+                publish.mutate(
+                  { id: takingDown.id },
+                  { onSuccess: () => setTakingDown(null) },
+                )
+              }
+            >
+              {publish.isPending ? "Taking it down…" : "Take it down"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-muted">
+          The address stops working straight away. It is remembered, so
+          publishing this page again offers the same one — but anybody holding
+          the link will find nothing until you do.
+        </p>
+      </Modal>
 
       <PageDialog
         page={editing}

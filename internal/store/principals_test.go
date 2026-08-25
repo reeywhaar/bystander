@@ -193,7 +193,7 @@ func TestAPublicNameIsChosenAndCanBeTakenBack(t *testing.T) {
 		t.Errorf("a new account already has the public name %q", alice.Slug)
 	}
 
-	if err := s.SetPublicName(t.Context(), alice.ID, "Misha"); err != nil {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, "Misha"); err != nil {
 		t.Fatalf("SetPublicName(): %v", err)
 	}
 	got, _ := s.PrincipalByID(t.Context(), alice.ID)
@@ -205,7 +205,7 @@ func TestAPublicNameIsChosenAndCanBeTakenBack(t *testing.T) {
 
 	// Changed at will. Nothing stores the address, so every published page moves with it —
 	// which is the cost as well as the feature.
-	if err := s.SetPublicName(t.Context(), alice.ID, "mv"); err != nil {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, "mv"); err != nil {
 		t.Fatalf("SetPublicName(): %v", err)
 	}
 	if got, _ := s.PrincipalByID(t.Context(), alice.ID); got.Slug != "mv" {
@@ -213,7 +213,7 @@ func TestAPublicNameIsChosenAndCanBeTakenBack(t *testing.T) {
 	}
 
 	// And taken back.
-	if err := s.SetPublicName(t.Context(), alice.ID, ""); err != nil {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, ""); err != nil {
 		t.Fatalf("SetPublicName(): %v", err)
 	}
 	if got, _ := s.PrincipalByID(t.Context(), alice.ID); got.Slug != "" {
@@ -227,10 +227,10 @@ func TestAPublicNameIsTakenOnlyOnce(t *testing.T) {
 	alice, _ := s.CreatePrincipal(t.Context(), "alice", "correct-horse", RoleUser)
 	bob, _ := s.CreatePrincipal(t.Context(), "bob", "correct-horse", RoleUser)
 
-	if err := s.SetPublicName(t.Context(), alice.ID, "misha"); err != nil {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, "misha"); err != nil {
 		t.Fatalf("SetPublicName(): %v", err)
 	}
-	err := s.SetPublicName(t.Context(), bob.ID, "misha")
+	_, err := s.SetPublicName(t.Context(), bob.ID, "misha")
 	if !errors.Is(err, ErrConflict) {
 		t.Errorf("second claim on a name = %v, want a conflict", err)
 	}
@@ -241,10 +241,10 @@ func TestAPublicNameIsTakenOnlyOnce(t *testing.T) {
 	}
 
 	// Emptiness is not a name, so any number of accounts can be without one.
-	if err := s.SetPublicName(t.Context(), alice.ID, ""); err != nil {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, ""); err != nil {
 		t.Fatalf("clearing: %v", err)
 	}
-	if err := s.SetPublicName(t.Context(), bob.ID, ""); err != nil {
+	if _, err := s.SetPublicName(t.Context(), bob.ID, ""); err != nil {
 		t.Errorf("a second account could not be nameless: %v", err)
 	}
 }
@@ -254,11 +254,11 @@ func TestAPublicNameHasToLookLikeOne(t *testing.T) {
 	alice, _ := s.CreatePrincipal(t.Context(), "alice", "correct-horse", RoleUser)
 
 	for _, bad := range []string{"Misha Vyrtsev", "misha/comics", "misha_v", "-misha", "misha-", "ми"} {
-		if err := s.SetPublicName(t.Context(), alice.ID, bad); !errors.Is(err, ErrInvalid) {
+		if _, err := s.SetPublicName(t.Context(), alice.ID, bad); !errors.Is(err, ErrInvalid) {
 			t.Errorf("SetPublicName(%q) = %v, want it refused", bad, err)
 		}
 	}
-	if err := s.SetPublicName(t.Context(), alice.ID, strings.Repeat("a", MaxSlug+1)); !errors.Is(err, ErrInvalid) {
+	if _, err := s.SetPublicName(t.Context(), alice.ID, strings.Repeat("a", MaxSlug+1)); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an over-long name was accepted")
 	}
 }

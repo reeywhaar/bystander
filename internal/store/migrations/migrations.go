@@ -78,6 +78,7 @@ var Main = []Migration{
 	mainJobLabel,
 	mainPageFilterLists,
 	mainPrincipalSlug,
+	mainPublicPages,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db
