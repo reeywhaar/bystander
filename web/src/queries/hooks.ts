@@ -38,7 +38,11 @@ import {
   type MarkSpan,
 } from "@app/api/actions/feeds";
 import { postFeedsDiscover, postFeedsPreview } from "@app/api/actions/discover";
-import { getImages, postImagesRetry } from "@app/api/actions/images";
+import {
+  getImages,
+  getImagesUnmeasured,
+  postImagesRetry,
+} from "@app/api/actions/images";
 import { getInstance, putInstance } from "@app/api/actions/instance";
 import {
   postFeedsExport,
@@ -667,17 +671,38 @@ export function useImages() {
 }
 
 /**
- * Offers unmeasured pictures back to the measuring queue.
+ * The pictures behind one of the counts on the images screen. Administrators only.
+ *
+ * `enabled` rather than a conditional hook, because this is asked for by a dialog: the
+ * component is mounted with the reason it was opened on and the query runs then, not while the
+ * row behind it is merely being looked at.
+ */
+export function useUnmeasuredImages(reason: string, enabled: boolean) {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.adminImagesUnmeasured(reason),
+    queryFn: ({ signal }) => callApi(getImagesUnmeasured(reason), signal),
+    enabled,
+  });
+}
+
+/**
+ * Offers unmeasured pictures back to the measuring queue — one, a category, or all of them.
  *
  * The count that comes back is a promise rather than a result: the queue takes them one every
  * few seconds, which is the politeness the whole thing is arranged around. So the tally is
  * invalidated to show the new state of play, and it will keep moving afterwards on its own.
+ *
+ * Every list under it is invalidated too, and by prefix rather than by the one reason that was
+ * reset: a picture that has been offered again leaves the group it was in, so the group it was
+ * in is not the only list that changed.
  */
 export function useRetryImages() {
   const callApi = useApiCall();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (reason: string) => callApi(postImagesRetry(reason)),
+    mutationFn: (what: { reason?: string; url?: string }) =>
+      callApi(postImagesRetry(what)),
     onSuccess: () =>
       void client.invalidateQueries({ queryKey: qk.adminImages }),
   });

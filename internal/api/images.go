@@ -58,9 +58,74 @@ func (s *Server) images(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// unmeasuredImageBody is one picture behind a reason.
+type unmeasuredImageBody struct {
+	URL    string `json:"url"`
+	Reason string `json:"reason"`
+	// RetryAt is when the queue will ask again, or 0 for a picture already due.
+	RetryAt  int64  `json:"retry_at"`
+	Articles int    `json:"articles"`
+	Title    string `json:"title"`
+}
+
+type unmeasuredImagesBody struct {
+	Reason string `json:"reason"`
+	// Limit is the ceiling this list was read under, sent so the client can tell a list that
+	// was cut short from one that is simply shorter than the count beside its reason. Those
+	// look identical and mean opposite things: the second is the queue having measured some
+	// of them since the count was taken, which is the system working.
+	Limit    int                   `json:"limit"`
+	Pictures []unmeasuredImageBody `json:"pictures"`
+}
+
+// listLimit is how many pictures one reason will list.
+//
+// A ceiling on a screen rather than a page of results. The count beside the reason already
+// says how many there are; this list is for recognising *which* — one host, or forty — and a
+// hundred rows answers that as well as a thousand would.
+const listLimit = 100
+
+// unmeasuredImages lists the pictures behind one of the counts on the images screen.
+//
+// The counts say what is wrong. This says with what, which is what anybody who has read the
+// counts wants next: forty pictures under "refused" is one host with hotlink protection or
+// forty publishers each losing one, and only the addresses tell those apart.
+//
+// The reason arrives as a query parameter rather than a path segment because the empty one —
+// pictures nothing has asked about yet — is a real group, and an empty path segment is not a
+// path.
+func (s *Server) unmeasuredImages(w http.ResponseWriter, r *http.Request) {
+	reason := r.URL.Query().Get("reason")
+
+	pictures, err := s.store.UnmeasuredByReason(r.Context(), reason, listLimit)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	out := unmeasuredImagesBody{
+		Reason: reason, Limit: listLimit,
+		Pictures: make([]unmeasuredImageBody, 0, len(pictures)),
+	}
+	for _, pic := range pictures {
+		body := unmeasuredImageBody{
+			URL: pic.URL, Reason: pic.Reason, Articles: pic.Articles, Title: pic.Title,
+		}
+		if !pic.RetryAt.IsZero() {
+			body.RetryAt = pic.RetryAt.Unix()
+		}
+		out.Pictures = append(out.Pictures, body)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 type retryImagesRequest struct {
 	// Reason narrows it to one kind of failure. Empty means every picture without a size.
 	Reason string `json:"reason"`
+	// URL narrows it to one picture, and takes precedence over Reason when both arrive —
+	// asking about one address and a whole category in the same request is a request that
+	// means two things, and the narrower of them is the one somebody pressed.
+	URL string `json:"url"`
 }
 
 // retryImages offers unmeasured pictures back to the queue at once.
@@ -78,12 +143,19 @@ func (s *Server) retryImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queued, err := s.store.RetryImages(r.Context(), body.Reason)
+	var queued int
+	var err error
+	if body.URL != "" {
+		queued, err = s.store.RetryImage(r.Context(), body.URL)
+	} else {
+		queued, err = s.store.RetryImages(r.Context(), body.Reason)
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.log.Info("pictures were offered to the measuring queue again",
-		"principal", principalOf(r).ID, "reason", cmp.Or(body.Reason, "any"), "pictures", queued)
+		"principal", principalOf(r).ID, "reason", cmp.Or(body.Reason, "any"),
+		"url", cmp.Or(body.URL, "any"), "pictures", queued)
 	writeJSON(w, http.StatusOK, map[string]int{"queued": queued})
 }

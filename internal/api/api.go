@@ -156,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/instance", s.requireAdmin(s.getInstance))
 	mux.Handle("PUT /api/admin/instance", s.requireAdmin(s.putInstance))
 	mux.Handle("GET /api/admin/images", s.requireAdmin(s.images))
+	mux.Handle("GET /api/admin/images/unmeasured", s.requireAdmin(s.unmeasuredImages))
 	mux.Handle("POST /api/admin/images/retry", s.requireAdmin(s.retryImages))
 
 	// A mistyped API path must never fall through to the SPA: an HTML document returned

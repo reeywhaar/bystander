@@ -376,6 +376,18 @@ export interface ImageFailure {
   count: number;
 }
 
+/** One picture behind a reason on the images screen. */
+export interface UnmeasuredImage {
+  url: string;
+  reason: string;
+  /** When the queue will ask again, in Unix seconds. Zero means it is already due. */
+  retry_at: number;
+  /** How many articles are waiting on this one picture. */
+  articles: number;
+  /** The newest of those articles, because a bare CDN address names no publisher. */
+  title: string;
+}
+
 /** How the pictures on this instance are getting on. */
 export interface ImageTally {
   /** Distinct pictures, because one is measured once however many articles use it. */

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -106,6 +107,88 @@ func (s *Store) ImageFailures(ctx context.Context, limit int) (map[string]string
 		out[url] = reason
 	}
 	return out, rows.Err()
+}
+
+// UnmeasuredImage is one picture without a size, for the list behind a reason.
+//
+// The URL is the identity — a picture is measured once for every article that uses it — and
+// Articles says how many of them are waiting on it, which is what makes one row worth more
+// attention than another. Title is one of those articles, because a bare CDN address says
+// nothing about which publisher an operator is looking at.
+type UnmeasuredImage struct {
+	URL      string
+	Reason   string
+	RetryAt  time.Time
+	Articles int
+	Title    string
+}
+
+// UnmeasuredByReason lists the pictures behind one of Images's counts.
+//
+// The counts alone answer "what is wrong"; this answers "with what", which is the question
+// anybody who has read the counts asks next. One host refusing hotlinks and forty publishers
+// each losing one picture are the same number under "refused" and not remotely the same
+// afternoon — and the addresses are what tell them apart.
+//
+// reason is matched exactly, empty included: nothing has asked about those yet, which is a
+// group somebody looks at for the same reason as the others.
+//
+// Most-used first, so the picture the most articles are waiting on is the one at the top. The
+// limit is a ceiling on a screen rather than a page of results: the count beside the reason
+// already says how many there are, and a list long enough to need paging is a list whose
+// answer was the count.
+func (s *Store) UnmeasuredByReason(ctx context.Context, reason string, limit int) ([]UnmeasuredImage, error) {
+	// max(published_at) with bare columns beside it: SQLite takes those from the row that
+	// matched the aggregate, so the title is the newest article using this picture rather
+	// than whichever row the group happened to start with.
+	rows, err := s.derived.QueryContext(ctx, `
+		SELECT image_url, image_error, max(image_retry_at), count(*), title, max(published_at)
+		  FROM items
+		 WHERE image_url <> '' AND image_error = ?
+		   AND (image_width <= 0 OR image_height <= 0)
+		 GROUP BY image_url
+		 ORDER BY count(*) DESC, image_url
+		 LIMIT ?`, reason, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []UnmeasuredImage{}
+	for rows.Next() {
+		var (
+			pic       UnmeasuredImage
+			retryAt   int64
+			published int64
+		)
+		if err := rows.Scan(&pic.URL, &pic.Reason, &retryAt, &pic.Articles, &pic.Title, &published); err != nil {
+			return nil, err
+		}
+		if retryAt > 0 {
+			pic.RetryAt = time.Unix(retryAt, 0).UTC()
+		}
+		out = append(out, pic)
+	}
+	return out, rows.Err()
+}
+
+// RetryImage offers one picture back to the queue, and says how many articles it unblocks.
+//
+// The single-picture half of RetryImages, and it earns being separate: the reason is a whole
+// category and this is one address, so a caller that could pass either would be a caller that
+// can pass both and mean something nobody decided.
+func (s *Store) RetryImage(ctx context.Context, url string) (int, error) {
+	if strings.TrimSpace(url) == "" {
+		return 0, Invalid("which picture?")
+	}
+	res, err := s.derived.ExecContext(ctx, `
+		UPDATE items SET image_retry_at = 0
+		 WHERE image_url = ? AND (image_width <= 0 OR image_height <= 0)`, url)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 // RetryImages offers unmeasured pictures again straight away, and says how many.

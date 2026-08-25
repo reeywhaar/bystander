@@ -1,8 +1,12 @@
+import { useState } from "react";
+
 import type { ImageFailure } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useImages, useRetryImages } from "@app/queries/hooks";
+
+import { ImageListDialog } from "@app/apps/admin/ImageListDialog";
 
 /**
  * What each reason means, in the words somebody would use to decide what to do about it.
@@ -38,6 +42,9 @@ const REASONS: Record<string, string> = {
 export function ImagesPage() {
   const images = useImages();
   const retry = useRetryImages();
+  // Which group's list is open, or null. The whole failure rather than its reason, because
+  // the dialog's title is the count too and it would otherwise have to look it up again.
+  const [open, setOpen] = useState<ImageFailure | null>(null);
 
   if (images.isPending) return <Spinner />;
   if (images.error) throw images.error;
@@ -70,10 +77,11 @@ export function ImagesPage() {
         <section>
           <h3 className="font-serif text-lg text-ink">Why</h3>
           <p className="mt-1 mb-4 text-sm text-ink-muted">
-            Reset offers them back to the measuring queue straight away. It is
-            for when this program is what changed — a decoder it did not have, a
-            header it did not send. Pictures that were measured are never asked
-            about again, whatever is pressed here.
+            Open one to see which pictures are in it. Reset offers them back to
+            the measuring queue straight away, and is for when this program is
+            what changed — a decoder it did not have, a header it did not send.
+            Pictures that were measured are never asked about again, whatever is
+            pressed here.
           </p>
 
           <ul className="flex flex-col rounded-md border border-rule">
@@ -81,14 +89,15 @@ export function ImagesPage() {
               <Row
                 key={failure.reason || "waiting"}
                 failure={failure}
-                onReset={() => retry.mutate(failure.reason)}
+                onOpen={() => setOpen(failure)}
+                onReset={() => retry.mutate({ reason: failure.reason })}
                 busy={retry.isPending}
               />
             ))}
           </ul>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button onClick={() => retry.mutate("")} disabled={retry.isPending}>
+            <Button onClick={() => retry.mutate({})} disabled={retry.isPending}>
               {retry.isPending ? "Resetting…" : "Reset all"}
             </Button>
             {retry.data ? (
@@ -103,6 +112,8 @@ export function ImagesPage() {
           {retry.error ? <Alert>{retry.error.message}</Alert> : null}
         </section>
       )}
+
+      <ImageListDialog failure={open} onClose={() => setOpen(null)} />
     </div>
   );
 }
@@ -118,16 +129,25 @@ function Figure({ label, value }: { label: string; value: number }) {
 
 function Row({
   failure,
+  onOpen,
   onReset,
   busy,
 }: {
   failure: ImageFailure;
+  onOpen: () => void;
   onReset: () => void;
   busy: boolean;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2.5 last:border-b-0">
-      <span className="min-w-0 flex-1">
+    <li className="flex flex-wrap items-center gap-3 border-b border-rule last:border-b-0">
+      {/* The reason and its count are the affordance, rather than a separate "show" control.
+          The row is a group of pictures and the only thing anybody wants from it that is not
+          already written on it is which pictures — so the row opens them. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 px-3 py-2.5 text-left hover:text-accent"
+      >
         <span className="block text-sm text-ink">
           {failure.reason || "waiting"}
           {" · "}
@@ -137,13 +157,15 @@ function Row({
           {REASONS[failure.reason] ??
             "Something this build does not have a name for."}
         </span>
-      </span>
+      </button>
       {/* Nothing to reset on the ones already queued: they are due, and the only thing
           between them and a measurement is the few seconds the queue takes. */}
       {failure.reason ? (
-        <Button variant="ghost" onClick={onReset} disabled={busy}>
-          Reset
-        </Button>
+        <span className="pr-3">
+          <Button variant="ghost" onClick={onReset} disabled={busy}>
+            Reset
+          </Button>
+        </span>
       ) : null}
     </li>
   );
