@@ -494,7 +494,17 @@ see [Open questions](#open-questions).
 `published_at` falls back to `fetched_at` when the feed omits a date, because a null date
 would need handling at every point that orders by it.
 
-Pruned **per feed**, by `fetched_at`, sparing anything a live edition references.
+Pruned **per feed**, by `fetched_at`, sparing anything a live edition references — *any*
+reader's, not the one whose settings were consulted. An article is stored once and shared by
+everyone who follows the feed, so a page holding it holds it for everybody; the guard is
+`id NOT IN (SELECT item_id FROM edition_items)`, unscoped by person on purpose, and it is on
+every one of the four statements that delete an item.
+
+What makes that mean *current* editions rather than every edition that ever existed is the
+sweep's order: `PruneOldEditions` runs first, its `edition_items` rows cascade away with it,
+and what is left is exactly what each page is showing now. If it ever fails, the sweep logs
+and carries on — and the failure keeps too much rather than too little, which is the direction
+to fail in.
 
 How long a feed is kept follows the people who follow *that feed* — the longest window any of
 them chose, floored at 30 days. One number for the whole instance was one number too few: it

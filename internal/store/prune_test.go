@@ -341,3 +341,161 @@ func TestTheCeilingIgnoresTheWindow(t *testing.T) {
 			time.Unix(oldest, 0), want)
 	}
 }
+
+// Nothing on anybody's live edition is swept — not by age, not by the ceiling, and not
+// because the person whose page it is happens not to be the one whose settings were consulted.
+//
+// The guard is `NOT IN (SELECT item_id FROM edition_items)`, which is deliberately not scoped
+// to a person: an article held by one reader's page is held for everybody, because a page is
+// composed once and read from wherever. What makes that safe is the sweep's order —
+// PruneOldEditions runs first and its edition_items rows cascade away, so what is left is
+// exactly the current editions. This is the test that says so.
+func TestPruningSparesEveryUsersLiveEdition(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	ada, err := s.CreatePrincipal(ctx, "ada", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := s.CreatePrincipal(ctx, "bob", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// One feed, followed by both on the shortest window there is, holding three articles
+	// fetched long enough ago that every one of them is due to go.
+	feed := seedFeed(t, s, ada.ID, "news", 24*time.Hour, 200, 201, 202)
+	if _, err := s.Subscribe(ctx, bob.ID, feed, DefaultPriority, 24*time.Hour, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var items []string
+	rows, err := s.derived.QueryContext(ctx,
+		`SELECT id FROM items WHERE feed_id = ? ORDER BY published_at DESC`, feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		items = append(items, id)
+	}
+	rows.Close()
+	if len(items) != 3 {
+		t.Fatalf("seeded %d articles, want 3", len(items))
+	}
+
+	// One on each person's page. The third is on nobody's, and is the control.
+	for i, who := range []*Principal{ada, bob} {
+		pages, err := s.Pages(ctx, who.ID)
+		if err != nil || len(pages) == 0 {
+			t.Fatalf("Pages(%s): %v", who.Username, err)
+		}
+		if _, err := s.AddEdition(ctx, pages[0], int64(i+1),
+			[]Pick{{Item: &Item{ID: items[i]}, Slot: SlotLead}}); err != nil {
+			t.Fatalf("AddEdition(%s): %v", who.Username, err)
+		}
+	}
+
+	byFeed, err := s.ItemRetentionByFeed(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PruneItems(ctx, byFeed); err != nil {
+		t.Fatal(err)
+	}
+	if got := countItems(t, s, feed); got != 2 {
+		t.Fatalf("after pruning by age the feed holds %d, want the 2 on live editions", got)
+	}
+
+	// And the ceiling, which cuts by count rather than by date and is the likelier place to
+	// lose something somebody is looking at. A ceiling of zero would take everything that
+	// was not spoken for.
+	if _, err := s.CapItemsPerFeed(ctx, []string{feed}, 0+1); err != nil {
+		t.Fatal(err)
+	}
+	if got := countItems(t, s, feed); got != 2 {
+		t.Fatalf("after the ceiling the feed holds %d, want both live editions' articles", got)
+	}
+
+	// Named, so a failure says whose page lost its article rather than only how many are left.
+	for i, who := range []string{"ada", "bob"} {
+		var n int
+		if err := s.derived.QueryRowContext(ctx,
+			`SELECT count(*) FROM items WHERE id = ?`, items[i]).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("%s's page lost the article it was showing", who)
+		}
+	}
+
+	// The one nobody was showing did go, or this proves nothing.
+	var n int
+	if err := s.derived.QueryRowContext(ctx,
+		`SELECT count(*) FROM items WHERE id = ?`, items[2]).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("the article on nobody's page survived, so the sweep is not sweeping")
+	}
+}
+
+// The protection is the *current* edition's, not any edition that ever existed — otherwise a
+// page that has recomposed a hundred times would hold every article it had ever shown.
+func TestASupersededEditionDoesNotHoldArticlesAlive(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, err := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := seedFeed(t, s, p.ID, "news", 24*time.Hour, 200, 201)
+
+	var items []string
+	rows, err := s.derived.QueryContext(ctx,
+		`SELECT id FROM items WHERE feed_id = ? ORDER BY published_at DESC`, feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		items = append(items, id)
+	}
+	rows.Close()
+
+	pages, err := s.Pages(ctx, p.ID)
+	if err != nil || len(pages) == 0 {
+		t.Fatal(err)
+	}
+	// Yesterday's edition, then today's. Only today's should hold anything alive.
+	for i, id := range items {
+		if _, err := s.AddEdition(ctx, pages[0], int64(i+1),
+			[]Pick{{Item: &Item{ID: id}, Slot: SlotLead}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The sweep's order, which is what makes the unscoped guard mean "current".
+	if _, err := s.PruneOldEditions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	byFeed, err := s.ItemRetentionByFeed(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PruneItems(ctx, byFeed); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countItems(t, s, feed); got != 1 {
+		t.Errorf("the feed holds %d articles, want only the one the current edition shows", got)
+	}
+}
