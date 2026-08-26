@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { Me } from "@app/api/types";
+import { Colophon } from "@app/components/Colophon";
 import { Masthead } from "@app/components/Masthead";
 import { TabStrip, type Tab } from "@app/components/ui/TabStrip";
 
@@ -21,6 +22,7 @@ export function Layout({ me, children }: { me: Me; children: ReactNode }) {
       <main className="mx-auto max-w-3xl px-6 py-10">
         <TabStrip tabs={tabs} />
         {children}
+        <Colophon className="mt-10" />
       </main>
     </>
   );

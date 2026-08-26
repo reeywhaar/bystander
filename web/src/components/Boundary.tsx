@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { Colophon } from "@app/components/Colophon";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 
@@ -37,6 +38,10 @@ export class Boundary extends Component<
             Try again
           </Button>
         </div>
+        {/* Here too, and this is the case that most needs it: a boundary replaces the whole
+            island, so without it this document says nothing anywhere about what it is — and
+            somebody looking at a broken instance is somebody who may be trying to find out. */}
+        <Colophon className="mt-10" />
       </div>
     );
   }

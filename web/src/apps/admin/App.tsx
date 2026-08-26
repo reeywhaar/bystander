@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 
 import { Boundary } from "@app/components/Boundary";
+import { Colophon } from "@app/components/Colophon";
 import { Masthead } from "@app/components/Masthead";
 import { RequireSession } from "@app/components/RequireSession";
 import { Alert } from "@app/components/ui/Alert";
@@ -51,6 +52,7 @@ export function App() {
                   </Routes>
                 </BrowserRouter>
               )}
+              <Colophon className="mt-10" />
             </main>
           </>
         )}
