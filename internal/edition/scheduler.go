@@ -140,22 +140,45 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		return
 	}
 
-	// How long articles are kept follows whoever wants to see furthest back. A flat
-	// retention would quietly make the longer windows a lie: a page set to show a year of
-	// articles with a month of articles kept has nothing to show for eleven of them.
-	retention, err := s.store.EffectiveItemRetention(ctx)
+	// How long a feed's articles are kept follows the people who follow *that feed*. One
+	// number for the instance was one too few: it took the longest window chosen anywhere,
+	// so a webcomic somebody wanted a year of made a news feed at ninety articles a day
+	// keep a year as well.
+	perFeed, err := s.store.ItemRetentionByFeed(ctx)
 	if err != nil {
-		s.log.Error("could not work out how long to keep articles", "error", err)
+		s.log.Error("could not work out how long to keep each feed's articles", "error", err)
 		return
 	}
 
-	if n, err := s.store.PruneItems(ctx, feedIDs, retention); err != nil {
+	if n, err := s.store.PruneItems(ctx, perFeed); err != nil {
 		s.log.Error("could not prune articles", "error", err)
 	} else if n > 0 {
 		s.log.Info("pruned articles", "count", n)
 	}
 
-	if n, err := s.store.PruneShown(ctx, retention); err != nil {
+	// The backstop under that rule, for the feed it cannot bound on its own: long-windowed
+	// and very high volume. Named per feed rather than counted in total, because a feed
+	// turning up here is a feed whose window is being shortened by something other than the
+	// setting somebody chose, and that should not happen quietly.
+	if cut, err := s.store.CapItemsPerFeed(ctx, feedIDs, store.MaxItemsPerFeed); err != nil {
+		s.log.Error("could not hold feeds to the article ceiling", "error", err)
+	} else {
+		for feedID, n := range cut {
+			s.log.Info("a feed reached the article ceiling, so its oldest were dropped",
+				"feed", feedID, "count", n, "ceiling", store.MaxItemsPerFeed)
+		}
+	}
+
+	// One number here rather than the map, and the longest of them: the record of what has
+	// been shown is not per feed, and it has to outlive the articles it refers to whichever
+	// feed they came from.
+	longest, err := s.store.EffectiveItemRetention(ctx)
+	if err != nil {
+		s.log.Error("could not work out how long to keep the record of what was shown", "error", err)
+		return
+	}
+
+	if n, err := s.store.PruneShown(ctx, longest); err != nil {
 		s.log.Error("could not prune the record of what has been shown", "error", err)
 	} else if n > 0 {
 		s.log.Debug("pruned shown records", "count", n)

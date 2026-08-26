@@ -68,8 +68,85 @@ func validWindow(d time.Duration) bool {
 	return false
 }
 
-// EffectiveItemRetention is how long articles are kept, given what people have asked to
-// see.
+// ItemRetention is how long one feed's articles are kept.
+type ItemRetention struct {
+	// Forever is set when somebody following this feed asked to reach back without limit.
+	//
+	// Then nothing prunes it by age at all, and [MaxItemsPerFeed] is the only thing that
+	// bounds it. A ceiling in years would not do: how far back a page reaches is a bound on
+	// when an article was *published*, and what prunes goes by when it was *fetched*, so
+	// capping the second at a year quietly makes the first untrue. A feed whose every
+	// article was written two years ago is a perfectly ordinary thing to want all of —
+	// an archive, a comic's back catalogue, a blog that stopped — and under a ceiling its
+	// articles would be dropped a year after they were first seen and, if the publisher had
+	// moved them out of the document by then, never come back.
+	Forever bool
+	// For is how long, when Forever is false. Never less than [MinItemRetention].
+	For time.Duration
+}
+
+// ItemRetentionByFeed is how long each feed's articles are kept, given what the people who
+// follow *that feed* asked to see.
+//
+// Per feed, because one number for the whole instance is one number too few. Retention was
+// instance-wide and took the longest window anybody had chosen anywhere, which meant a
+// webcomic somebody wanted a year of made a news feed at ninety articles a day keep a year
+// as well — thirty thousand articles nobody had asked for, to serve a page that shows sixty.
+// The windows are per subscription precisely because a news feed worth a day and a blog
+// worth a year are the pair one number cannot serve, and the pruning has to agree with that
+// or the setting is only half real.
+//
+// The most demanding follower wins, and "no limit" is the most demanding of all. A feed
+// nobody follows is absent rather than zero: it constrains nothing, and everything it has is
+// due to be collected.
+func (s *Store) ItemRetentionByFeed(ctx context.Context) (map[string]ItemRetention, error) {
+	rows, err := s.main.QueryContext(ctx,
+		// min() finds the zero if there is one, which is how "no limit" wins over any
+		// number; max() is the longest of the rest.
+		`SELECT feed_id, min(max_article_age) = 0, max(max_article_age)
+		   FROM subscriptions GROUP BY feed_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]ItemRetention{}
+	for rows.Next() {
+		var (
+			feedID    string
+			unlimited bool
+			seconds   int64
+		)
+		if err := rows.Scan(&feedID, &unlimited, &seconds); err != nil {
+			return nil, err
+		}
+		if unlimited {
+			out[feedID] = ItemRetention{Forever: true}
+			continue
+		}
+		out[feedID] = ItemRetention{For: atLeastFloor(time.Duration(seconds) * time.Second)}
+	}
+	return out, rows.Err()
+}
+
+// atLeastFloor holds a window to the thirty days below which a front page has too little to
+// draw from. There is no ceiling here: a window of a year means a year.
+func atLeastFloor(d time.Duration) time.Duration {
+	if d < MinItemRetention {
+		return MinItemRetention
+	}
+	return d
+}
+
+// EffectiveItemRetention is the longest any feed is kept for.
+//
+// One answer, for the one caller that needs one: the record of what has been shown is not
+// per feed and has to outlive the articles it refers to, whichever feed they came from. What
+// is actually pruned goes by [ItemRetentionByFeed].
+//
+// Forever when any feed at all is unlimited, and that is not a rounding — a hash that stops
+// existing while the article it names is still on the shelf is an article that comes back
+// round as though it were new, which is the one thing `shown` is there to prevent.
 //
 // Retention used to be a flat thirty days, which quietly made the longer windows a lie: a
 // page set to show a year of articles would have had nothing older than a month to show.
@@ -79,27 +156,24 @@ func validWindow(d time.Duration) bool {
 // "No limit" maps to the ceiling rather than to forever. Unbounded growth is not a setting
 // anybody meant to choose, and a year is far past the point where a front page is about
 // what is going on.
-func (s *Store) EffectiveItemRetention(ctx context.Context) (time.Duration, error) {
-	var longest int64
+func (s *Store) EffectiveItemRetention(ctx context.Context) (ItemRetention, error) {
+	var (
+		unlimited bool
+		longest   int64
+	)
 	err := s.main.QueryRowContext(ctx,
-		// A zero anywhere means some feed was asked to reach back without limit, so it
-		// takes the ceiling. Read from subscriptions, because that is where the window
-		// lives: a feed nobody follows any more constrains nothing.
-		`SELECT CASE WHEN count(*) = 0 THEN ?
-		             WHEN min(max_article_age) = 0 THEN ?
-		             ELSE max(max_article_age) END
+		// A zero anywhere means some feed was asked to reach back without limit. Read
+		// from subscriptions, because that is where the window lives: a feed nobody
+		// follows any more constrains nothing.
+		`SELECT count(*) > 0 AND min(max_article_age) = 0,
+		        CASE WHEN count(*) = 0 THEN ? ELSE max(max_article_age) END
 		   FROM subscriptions`,
-		int64(MinItemRetention.Seconds()), int64(MaxItemRetention.Seconds())).Scan(&longest)
+		int64(MinItemRetention.Seconds())).Scan(&unlimited, &longest)
 	if err != nil {
-		return MinItemRetention, err
+		return ItemRetention{For: MinItemRetention}, err
 	}
-
-	retention := time.Duration(longest) * time.Second
-	if retention < MinItemRetention {
-		return MinItemRetention, nil
+	if unlimited {
+		return ItemRetention{Forever: true}, nil
 	}
-	if retention > MaxItemRetention {
-		return MaxItemRetention, nil
-	}
-	return retention, nil
+	return ItemRetention{For: atLeastFloor(time.Duration(longest) * time.Second)}, nil
 }

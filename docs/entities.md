@@ -494,7 +494,39 @@ see [Open questions](#open-questions).
 `published_at` falls back to `fetched_at` when the feed omits a date, because a null date
 would need handling at every point that orders by it.
 
-Pruned at 30 days, sparing anything a live edition references.
+Pruned **per feed**, by `fetched_at`, sparing anything a live edition references.
+
+How long a feed is kept follows the people who follow *that feed* — the longest window any of
+them chose, floored at 30 days. One number for the whole instance was one number too few: it
+took the longest window chosen anywhere, so a webcomic somebody wanted a year of made a news
+feed at ninety articles a day keep a year as well, tens of thousands of articles nobody had
+asked for to serve a page that shows sixty. The windows are per subscription precisely because
+a news feed worth a day and a blog worth a year are the pair one number cannot serve, and the
+pruning has to agree with that or the setting is only half real. See `ItemRetentionByFeed`.
+
+**"No limit" means no limit** — there is no ceiling in years. There was one, and it was wrong
+for a reason worth writing down: how far back a page reaches bounds when an article was
+*published*, and pruning goes by when it was *fetched*. A feed whose every article was written
+two years ago — an archive, a comic's back catalogue, a blog that stopped — would have had its
+articles dropped a year after they were first seen, and if the publisher had moved them out of
+the document by then they would never have come back.
+
+What bounds such a feed instead is `MaxItemsPerFeed`, a shelf length rather than a date: **1,000
+articles, newest by publication**, whatever the window says. That is a judgement about reading
+rather than about storage — a front page is about what is going on, and the thousandth most
+recent thing one publisher has said is not something anybody is going to get to. A feed that put
+out a thousand articles yesterday has nothing to offer past them however far back somebody asked
+to reach.
+
+Two bounds, and the tighter one wins. For a feed quiet enough for a thousand to span its window,
+age decides and the 30-day floor holds. For a busy one — ninety articles a day is about eleven
+days' worth — the ceiling decides instead, and the sweep names any feed it takes from, because a
+window shortened by something other than the setting somebody chose should not be something they
+have to discover.
+
+Nothing prunes an article for having fallen out of the feed document. Feeds publish a rolling
+window of ten to fifty items, so "no longer in the feed" is true of almost everything within
+days; age is the lever that means anything.
 
 `image_width`/`image_height` are the picture's real size and zero means nothing has measured
 it, which is the ordinary case for anything published in the last few minutes. The page falls
@@ -587,6 +619,11 @@ The one thing that outlives an edition, and deliberately tiny — a truncated ha
 row of content. Without it the same article resurfaces every cycle and a front page
 stops feeling like one. Pruned at 90 days, which is three times the item retention, so a
 hash always outlives the item it refers to.
+
+Not pruned at all while any feed is unlimited. A hash that stops existing while the article it
+names is still on the shelf is an article that comes back round as though it were new, which is
+the one thing this table is for. It stays bounded anyway, because what it refers to is —
+see `MaxItemsPerFeed`.
 
 **Per page, not per person**, which is the difference between a front page being a view and
 being a share. It was per person while a person had one page, and that was right then and wrong

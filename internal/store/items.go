@@ -413,40 +413,78 @@ func GUIDHash(guid string) []byte {
 	return sum[:16]
 }
 
-// PruneItems drops articles past retention and articles belonging to feeds that no longer
-// exist, sparing anything a live edition still points at.
+// MaxItemsPerFeed is a ceiling on how many articles are held for any one feed.
 //
-// Feeds are in the other database, so which ones exist has to be passed in: no constraint
-// can cross the boundary and no query can join across it.
-func (s *Store) PruneItems(ctx context.Context, liveFeedIDs []string, retention time.Duration) (int64, error) {
-	cutoff := unix(s.Now().Add(-retention))
+// For most feeds this is a backstop that never fires: what decides how far back a feed is
+// kept is what the people following it asked for — see [ItemRetentionByFeed]. For a feed
+// somebody asked to reach back into without limit, this is the *only* bound there is, which
+// is the honest way to offer "no limit": nothing is dropped for being old, and the shelf is
+// still a finite length.
+//
+// A thousand, by publication date, whatever the window says. This is a judgement about
+// reading rather than about storage: a front page is about what is going on, and the
+// thousandth most recent thing one publisher has said is not something anybody is going to
+// get to. A feed that put out a thousand articles yesterday has nothing to offer past them
+// however far back somebody asked to reach.
+//
+// The consequence, stated rather than hidden: for a feed busy enough to reach a thousand
+// inside its own window, this ceiling — not the window, and not the thirty-day floor
+// [MinItemRetention] sets on age — is what decides how far back it goes. At ninety articles a
+// day that is eleven days. Two bounds, and the tighter one wins; the floor still governs
+// every feed quiet enough for a thousand to span it. Where this does bite the sweep names the
+// feed, because a window being shortened by something other than the setting somebody chose
+// should not be something they have to discover.
+const MaxItemsPerFeed = 1000
 
-	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM items
-		  WHERE fetched_at < ?
-		    AND id NOT IN (SELECT item_id FROM edition_items)`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	removed, _ := res.RowsAffected()
-
-	// An empty list means no feeds at all, which would make "not in ()" delete
-	// everything — correct, but only by accident. Say it explicitly.
-	if len(liveFeedIDs) == 0 {
-		res, err := s.derived.ExecContext(ctx, `DELETE FROM items WHERE id NOT IN (SELECT item_id FROM edition_items)`)
+// PruneItems drops articles past their feed's own retention, and everything belonging to a
+// feed nobody follows, sparing anything a live edition still points at.
+//
+// retention is keyed by feed id — see [ItemRetentionByFeed]. A feed absent from it has no
+// followers, so nothing is asking for any of its articles to be kept. Feeds live in the
+// other database and no query can join across the boundary, which is why the answer is
+// passed in rather than looked up.
+func (s *Store) PruneItems(ctx context.Context, retention map[string]ItemRetention) (int64, error) {
+	// Nobody follows anything, so nothing is worth keeping. Said explicitly rather than
+	// left to "NOT IN ()", which is right by accident.
+	if len(retention) == 0 {
+		res, err := s.derived.ExecContext(ctx,
+			`DELETE FROM items WHERE id NOT IN (SELECT item_id FROM edition_items)`)
 		if err != nil {
-			return removed, err
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+
+	now := s.Now()
+	removed := int64(0)
+	// One statement per feed. A CASE over every feed id would be one statement and a
+	// query plan nobody can read; the sweep runs every few minutes over a few dozen feeds,
+	// and each of these is an index seek.
+	for feedID, keep := range retention {
+		// Somebody asked to reach back into this feed without limit, so nothing here
+		// drops any of it by age. MaxItemsPerFeed is what bounds it instead.
+		if keep.Forever {
+			continue
+		}
+		res, err := s.derived.ExecContext(ctx,
+			`DELETE FROM items
+			  WHERE feed_id = ? AND fetched_at < ?
+			    AND id NOT IN (SELECT item_id FROM edition_items)`,
+			feedID, unix(now.Add(-keep.For)))
+		if err != nil {
+			return removed, fmt.Errorf("prune articles of feed %s: %w", feedID, err)
 		}
 		n, _ := res.RowsAffected()
-		return removed + n, nil
+		removed += n
 	}
 
-	args := make([]any, 0, len(liveFeedIDs))
-	for _, id := range liveFeedIDs {
-		args = append(args, id)
+	// And everything belonging to a feed nobody follows any more.
+	followed := make([]string, 0, len(retention))
+	for feedID := range retention {
+		followed = append(followed, feedID)
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(liveFeedIDs)), ",")
-	res, err = s.derived.ExecContext(ctx,
+	args, placeholders := inList(followed)
+	res, err := s.derived.ExecContext(ctx,
 		`DELETE FROM items
 		  WHERE feed_id NOT IN (`+placeholders+`)
 		    AND id NOT IN (SELECT item_id FROM edition_items)`, args...)
@@ -457,12 +495,56 @@ func (s *Store) PruneItems(ctx context.Context, liveFeedIDs []string, retention 
 	return removed + n, nil
 }
 
+// CapItemsPerFeed holds each feed to at most max articles, newest first.
+//
+// The backstop under the age rule, and it reports per feed rather than in total on purpose:
+// a feed appearing here is a feed whose window is being shortened by something other than
+// the setting somebody chose, and that is worth a line in the log rather than a silent
+// truncation. Returns only the feeds it actually took something from.
+//
+// Newest by publication rather than by when it was fetched, because that is the order a page
+// draws in and the order a person means by "the last thousand". Anything a live edition
+// points at is spared, like everywhere else: an article vanishing out from under a composed
+// page is a hole in something somebody is reading.
+func (s *Store) CapItemsPerFeed(ctx context.Context, feedIDs []string, max int) (map[string]int64, error) {
+	if max <= 0 {
+		return nil, nil
+	}
+	cut := map[string]int64{}
+	for _, feedID := range feedIDs {
+		res, err := s.derived.ExecContext(ctx,
+			// LIMIT -1 OFFSET ? is SQLite's "everything past the first n".
+			`DELETE FROM items
+			  WHERE id IN (SELECT id FROM items WHERE feed_id = ?
+			                ORDER BY published_at DESC, id DESC
+			                LIMIT -1 OFFSET ?)
+			    AND id NOT IN (SELECT item_id FROM edition_items)`,
+			feedID, max)
+		if err != nil {
+			return cut, fmt.Errorf("cap articles of feed %s: %w", feedID, err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			cut[feedID] = n
+		}
+	}
+	return cut, nil
+}
+
 // PruneShown drops the record of articles shown long enough ago that their items are gone
 // too. Kept for a multiple of however long articles are being kept, so the record always
 // outlives what it refers to.
-func (s *Store) PruneShown(ctx context.Context, retention time.Duration) (int64, error) {
+//
+// Nothing is dropped where any feed is unlimited. A hash that stops existing while the
+// article it names is still on the shelf is an article that comes back round as though it
+// were new, and not resurfacing what somebody has already been shown is the whole of what
+// this table does. It stays bounded anyway, because the articles it refers to are: see
+// [MaxItemsPerFeed].
+func (s *Store) PruneShown(ctx context.Context, retention ItemRetention) (int64, error) {
+	if retention.Forever {
+		return 0, nil
+	}
 	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM shown WHERE shown_at < ?`, unix(s.Now().Add(-retention*shownMultiple)))
+		`DELETE FROM shown WHERE shown_at < ?`, unix(s.Now().Add(-retention.For*shownMultiple)))
 	if err != nil {
 		return 0, err
 	}
