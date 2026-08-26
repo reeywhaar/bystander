@@ -13,6 +13,9 @@
 //   NARROW          CSS width for everything else     (default 880)
 //   THEME           light | dark                      (default light)
 //   OPEN_FEED       name of the feed whose dialog is captured
+//   SCALE           device pixels per CSS pixel        (default 2)
+//   ONLY            comma-separated shots to take      (default all of them)
+//   FORMAT          png | webp                         (default png)
 import { writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -28,6 +31,20 @@ const NARROW = Number(process.env.NARROW ?? 880);
 // An ordinary laptop window, because `vh` bounds are measured against it.
 const VIEW = Number(process.env.VIEW ?? 900);
 const THEME = process.env.THEME ?? "light";
+// Two for the README, where a retina screenshot is worth its bytes, and one for the landing
+// page, where a picture is scenery beside the words and 700 kilobytes of it is not.
+const SCALE = Number(process.env.SCALE ?? 2);
+// Which shots to take. The landing page wants three of the seven, and driving the browser
+// through the other four to throw them away is a minute nobody gets back.
+// PNG for the README, where GitHub is the only reader and bytes are somebody else's problem.
+// WebP for the landing page, where they are not: a retina screenshot of a page made mostly of
+// text is seven hundred kilobytes as a PNG and a fifth of that as a WebP, at a quality nobody
+// can tell from lossless without swapping between them.
+const FORMAT = process.env.FORMAT ?? "png";
+const ONLY = (process.env.ONLY ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
 const OPEN_FEED = process.env.OPEN_FEED ?? "The Meridian";
 
 if (!COOKIE) throw new Error("SESSION_COOKIE is required");
@@ -68,7 +85,7 @@ const setViewport = (width, height) =>
   send("Emulation.setDeviceMetricsOverride", {
     width: Math.round(width),
     height: Math.round(height),
-    deviceScaleFactor: 2,
+    deviceScaleFactor: SCALE,
     mobile: false,
   });
 
@@ -123,20 +140,26 @@ async function fitDialogHeight(width, max = 2000) {
 }
 
 async function shot(name, clip) {
+  // Asked for by name, or asked for by asking for nothing.
+  if (ONLY.length > 0 && !ONLY.includes(name)) return;
+
   // The headline faces are the point of half these screenshots, and they arrive after the
   // first paint — `font-display: swap` means a shot taken too early is a shot of the
   // fallback serif. Nothing else in this file would have noticed.
   await evaluate("document.fonts.ready.then(() => true)");
   await evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))");
   const { data } = await send("Page.captureScreenshot", {
-    format: "png",
+    format: FORMAT,
+    ...(FORMAT === "png" ? {} : { quality: 88 }),
     // `captureBeyondViewport` photographs a region taller than the window without resizing
     // the window, which is the only way to take a tall picture of a page that is allowed to
     // know how tall the window is. See the front page shot.
-    ...(clip ? { clip: { x: 0, y: 0, ...clip, scale: 1 }, captureBeyondViewport: true } : {}),
+    ...(clip
+      ? { clip: { x: 0, y: 0, ...clip, scale: SCALE / 2 }, captureBeyondViewport: true }
+      : {}),
   });
-  writeFileSync(`${OUT}/${name}.png`, Buffer.from(data, "base64"));
-  console.log(`  wrote ${name}.png`);
+  writeFileSync(`${OUT}/${name}.${FORMAT}`, Buffer.from(data, "base64"));
+  console.log(`  wrote ${name}.${FORMAT}`);
 }
 
 await send("Page.enable");

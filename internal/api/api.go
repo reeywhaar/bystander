@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"bystander/internal/app"
@@ -41,6 +42,14 @@ type Server struct {
 	spa      *SPA
 	log      *slog.Logger
 
+	// landing is whether "/" answers a stranger with the landing page, cached.
+	//
+	// It decides which document to serve, and the alternative is a database read on the front
+	// door for every visitor without a session. Read once on the first navigation that needs
+	// it and written by putInstance, which is the only thing that can change it — so the cache
+	// cannot be stale rather than being merely unlikely to be.
+	landing atomic.Pointer[bool]
+
 	logins    *limiter
 	discovery *limiter
 	mail      *limiter
@@ -56,7 +65,7 @@ type Server struct {
 // New builds a server.
 func New(cfg *config.Config, st *store.Store, sessions *session.Table, gen *edition.Generator,
 	fetcher *feeds.Fetcher, spa *SPA, log *slog.Logger) *Server {
-	return &Server{
+	srv := &Server{
 		cfg:      cfg,
 		store:    st,
 		sessions: sessions,
@@ -77,6 +86,12 @@ func New(cfg *config.Config, st *store.Store, sessions *session.Table, gen *edit
 		mail:     newLimiter(5, time.Minute),
 		sendMail: mailer.Send,
 	}
+
+	// The SPA decides which shell "/" answers with, and that now depends on an instance
+	// setting — so it is handed the question rather than the answer. Set here rather than in
+	// NewSPA, because only a Server can reach a database.
+	spa.landing = srv.showsLanding
+	return srv
 }
 
 // Handler builds the router.
@@ -172,6 +187,29 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": app.Version})
+}
+
+// showsLanding reports whether "/" answers somebody without a session with the landing page.
+//
+// Cached, because it chooses which document to serve: without the cache every visitor arriving
+// without a cookie would cost a query before a byte of HTML. There is exactly one writer —
+// putInstance — and it stores the new answer there, so this is invalidated where it changes
+// rather than expiring on a timer and being wrong in between.
+//
+// A read that fails answers yes. The setting is on by default, and an instance whose database
+// hiccuped should show the page that explains what it is rather than silently reverting to a
+// login form its operator did not ask for.
+func (s *Server) showsLanding(r *http.Request) bool {
+	if cached := s.landing.Load(); cached != nil {
+		return *cached
+	}
+	settings, err := s.store.Instance(r.Context())
+	show := err != nil || settings.Landing
+	if err != nil {
+		s.log.Error("could not read whether the landing page is on; showing it", "error", err)
+	}
+	s.landing.Store(&show)
+	return show
 }
 
 // principalKey carries the signed-in account down to the handler.

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"bystander/internal/session"
 	"bystander/internal/store"
 )
 
@@ -42,7 +43,9 @@ func TestShellRouting(t *testing.T) {
 	h := newHarness(t)
 
 	for _, tc := range []struct{ path, want string }{
-		{"/", "reader"},
+		// "/" without a session is the landing page, which lives in the login island. See
+		// the pair of tests below — it is the one path here that reads the request.
+		{"/", "login"},
 		{"/anything-else", "reader"},
 		{"/login", "login"},
 		{"/invite/abc123", "login"},
@@ -63,6 +66,58 @@ func TestShellRouting(t *testing.T) {
 		if !strings.Contains(got, tc.want) {
 			t.Errorf("GET %s served %q, want the %s shell", tc.path, got, tc.want)
 		}
+	}
+}
+
+// "/" is two pages, and which one you get is the only routing decision that reads the request.
+//
+// To somebody with an account it is their front page. To a stranger it is the only thing this
+// instance has to say about what it is — and handing them the reader's shell means a bundle
+// they cannot use, a 401, and a whole-document redirect before a word about what they are
+// looking at.
+func TestTheFrontPageIsTheLandingPageToAStranger(t *testing.T) {
+	h := newHarness(t)
+
+	res := h.get("/", "text/html")
+	if got := body(t, res); !strings.Contains(got, "login") {
+		t.Errorf("a stranger at / got %q, want the landing page's island", got)
+	}
+
+	// And a shared cache must not hand that answer to somebody who has an account, or the
+	// other way about.
+	if vary := res.Header.Get("Vary"); !strings.Contains(vary, "Cookie") {
+		t.Errorf("Vary = %q, want it to name Cookie", vary)
+	}
+}
+
+func TestTheFrontPageIsTheReaderToSomebodySignedIn(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+
+	if got := body(t, h.get("/", "text/html")); !strings.Contains(got, "reader") {
+		t.Errorf("a signed-in visitor at / got %q, want the reader", got)
+	}
+}
+
+// Presence, not validity. Resolving the session here would be a database read and a
+// sliding-expiry write inside a GET, to choose which HTML to send — so a stale cookie gets
+// the reader, which asks /api/me, is refused, and sends them on. That is the right fallback
+// rather than a missed case.
+func TestAStaleCookieStillGetsTheReader(t *testing.T) {
+	h := newHarness(t)
+
+	req, err := http.NewRequest(http.MethodGet, h.server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/html")
+	req.AddCookie(&http.Cookie{Name: session.CookieName, Value: "long-since-expired"})
+	res, err := h.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, res); !strings.Contains(got, "reader") {
+		t.Errorf("a stale cookie at / got %q, want the reader to sort it out", got)
 	}
 }
 
@@ -217,5 +272,54 @@ func TestNoCorsHeaderIsEverEmitted(t *testing.T) {
 				t.Errorf("%s %s emitted %s: %q", tc.method, tc.path, header, v)
 			}
 		}
+	}
+}
+
+// An instance can turn the landing page off, and then "/" is what it was before.
+//
+// On by default, and the only switch on instance_settings that starts that way: the other two
+// are exposure, where a default of yes decides something on somebody's behalf. This one only
+// decides what the front door says.
+func TestAnInstanceCanTurnTheLandingPageOff(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleAdmin, "alice")
+
+	// Signed in, so this asks for the reader either way — the landing page is for strangers.
+	// A second client with no cookie is the visitor under test.
+	stranger := &http.Client{}
+
+	ask := func() string {
+		req, err := http.NewRequest(http.MethodGet, h.server.URL+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Accept", "text/html")
+		res, err := stranger.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return body(t, res)
+	}
+
+	if got := ask(); !strings.Contains(got, "login") {
+		t.Fatalf("a stranger got %q, want the landing page by default", got)
+	}
+
+	h.expect(h.do(http.MethodPut, "/api/admin/instance",
+		map[string]bool{"public_pages": false, "public_indexing": false, "landing": false}),
+		http.StatusOK, nil)
+
+	if got := ask(); !strings.Contains(got, "reader") {
+		t.Errorf("with the landing page off a stranger got %q, want the old behaviour", got)
+	}
+
+	// And back, because the switch has to work in both directions to be a switch — this is
+	// also what proves the cache behind it is invalidated where it is written.
+	h.expect(h.do(http.MethodPut, "/api/admin/instance",
+		map[string]bool{"public_pages": false, "public_indexing": false, "landing": true}),
+		http.StatusOK, nil)
+
+	if got := ask(); !strings.Contains(got, "login") {
+		t.Errorf("turned back on, a stranger got %q, want the landing page", got)
 	}
 }

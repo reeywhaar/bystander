@@ -9,7 +9,7 @@ Five Vite entries, not one SPA with routes:
 
 | entry | audience | contains |
 | --- | --- | --- |
-| `login.html` | nobody yet | Login, invitation acceptance |
+| `login.html` | nobody yet | The landing page at `/`, login, invitation acceptance |
 | `index.html` | a reader | The front pages |
 | `manage.html` | a subscriber | Feeds, tags, pages, what has been read |
 | `admin.html` | an administrator | Users, invitations, mail, publishing, pictures |
@@ -20,6 +20,19 @@ the only document an unauthenticated visitor loads: it is a few kilobytes rather
 whole interface, and somebody opening an invitation link who has never heard of this
 instance gets a page about accepting an invitation rather than the shell of an application
 they cannot use.
+
+**`/` belongs to two of them.** Somebody with a session gets the reader; anybody else gets
+`login.html` and its landing page, and the server chooses by whether the request carried a
+session cookie — the only routing decision that reads anything but the path, and argued for in
+[backend.md](backend.md#serving-the-spa). Before it did, a stranger typing the address got the
+reader's shell, a bundle they cannot use, a `401` and a whole-document redirect to a login
+form, without a word about what they were looking at on the way.
+
+That is also why signing in from the landing page *navigates* rather than re-rendering: the
+document itself is the wrong one once a session exists, and only the server can swap it.
+Signing out goes to `/` for the same reason — with the cookie cleared, that is the landing
+page, which is a better thing to hand somebody who has just left than a form asking them to
+come back.
 
 `public.html` is there for the same reason and is the strongest case for it. A stranger
 following a shared link should be handed a page — not the shell of a product they have no

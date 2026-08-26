@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"bystander/internal/session"
 )
 
 // Island prefixes. Which shell a navigation receives is decided here, in one table, and
@@ -58,6 +60,13 @@ type SPA struct {
 
 	hasIndex bool
 	log      *slog.Logger
+
+	// landing answers whether "/" shows the landing page to somebody without a session.
+	//
+	// Injected rather than read here, because this type owns a directory of bytes and knows
+	// nothing about a database — and the answer is an instance setting. Nil means yes, which
+	// is what a test constructing an SPA on its own gets and what the setting defaults to.
+	landing func(*http.Request) bool
 }
 
 // asset holds a file in both the form it is stored in and the form a client without gzip
@@ -216,15 +225,42 @@ func (s *SPA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// no-cache, never no-store: a shell is tiny, a 304 is the common case, and caching it
 	// hard would strand a browser on a stale bundle reference after a deploy.
 	w.Header().Set("Cache-Control", "no-cache")
-	s.serve(w, r, s.shellFor(clean))
+	// "/" answers with a different document depending on whether a session cookie came with
+	// the request, so a shared cache that stored one visitor's copy would hand a stranger
+	// somebody's front page shell — or, more likely, hand the owner the landing page and
+	// leave them wondering where their reader went.
+	w.Header().Add("Vary", "Cookie")
+	s.serve(w, r, s.shellFor(r, clean))
 }
 
 // shellFor picks which island's document a navigation gets. The whole of the routing
 // between them, deliberately: one table, checked in one place.
 //
 // clean has been through path.Clean, so "/manage/" arrives here as "/manage".
-func (s *SPA) shellFor(clean string) asset {
+//
+// # Why "/" reads the request and nothing else does
+//
+// Every other line here is a prefix and nothing more, which is the property worth keeping:
+// what a path serves is a fact about the path. "/" is the exception because it is genuinely
+// two pages. To somebody with an account it is their front page; to a stranger it is the only
+// thing this instance has to say about what it is, and handing them the reader's shell means
+// a bundle they cannot use, a 401, and a whole-document redirect to a login form — before a
+// word about what they are looking at.
+//
+// The test is whether the request *carries* a session cookie, not whether that session is any
+// good. Resolving one here would mean a database read on every visit to the front page and a
+// sliding-expiry write inside a GET, to decide which HTML to send. A cookie that has expired
+// therefore still gets the reader, which then does what it does today: asks /api/me, is
+// refused, and sends them to the login island. That is the right fallback rather than a
+// missed case — a stale cookie is rare, it self-corrects on the next navigation, and the
+// alternative is paying for the rare case on every other request.
+func (s *SPA) shellFor(r *http.Request, clean string) asset {
 	switch {
+	// The landing page, for somebody with no session to their name — unless this instance
+	// has turned it off, in which case "/" is what it was before: the reader's shell, which
+	// bounces them to the login form.
+	case clean == "/" && !carriesSession(r) && (s.landing == nil || s.landing(r)):
+		return s.login
 	case clean == LoginPath, strings.HasPrefix(clean, LoginPath+"/"):
 		return s.login
 	// The bare "/invite" case is the login island's too. It is what a truncated link looks
@@ -247,6 +283,16 @@ func (s *SPA) shellFor(clean string) asset {
 	default:
 		return s.index
 	}
+}
+
+// carriesSession reports whether a request brought a session cookie at all.
+//
+// Presence, never validity — see shellFor. Named rather than inlined because "the visitor is
+// a stranger" is the thing being decided, and `err == nil` at the call site says only that a
+// cookie was found.
+func carriesSession(r *http.Request) bool {
+	cookie, err := r.Cookie(session.CookieName)
+	return err == nil && cookie.Value != ""
 }
 
 func (s *SPA) serve(w http.ResponseWriter, r *http.Request, a asset) {

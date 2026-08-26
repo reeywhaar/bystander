@@ -198,8 +198,12 @@ export interface ImportResult {
 /**
  * Something already read, as remembered after its page is gone.
  *
- * Not an article on a page: it has no slot and no rank, because it is not on one. The
- * server keeps these for a month and prunes them.
+ * Not an article on a page: it has no slot and no rank, because it is not on one.
+ *
+ * Kept for as long as its feed is followed, rather than for a month. The record has a second
+ * job beyond this list — an article already read is never offered to any of your pages as new
+ * again — and that job has no expiry. Unfollow the feed and everything read there goes with
+ * it, because the reason to keep it went with it.
  */
 export interface ReadArticle {
   item_id: string;
@@ -457,4 +461,11 @@ export interface InstanceSettings {
   public_pages: boolean;
   /** A ceiling on the per-page choice, not a default for it. */
   public_indexing: boolean;
+  /**
+   * Whether "/" greets somebody without an account with the page that says what this is.
+   *
+   * The only one of these that starts as yes: the other two are exposure, and this decides
+   * what the front door says.
+   */
+  landing: boolean;
 }

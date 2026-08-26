@@ -15,6 +15,14 @@ import (
 // publishing is reversible and indexing is not. Taking a page down is a switch; taking it out
 // of somebody else's search index is a request nobody controls.
 type InstanceSettings struct {
+	// Landing is whether "/" answers somebody without a session with the page that says what
+	// this is, or with the login form that used to be there.
+	//
+	// The only one of these that starts as yes, and it is not the odd one out by accident: the
+	// other two are exposure, where a default of yes would be a decision made for somebody.
+	// This decides what the front door says, and a door that explains itself is the better
+	// default — see the migration.
+	Landing bool
 	// PublicPages is whether anybody here may publish a page at all. Turning it off takes
 	// every published page down rather than only stopping new ones — it is the instance's
 	// answer, not a default for pages to inherit.
@@ -26,15 +34,18 @@ type InstanceSettings struct {
 
 // Instance reads the settings that belong to the instance.
 //
-// A missing row is the same answer as a row of noes, so a fresh database needs no seeding and
-// an administrator who has never opened the screen has already made the safe choice.
+// A missing row is the same answer as the defaults, so a fresh database needs no seeding and an
+// administrator who has never opened the screen has already made the safe choice.
 func (s *Store) Instance(ctx context.Context) (InstanceSettings, error) {
 	var out InstanceSettings
 	err := s.main.QueryRowContext(ctx,
-		`SELECT public_pages, public_indexing FROM instance_settings WHERE singleton = 1`).
-		Scan(&out.PublicPages, &out.PublicIndexing)
+		`SELECT public_pages, public_indexing, landing FROM instance_settings WHERE singleton = 1`).
+		Scan(&out.PublicPages, &out.PublicIndexing, &out.Landing)
 	if errors.Is(err, sql.ErrNoRows) {
-		return InstanceSettings{}, nil
+		// A row of noes, except for the one whose default is yes. Written out rather than
+		// left to the zero value, because the zero value is wrong for exactly one field and
+		// a reader of this line should not have to know which.
+		return InstanceSettings{Landing: true}, nil
 	}
 	return out, err
 }
@@ -42,13 +53,14 @@ func (s *Store) Instance(ctx context.Context) (InstanceSettings, error) {
 // SetInstance writes them.
 func (s *Store) SetInstance(ctx context.Context, in InstanceSettings) error {
 	_, err := s.main.ExecContext(ctx, `
-		INSERT INTO instance_settings (id, singleton, public_pages, public_indexing, updated_at)
-		VALUES (?, 1, ?, ?, ?)
+		INSERT INTO instance_settings (id, singleton, public_pages, public_indexing, landing, updated_at)
+		VALUES (?, 1, ?, ?, ?, ?)
 		ON CONFLICT (singleton) DO UPDATE
 		   SET public_pages    = excluded.public_pages,
 		       public_indexing = excluded.public_indexing,
+		       landing         = excluded.landing,
 		       updated_at      = excluded.updated_at`,
-		ids.New(ids.Instance), in.PublicPages, in.PublicIndexing, unix(s.Now()))
+		ids.New(ids.Instance), in.PublicPages, in.PublicIndexing, in.Landing, unix(s.Now()))
 	return err
 }
 

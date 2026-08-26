@@ -10,6 +10,7 @@ import (
 type instanceBody struct {
 	PublicPages    bool `json:"public_pages"`
 	PublicIndexing bool `json:"public_indexing"`
+	Landing        bool `json:"landing"`
 }
 
 // getInstance reports the answers that belong to the instance rather than to anybody on it.
@@ -22,6 +23,7 @@ func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, instanceBody{
 		PublicPages:    settings.PublicPages,
 		PublicIndexing: settings.PublicIndexing,
+		Landing:        settings.Landing,
 	})
 }
 
@@ -38,14 +40,18 @@ func (s *Server) putInstance(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetInstance(r.Context(), store.InstanceSettings{
 		PublicPages:    body.PublicPages,
 		PublicIndexing: body.PublicIndexing,
+		Landing:        body.Landing,
 	}); err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	// The shell "/" serves is decided from this, and decided without a query — so the one
+	// place it changes is the one place the cache is told. See showsLanding.
+	s.landing.Store(&body.Landing)
 
 	s.log.Info("the instance's public settings were changed",
-		"principal", principalOf(r).ID,
-		"public_pages", body.PublicPages, "public_indexing", body.PublicIndexing)
+		"principal", principalOf(r).ID, "public_pages", body.PublicPages,
+		"public_indexing", body.PublicIndexing, "landing", body.Landing)
 	s.getInstance(w, r)
 }
 

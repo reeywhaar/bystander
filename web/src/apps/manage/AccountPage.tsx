@@ -52,9 +52,14 @@ export function AccountPage() {
     try {
       await callApi(postLogout());
     } finally {
-      // Whatever the server said, the cookie is gone or was never valid. Sending them to
-      // the login island either way beats leaving them on a page that cannot load.
-      window.location.href = "/login";
+      // Whatever the server said, the cookie is gone or was never valid. Sending them
+      // somewhere either way beats leaving them on a page that cannot load.
+      //
+      // To "/" rather than to "/login", because "/" is now two pages and the one a person
+      // without a session gets is the landing page — which is a better thing to hand somebody
+      // who has just left than a form asking them to come back. A whole-document navigation,
+      // so the server decides which shell that is with the cookie already cleared.
+      window.location.href = "/";
     }
   }
 

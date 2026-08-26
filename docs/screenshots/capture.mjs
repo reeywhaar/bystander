@@ -427,5 +427,44 @@ run("node", [join(here, "shoot.mjs")], {
   },
 });
 
+// A second pass, for the landing page rather than for the README.
+//
+// Into the bundle the server actually serves — docs/ is not served by anything, and a landing
+// page cannot link to a file that never leaves the repository.
+//
+// Retina, like the README's, because the landing page shows them large and a screenshot at one
+// device pixel per CSS pixel is visibly soft on the screens most people read it on. WebP rather
+// than PNG is what makes that affordable: the same picture, a fifth of the bytes.
+//
+// Driven from here rather than left to whoever remembers, so the two sets cannot drift: one
+// run, one set of stand-in publishers, one composed page, photographed twice.
+step("capturing the landing page's copies");
+run("node", [join(here, "shoot.mjs")], {
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    BASE,
+    OUT: join(here, "..", "..", "web", "public", "landing"),
+    SESSION_COOKIE: cookie,
+    WIDTH: String(WIDTH),
+    HEIGHT: String(HEIGHT),
+    VIEW: String(VIEW),
+    NARROW: String(NARROW),
+    THEME,
+    OPEN_FEED: "The Meridian",
+    FORMAT: "webp",
+    ONLY: "frontpage,feeds,feed,pages,page,read",
+  },
+});
+
+// Built again, because the pass above wrote into web/public *after* the build that copies it
+// into web/dist. Without this the landing page references three files that are in the
+// repository and not in the bundle, and the only symptom is alt text on a page nobody looks at
+// twice — on a fresh clone, until somebody happens to rebuild for another reason.
+//
+// The capture itself never needed them: the landing page is not one of the things photographed.
+step("rebuilding the frontend, so the landing page's copies are in the bundle");
+run("npm", ["run", "build"], { cwd: join(root, "web") });
+
 step("done");
 cleanup();

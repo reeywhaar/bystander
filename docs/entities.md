@@ -371,6 +371,7 @@ CREATE TABLE instance_settings (
   singleton       INTEGER NOT NULL UNIQUE DEFAULT 1 CHECK (singleton = 1),
   public_pages    INTEGER NOT NULL DEFAULT 0 CHECK (public_pages IN (0, 1)),
   public_indexing INTEGER NOT NULL DEFAULT 0 CHECK (public_indexing IN (0, 1)),
+  landing         INTEGER NOT NULL DEFAULT 1 CHECK (landing IN (0, 1)),
   updated_at      INTEGER NOT NULL
 ) STRICT;
 ```
@@ -382,6 +383,18 @@ constraint violation rather than a question about which row wins.
 **Both start off**, and that is a decision rather than caution. An instance that serves nothing
 to strangers should not begin serving to strangers because it was upgraded — somebody has to
 decide, and the safe answer is the one that happens when nobody does.
+
+`landing` is the only column here that starts as yes, and the asymmetry is deliberate. The
+other two are exposure — who may put a page on the open web, and whether a search engine may
+keep it — where a default of yes decides something on somebody's behalf. This one decides what
+`/` *says* to a visitor with no session: the page explaining what this is, or the sign-in form
+on its own. A front door that explains itself is the better default, and turning it off is the
+choice. A missing row therefore reads as `InstanceSettings{Landing: true}` rather than the zero
+value; see `Instance` in store/publish.go.
+
+The server caches it, because it decides which HTML `/` answers with and the alternative is a
+query on the front door for every visitor without a cookie. `putInstance` is the only writer
+and invalidates it there — see [backend.md](backend.md#serving-the-spa).
 
 Turning `public_pages` off takes every published page down rather than only stopping new ones.
 It is the instance's answer, not a default for pages to inherit.

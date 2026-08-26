@@ -10,22 +10,31 @@ import { Modal } from "@app/components/ui/Modal";
 /**
  * Signing in without leaving the page.
  *
- * The login island sends somebody to a document of its own and then to wherever they were
- * going, which is right when signing in *is* the errand. Here it is not: they are reading
- * somebody's page, and the sign-in is so that they can mark something on it. Being navigated
- * away and brought back would lose their place in a page that may be a hundred articles long,
- * and for a gesture they made in passing.
+ * Used from the two documents a person without a session can be looking at: somebody's
+ * published page, and the landing page at "/".
  *
- * So the same two fields, in a dialog, and nothing navigates. What changes afterwards is the
- * page itself — the masthead becomes the application's, and every card grows a way to mark it
- * read — which is the whole of what signing in was for.
+ * A dialog rather than a trip to the login island, because on neither of them is signing in
+ * *the errand*. On a published page they are reading, and the sign-in is so they can mark
+ * something on it; being navigated away and brought back would lose their place in a page a
+ * hundred articles long, for a gesture made in passing. On the landing page they are deciding
+ * whether they have an account here at all, and sending them to a second document to find out
+ * is a worse answer than two fields.
+ *
+ * What happens *after* differs, and belongs to the caller rather than here — see `onClose`.
+ * The published page stays where it is and asks the server again; the landing page navigates
+ * to "/", because the document it is in is the one the server hands to a stranger.
  */
 export function SignInDialog({
   open,
   onClose,
 }: {
   open: boolean;
-  /** Called with true when somebody actually signed in. */
+  /**
+   * Called with true when somebody actually signed in, and false when they gave up.
+   *
+   * What to do with that is the caller's: stay and re-ask, or navigate. Both callers want
+   * something different and neither wants the other's.
+   */
   onClose: (signedIn?: boolean) => void;
 }) {
   const callApi = useApiCall();

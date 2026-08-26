@@ -231,6 +231,17 @@ The rules it follows:
   is not there.
 - Which shell a navigation gets is decided in one function against one prefix table. See
   [frontend.md](frontend.md#islands).
+- **`/` is the one exception, and reads the request.** It is genuinely two pages: a front page
+  to somebody with an account, and to a stranger the only thing this instance has to say about
+  what it is. The test is whether a session *cookie* came with the request, never whether it
+  resolves — resolving would mean a database read and a sliding-expiry write inside a GET, to
+  choose which HTML to send. A stale cookie therefore gets the reader, which asks `/api/me`, is
+  refused, and sends them on: the right fallback rather than a missed case. `Vary: Cookie` is
+  set, so a shared cache cannot hand one visitor's answer to the other.
+- An instance can turn that landing page off, and then `/` is what it was before. The setting
+  is **cached** rather than read per navigation — it chooses which document to serve, and
+  `putInstance` is the only thing that can change it, so the cache is invalidated where it is
+  written rather than expiring on a timer.
 - A missing `dist/index.html` is not fatal: the placeholder page explains itself, and the
   API is still useful.
 

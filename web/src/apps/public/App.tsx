@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { PublicPage } from "@app/api/types";
 import { getPublicPage } from "@app/api/actions/public";
-import { SignInDialog } from "@app/apps/public/SignInDialog";
+import { SignInDialog } from "@app/components/SignInDialog";
 import { useApiCall } from "@app/api/provider";
 import { PageGrid } from "@app/apps/reader/PageGrid";
+import { GuestMasthead } from "@app/components/GuestMasthead";
 import { Masthead as AppMasthead } from "@app/components/Masthead";
 import { Boundary } from "@app/components/Boundary";
 import { Colophon } from "@app/components/Colophon";
@@ -175,29 +176,6 @@ function PublicPage({ person, page }: { person: string; page: string }) {
  * account, they can mark things read here, and being invited to sign in again reads as the
  * page not knowing who they are — which it does.
  */
-function GuestMasthead({ onSignIn }: { onSignIn: () => void }) {
-  return (
-    <header className="border-b border-rule">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-5">
-        <a href="/" className="nameplate text-ink hover:text-accent">
-          bystander
-        </a>
-        <div className="flex basis-full items-center gap-4 text-sm sm:ml-auto sm:basis-auto">
-          {/* A button, not a link to the login island. Signing in here is not the errand —
-              they are reading a page, and being sent away and brought back would lose their
-              place in it for a gesture made in passing. */}
-          <button
-            type="button"
-            onClick={onSignIn}
-            className="text-ink-muted hover:text-ink"
-          >
-            Sign in
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 /**
  * Everything that can go wrong says the same thing, because everything that can go wrong is
