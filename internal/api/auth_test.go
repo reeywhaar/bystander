@@ -163,7 +163,7 @@ func TestDisablingAnAccountEndsItsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePrincipal(): %v", err)
 	}
-	if err := h.store.CreateSession(t.Context(), "bobs-token", bob.ID, h.store.Now().Add(time.Hour)); err != nil {
+	if err := h.store.CreateSession(t.Context(), "bobs-token", bob.ID, h.store.Now().Add(time.Hour), store.Device{}); err != nil {
 		t.Fatalf("CreateSession(): %v", err)
 	}
 

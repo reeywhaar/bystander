@@ -71,11 +71,13 @@ same transaction that clears it. See `SetPublicName` in `store/principals.go`.
 
 ```sql
 CREATE TABLE sessions (
-  id_hash      BLOB    PRIMARY KEY,                         -- sha256(cookie value)
-  principal_id TEXT    NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-  created_at   INTEGER NOT NULL,
-  last_seen_at INTEGER NOT NULL,
-  expires_at   INTEGER NOT NULL
+  id_hash         BLOB    PRIMARY KEY,                      -- sha256(cookie value)
+  principal_id    TEXT    NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+  created_at      INTEGER NOT NULL,
+  last_seen_at    INTEGER NOT NULL,
+  expires_at      INTEGER NOT NULL,
+  last_ip         TEXT    NOT NULL DEFAULT '',
+  last_user_agent TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX sessions_expires   ON sessions(expires_at);
 CREATE INDEX sessions_principal ON sessions(principal_id);
@@ -89,6 +91,28 @@ would require a 256-bit preimage first.
 Sliding expiry of one week since last use. The slide is throttled to once an hour —
 without that, a polling SPA rewrites the row and emits a `Set-Cookie` on every single
 request for a window measured in days.
+
+`last_ip` and `last_user_agent` are what makes a list of your own sessions worth having: a
+row saying nothing but a time cannot be recognised or disowned. Neither is evidence of
+anything, and nothing decides anything on them — an address belongs to a network rather than
+to a person, and a user agent is a sentence the browser wrote about itself. They are written
+on the same hourly throttle, plus whenever either changes, floored at one write a minute per
+session by `session.Move`. That floor is not decoration: a dual-stack browser alternating
+between its IPv4 and IPv6 route to the same origin would otherwise rewrite the row on every
+request, which is the churn the hourly throttle exists to prevent arriving by another door.
+
+A session is named in public by `ids.Derive(ids.Session, id_hash)` — a hash of the hash, so
+the stored one never leaves the store either, and there is no second column to keep in step.
+Revoking by that id reads the account's own rows and matches, which is the scoping as well as
+the lookup: somebody else's id matches nothing rather than deleting their session.
+
+The address is resolved through whatever proxies are in front — see `clientIP` in
+`session/client.go`. `X-Forwarded-For` is written by whoever sends it, so the question is
+never what the header says but who said it, and the answer needs no configuration: a header
+is believed only when the peer that handed us the request is itself on the loopback or a
+private network, which is where a reverse proxy in a compose file sits and is not where the
+internet is. The chain is then walked from the right, discarding private hops, because a
+client can prepend anything it likes and only what our own proxies appended means anything.
 
 ### `invites`
 

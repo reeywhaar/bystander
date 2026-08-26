@@ -42,6 +42,11 @@ const (
 	// Instance is the one row of settings that belong to the instance rather than to
 	// anybody on it.
 	Instance = "in_"
+	// Session names one sign-in when it is being talked about rather than presented. The
+	// row's key is a hash of the cookie, which is not a thing to put in a URL, so what a
+	// session is called out here is derived from that hash with [Derive] — a second hash,
+	// so the stored one does not leave the database either.
+	Session = "se_"
 )
 
 // crockford omits I, L, O and U, so an id cannot be misread between similar glyphs or

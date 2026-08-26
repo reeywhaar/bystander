@@ -26,6 +26,40 @@ export interface Me {
  * role, and whether to show the admin link. What an account *is* belongs to the one page
  * that shows it.
  */
+/**
+ * One live sign-in, as the person who made it sees it.
+ *
+ * Everything here is descriptive and nothing decides anything, which is what makes it
+ * acceptable to show an address a proxy reported and a name a browser chose for itself: the
+ * question this answers is "do I recognise this", and a person is a better judge of that
+ * than any check would be.
+ */
+export interface Session {
+  id: string;
+  /**
+   * Whether this is the session reading it — the one "sign out everywhere else" keeps, and
+   * the one whose revoke button says something different.
+   */
+  current: boolean;
+  /** When this sign-in happened, in seconds. */
+  created_at: number;
+  /**
+   * When it was last seen, in seconds — to within an hour.
+   *
+   * The server records this on a throttle, so that a polling interface does not rewrite
+   * the row on every request. An hour of vagueness on a window measured in days.
+   */
+  last_access: number;
+  /** When it lapses on its own if nothing uses it again, in seconds. */
+  expires_at: number;
+  /** Where it was last used from, or empty for a session older than this being recorded. */
+  ip: string;
+  /** The browser's own description of itself, verbatim. */
+  user_agent: string;
+  /** A summary of that: a browser and a platform, or empty when it is not a familiar one. */
+  device: string;
+}
+
 export interface Account {
   username: string;
   role: Role;

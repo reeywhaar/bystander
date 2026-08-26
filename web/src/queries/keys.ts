@@ -16,6 +16,12 @@ export const qk = {
   account: ["account"] as const,
 
   /**
+   * Its own root rather than under `account`: the list is fetched only while its dialog is
+   * open, and every account write would otherwise refetch a list nobody is looking at.
+   */
+  sessions: ["sessions"] as const,
+
+  /**
    * The root, and one key per page beneath it.
    *
    * Beneath, because a reader with several pages holds several editions at once and switching

@@ -24,6 +24,21 @@ production is a real mistake and is logged as a warning at startup.
 
 There is no config file. Three variables do not need one.
 
+That includes the list of proxies to trust, which most things this shape make you configure.
+The account page lists the addresses a session was last used from, and those come from
+`X-Forwarded-For` — a header written by whoever sends it. Rather than a fourth variable, a
+forwarded header is believed only when the machine that handed us the request is itself on
+the loopback or a private network: that is where a reverse proxy in a compose file sits, and
+it is not where the internet is. Exposed directly, the header is ignored and the peer's own
+address is used, so nobody can write their own address into somebody's session list.
+
+Two consequences worth knowing. If your proxy sits on a **public** address, forwarded
+headers are ignored and every session lists the proxy — put it on the same private network
+as bystander, which is the ordinary arrangement anyway. And if your proxy does **not** set
+`X-Forwarded-For` or `X-Real-IP`, every session lists the proxy's private address, which is
+true but useless; nginx wants `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
+and Caddy and Traefik do it by default.
+
 How often a feed is fetched used to be one of them and is not any more: it is worked out per
 feed from what that feed publishes — see `feeds.Cadence` — because nobody configuring a reader
 knows how often each publisher they follow puts something out.

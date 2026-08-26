@@ -16,6 +16,7 @@ import {
 
 import { PublicNameDialog } from "@app/apps/manage/PublicNameDialog";
 import { RecoveryDialog } from "@app/apps/manage/RecoveryDialog";
+import { SessionsDialog } from "@app/apps/manage/SessionsDialog";
 
 /** What the server will refuse anything shorter than. Mirrors `store.MinPasswordLen`. */
 const MIN_PASSWORD = 8;
@@ -41,6 +42,7 @@ export function AccountPage() {
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [proving, setProving] = useState(false);
 
   if (account.isPending) return <Spinner />;
@@ -259,6 +261,22 @@ export function AccountPage() {
       </section>
 
       <section className="flex flex-col gap-3 border-t border-rule pt-8">
+        <h2 className="font-serif text-xl text-ink">Signed in devices</h2>
+        <p className="max-w-prose text-sm text-ink-muted">
+          Every browser holding a session for this account, where it was last
+          used from and when. Anything you do not recognise can be signed out
+          from here — though a password you did not choose to change is worth
+          changing too, since ending a session does not stop somebody who knows
+          it from starting another.
+        </p>
+        <div>
+          <Button onClick={() => setReviewing(true)}>
+            Review signed in devices
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-rule pt-8">
         <h2 className="font-serif text-xl text-ink">Sign out</h2>
         <p className="max-w-prose text-sm text-ink-muted">
           Ends this session only. Anywhere else you are signed in stays that
@@ -280,6 +298,8 @@ export function AccountPage() {
       {proving ? (
         <RecoveryDialog account={me} onClose={() => setProving(false)} />
       ) : null}
+
+      <SessionsDialog open={reviewing} onClose={() => setReviewing(false)} />
 
       <PublicNameDialog
         account={me}

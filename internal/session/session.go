@@ -31,6 +31,16 @@ const (
 	// imprecision on a one-week window is not imprecision anybody can perceive.
 	Refresh = time.Hour
 
+	// Move is the floor on recording that a session has changed address or browser. The
+	// hourly Refresh has one blind spot — a session moving is the single event worth
+	// recording promptly, and it is exactly what an hourly write would hide for an hour —
+	// but lifting the throttle entirely for it is worse: a dual-stack browser alternating
+	// between its IPv4 and IPv6 route to the same origin would rewrite the row on every
+	// request, which is the churn Refresh exists to prevent, arriving by another door.
+	// A minute is prompt for a person watching their own session list and is a ceiling of
+	// one write per session per minute for everybody else.
+	Move = time.Minute
+
 	// SweepInterval is how often lapsed rows are collected. They are already unusable by
 	// then; this reclaims the space.
 	SweepInterval = 10 * time.Minute
@@ -57,7 +67,7 @@ func New(st *store.Store, secure bool, log *slog.Logger) *Table {
 func (t *Table) SetClock(now func() time.Time) { t.now = now }
 
 // Issue records a login and sets the cookie.
-func (t *Table) Issue(ctx context.Context, w http.ResponseWriter, principalID string) error {
+func (t *Table) Issue(ctx context.Context, w http.ResponseWriter, r *http.Request, principalID string) error {
 	buf := make([]byte, tokenBytes)
 	if _, err := rand.Read(buf); err != nil {
 		return err
@@ -65,7 +75,7 @@ func (t *Table) Issue(ctx context.Context, w http.ResponseWriter, principalID st
 	token := base64.RawURLEncoding.EncodeToString(buf)
 
 	expires := t.now().UTC().Add(TTL)
-	if err := t.store.CreateSession(ctx, token, principalID, expires); err != nil {
+	if err := t.store.CreateSession(ctx, token, principalID, expires, device(r)); err != nil {
 		return err
 	}
 	t.setCookie(w, token, expires)
@@ -110,24 +120,41 @@ func (t *Table) Resolve(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return nil, nil
 	}
 
-	t.slide(ctx, w, cookie.Value, sess)
+	t.slide(ctx, w, r, cookie.Value, sess)
 	return p, nil
 }
 
-// slide moves the window forward, at most once an hour per session.
-func (t *Table) slide(ctx context.Context, w http.ResponseWriter, token string, sess *store.Session) {
+// slide moves the window forward, at most once an hour per session — or sooner, if the
+// session has moved.
+//
+// The throttle exists so that a polling interface does not rewrite the row on every
+// request. It has one blind spot: a session changing address or browser is the single event
+// worth recording promptly, and it is exactly what an hourly write would hide for an hour.
+// So the device is compared too, and a change is a reason to write on its own.
+func (t *Table) slide(ctx context.Context, w http.ResponseWriter, r *http.Request, token string, sess *store.Session) {
 	now := t.now().UTC()
-	if now.Sub(sess.LastSeenAt) < Refresh {
+	dev := device(r)
+	since := now.Sub(sess.LastSeenAt)
+	sliding := since >= Refresh
+	if !sliding && (dev == sess.Device || since < Move) {
 		return
 	}
-	expires := now.Add(TTL)
-	if err := t.store.TouchSession(ctx, token, expires); err != nil {
+	// A move that is not also a slide records where the session went and leaves the
+	// window where it was. Advancing an expiry the browser's cookie does not know about
+	// would put the two out of step for no gain.
+	expires := sess.ExpiresAt
+	if sliding {
+		expires = now.Add(TTL)
+	}
+	if err := t.store.TouchSession(ctx, token, expires, dev); err != nil {
 		// Not fatal, and not worth failing a request over: the session is still valid
 		// until its current expiry, and the next request will try again.
 		t.log.Warn("could not slide a session forward", "error", err)
 		return
 	}
-	t.setCookie(w, token, expires)
+	if sliding {
+		t.setCookie(w, token, expires)
+	}
 }
 
 // Revoke signs the request's session out and clears the cookie.

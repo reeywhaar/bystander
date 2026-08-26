@@ -49,7 +49,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.sessions.Issue(r.Context(), w, p.ID); err != nil {
+	if err := s.sessions.Issue(r.Context(), w, r, p.ID); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("a recovery address moved to a new account that was invited at it",
 			"from", displaced, "to", p.ID)
 	}
-	if err := s.sessions.Issue(r.Context(), w, p.ID); err != nil {
+	if err := s.sessions.Issue(r.Context(), w, r, p.ID); err != nil {
 		s.fail(w, r, err)
 		return
 	}

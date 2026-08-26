@@ -1,5 +1,5 @@
 import { createApiAction, type ApiAction } from "@app/api/request";
-import type { Account } from "@app/api/types";
+import type { Account, Session } from "@app/api/types";
 
 /** `GET /api/account` — your own account, which is the only one you can see this way. */
 export function getAccount(): ApiAction<Account> {
@@ -64,5 +64,37 @@ export function postAccountPassword(passwords: {
 export function putAccountPublicName(name: string): ApiAction<Account> {
   return createApiAction((d) =>
     d.call({ method: "PUT", path: "/api/account/public-name", body: { name } }),
+  );
+}
+
+/** `GET /api/account/sessions` — every device this account is signed in on. */
+export function getAccountSessions(): ApiAction<Session[]> {
+  return createApiAction((d) =>
+    d.call({ method: "GET", path: "/api/account/sessions" }),
+  );
+}
+
+/**
+ * `DELETE /api/account/sessions/{id}` — signs one session out.
+ *
+ * Including, deliberately, the one asking. Revoking the session you are reading from is a
+ * coherent thing to want, and the answer is that you land on the login page.
+ */
+export function deleteAccountSession(id: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: `/api/account/sessions/${id}` }),
+  );
+}
+
+/**
+ * `DELETE /api/account/sessions` — ends every sign-in but this one.
+ *
+ * The exception is the session pressing the button, for the same reason changing a password
+ * keeps it: "sign out everywhere else" that also signed you out of the tab you pressed it
+ * in would be a strange way to confirm it worked.
+ */
+export function deleteAccountSessions(): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: "/api/account/sessions" }),
   );
 }

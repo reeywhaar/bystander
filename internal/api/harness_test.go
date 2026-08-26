@@ -36,6 +36,9 @@ type harness struct {
 	store  *store.Store
 	cfg    *config.Config
 	api    *Server
+	// sessions is here for the one thing tests need from it that requests cannot do:
+	// move its clock, so a throttle measured in minutes can be crossed in milliseconds.
+	sessions *session.Table
 }
 
 func newHarness(t *testing.T) *harness {
@@ -86,12 +89,13 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	return &harness{
-		t:      t,
-		server: server,
-		client: &http.Client{Jar: jar, Timeout: 10 * time.Second},
-		store:  st,
-		cfg:    cfg,
-		api:    api,
+		t:        t,
+		server:   server,
+		client:   &http.Client{Jar: jar, Timeout: 10 * time.Second},
+		store:    st,
+		cfg:      cfg,
+		api:      api,
+		sessions: sessions,
 	}
 }
 

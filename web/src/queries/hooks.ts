@@ -3,7 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSharesByToken, postShares } from "@app/api/actions/shares";
 import {
   deleteAccountRecovery,
+  deleteAccountSession,
+  deleteAccountSessions,
   getAccount,
+  getAccountSessions,
   postAccountPassword,
   postAccountRecovery,
   postAccountRecoveryConfirm,
@@ -63,6 +66,7 @@ import type {
   Edition,
   ImportSelection,
   Role,
+  Session,
   SmtpForm,
 } from "@app/api/types";
 import {
@@ -495,6 +499,54 @@ export function useAccount() {
   return useQuery({
     queryKey: qk.account,
     queryFn: ({ signal }) => callApi(getAccount(), signal),
+  });
+}
+
+/**
+ * Every device this account is signed in on.
+ *
+ * `enabled` because the list lives behind a button: fetching it on every visit to the
+ * account page would record an access on this very session to answer a question nobody
+ * asked.
+ */
+export function useSessions(enabled: boolean) {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.sessions,
+    queryFn: ({ signal }) => callApi(getAccountSessions(), signal),
+    enabled,
+  });
+}
+
+/**
+ * Signs one session out.
+ *
+ * Nothing is invalidated when it was this session: the answer to revoking the one you are
+ * reading from is a whole-document navigation, and refetching a list on the way out would
+ * only produce a 401 for the boundary to catch.
+ */
+export function useRevokeSession() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (session: Session) =>
+      callApi(deleteAccountSession(session.id)).then(() => session),
+    onSuccess: (session) => {
+      if (session.current) return;
+      void client.invalidateQueries({ queryKey: qk.sessions });
+    },
+  });
+}
+
+/** Ends every sign-in but this one. */
+export function useRevokeOtherSessions() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => callApi(deleteAccountSessions()),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.sessions });
+    },
   });
 }
 

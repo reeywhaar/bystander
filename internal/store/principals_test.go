@@ -100,7 +100,7 @@ func TestSetPasswordEndsSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePrincipal(): %v", err)
 	}
-	if err := s.CreateSession(ctx, "token", p.ID, s.Now().Add(time.Hour)); err != nil {
+	if err := s.CreateSession(ctx, "token", p.ID, s.Now().Add(time.Hour), Device{}); err != nil {
 		t.Fatalf("CreateSession(): %v", err)
 	}
 	if err := s.SetPassword(ctx, p.ID, "a-different-one"); err != nil {
@@ -119,7 +119,7 @@ func TestDisablingEndsSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePrincipal(): %v", err)
 	}
-	if err := s.CreateSession(ctx, "token", p.ID, s.Now().Add(time.Hour)); err != nil {
+	if err := s.CreateSession(ctx, "token", p.ID, s.Now().Add(time.Hour), Device{}); err != nil {
 		t.Fatalf("CreateSession(): %v", err)
 	}
 	if err := s.SetDisabled(ctx, p.ID, true); err != nil {
@@ -168,7 +168,7 @@ func TestSessionExpiryIsAppliedInTheQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePrincipal(): %v", err)
 	}
-	if err := s.CreateSession(ctx, "token", p.ID, start.Add(time.Hour)); err != nil {
+	if err := s.CreateSession(ctx, "token", p.ID, start.Add(time.Hour), Device{}); err != nil {
 		t.Fatalf("CreateSession(): %v", err)
 	}
 
