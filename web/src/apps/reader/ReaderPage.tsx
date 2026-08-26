@@ -129,7 +129,7 @@ export function ReaderPage({ me }: { me: Me }) {
               >
                 already read
               </a>{" "}
-              is kept for a month.
+              is kept for as long as you follow the feed it came from.
             </p>
             {/* Left-aligned when it wraps under the paragraph, right-aligned when it sits
                 beside it. `items-end` alone left the button floating at an indent that
