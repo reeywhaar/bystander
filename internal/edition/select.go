@@ -118,7 +118,14 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 			}
 
 			placed := 0
-			for id, quota := range apportion(rng, size-len(picks), feeds, left, sources) {
+			// Over `feeds`, which is sorted, rather than over the map apportion hands
+			// back. Ranging a map takes its entries in whatever order Go randomises them
+			// into on the day, and the whole point of a seed is that the same one composes
+			// the same page twice — this was drawing the feeds in a different order every
+			// run and the page only looked stable because the shuffle below hid it.
+			quotas := apportion(rng, size-len(picks), feeds, left, sources)
+			for _, id := range feeds {
+				quota := quotas[id]
 				items := band(sources[id])
 				for ; quota > 0 && cursor[id] < len(items); cursor[id]++ {
 					item := items[cursor[id]]
