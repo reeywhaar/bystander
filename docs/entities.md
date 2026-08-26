@@ -625,10 +625,23 @@ CREATE TABLE shown (
 CREATE INDEX shown_age ON shown(shown_at);
 ```
 
-The one thing that outlives an edition, and deliberately tiny — a truncated hash, not a
-row of content. Without it the same article resurfaces every cycle and a front page
-stops feeling like one. Pruned at 90 days, which is three times the item retention, so a
-hash always outlives the item it refers to.
+The one thing that outlives an edition, and deliberately tiny — a truncated hash, not a row of
+content.
+
+**It is not a filter.** An article this page has already shown is still perfectly eligible for
+the next edition; it simply waits behind everything the page has not offered yet. `shown` is
+what separates the sampler's first band from its second — see `Queues` — so its whole effect is
+on *placement*. Without it there are two bands instead of three, every regeneration is an
+independent sample of the same pool, and the page shuffles the last month instead of moving on.
+
+Held to `MaxItemsPerFeed` entries per page per feed, by `shown_at`. By count rather than by
+age, and the difference matters: age was a proxy for "the article is gone" that needed the
+whole retention calculation passed in, and it stopped bounding anything once a feed could be
+kept without an age limit — a page showing sixty articles a day would then have written twenty
+thousand of these a year, for ever. A count needs nothing passed in and is bounded by
+construction: a feed holds at most `MaxItemsPerFeed` articles, so remembering more shows than
+that is remembering things that can never come up again. And because this only ever changes a
+placement, a hash going early costs a queue position on an article nothing was reaching anyway.
 
 Not pruned at all while any feed is unlimited. A hash that stops existing while the article it
 names is still on the shelf is an article that comes back round as though it were new, which is

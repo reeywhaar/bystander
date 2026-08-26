@@ -34,26 +34,20 @@ type Item struct {
 	FetchedAt   time.Time
 }
 
-// Retention. Items are a pool, not an archive: this is a front page, and anything worth
-// keeping is worth keeping somewhere that is not here.
+// MinItemRetention is the floor on how long a feed's articles are kept, whatever its
+// followers asked for. Below a month the pool gets thin enough that a page starts repeating
+// itself.
 //
-// It is not a fixed number, because it cannot be. Somebody who has asked to see a year of
-// articles needs a year of articles kept; somebody who wants a day does not. So the bounds
-// are here and EffectiveItemRetention picks between them from what people have actually
-// chosen — see settings.go.
-const (
-	// MinItemRetention is the floor, whatever anybody has asked for. Below a month the
-	// pool gets thin enough that a page starts repeating itself.
-	MinItemRetention = 30 * 24 * time.Hour
-
-	// MaxItemRetention is the ceiling, and what "no limit" means in practice. Unbounded
-	// growth is not a setting anybody meant to choose.
-	MaxItemRetention = 365 * 24 * time.Hour
-)
-
-// shownMultiple keeps the record that an article was shown outliving the article itself.
-// If it did not, a long-dormant feed could resurface something already read.
-const shownMultiple = 3
+// There is no matching ceiling. There was one, and it was wrong: how far back a page reaches
+// bounds when an article was *published*, and pruning goes by when it was *fetched*, so a
+// ceiling in years silently dropped the back catalogue of a feed whose articles were all
+// written long ago. What bounds a feed instead is [MaxItemsPerFeed], a shelf length rather
+// than a date. How long each feed is kept comes from its own followers — see
+// ItemRetentionByFeed in settings.go.
+//
+// Items are a pool, not an archive: this is a front page, and anything worth keeping is worth
+// keeping somewhere that is not here.
+const MinItemRetention = 30 * 24 * time.Hour
 
 // SaveItems writes what a fetch produced and reports how many were new.
 //
@@ -530,21 +524,32 @@ func (s *Store) CapItemsPerFeed(ctx context.Context, feedIDs []string, max int) 
 	return cut, nil
 }
 
-// PruneShown drops the record of articles shown long enough ago that their items are gone
-// too. Kept for a multiple of however long articles are being kept, so the record always
-// outlives what it refers to.
+// PruneShown holds each page's memory of one feed to its most recent [MaxItemsPerFeed]
+// entries.
 //
-// Nothing is dropped where any feed is unlimited. A hash that stops existing while the
-// article it names is still on the shelf is an article that comes back round as though it
-// were new, and not resurfacing what somebody has already been shown is the whole of what
-// this table does. It stays bounded anyway, because the articles it refers to are: see
-// [MaxItemsPerFeed].
-func (s *Store) PruneShown(ctx context.Context, retention ItemRetention) (int64, error) {
-	if retention.Forever {
-		return 0, nil
-	}
+// By count rather than by age, and the difference is the point. This table is not a filter:
+// an article a page has already shown is still perfectly eligible for the next edition, it
+// merely waits behind everything the page has not offered yet — see the three bands in
+// Queues. So a hash going early costs nothing but a place in a queue, on an article old
+// enough that nothing was reaching it anyway.
+//
+// Age was the wrong measure twice over. It was a proxy for "the article is gone" that needed
+// the whole retention calculation passed in to compute, and it stopped bounding anything at
+// all once a feed could be kept without an age limit — a page showing sixty articles a day
+// would then have written twenty thousand of these a year, for ever. A count needs nothing
+// passed in and is bounded by construction: a feed holds at most MaxItemsPerFeed articles, so
+// remembering more than that many shows from it is remembering things that can never come up
+// again.
+func (s *Store) PruneShown(ctx context.Context) (int64, error) {
 	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM shown WHERE shown_at < ?`, unix(s.Now().Add(-retention.For*shownMultiple)))
+		// By the primary key, because this table is WITHOUT ROWID and so has no rowid to
+		// address a row by.
+		`DELETE FROM shown WHERE (page_id, feed_id, guid_hash) IN (
+		   SELECT page_id, feed_id, guid_hash FROM (
+		     SELECT page_id, feed_id, guid_hash, row_number() OVER (
+		              PARTITION BY page_id, feed_id ORDER BY shown_at DESC) AS place
+		       FROM shown)
+		    WHERE place > ?)`, MaxItemsPerFeed)
 	if err != nil {
 		return 0, err
 	}

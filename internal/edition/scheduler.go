@@ -169,16 +169,9 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		}
 	}
 
-	// One number here rather than the map, and the longest of them: the record of what has
-	// been shown is not per feed, and it has to outlive the articles it refers to whichever
-	// feed they came from.
-	longest, err := s.store.EffectiveItemRetention(ctx)
-	if err != nil {
-		s.log.Error("could not work out how long to keep the record of what was shown", "error", err)
-		return
-	}
-
-	if n, err := s.store.PruneShown(ctx, longest); err != nil {
+	// Held to a count rather than to a date — see PruneShown, which needs nothing passed in
+	// because a page's memory of a feed is bounded by what that feed can hold.
+	if n, err := s.store.PruneShown(ctx); err != nil {
 		s.log.Error("could not prune the record of what has been shown", "error", err)
 	} else if n > 0 {
 		s.log.Debug("pruned shown records", "count", n)

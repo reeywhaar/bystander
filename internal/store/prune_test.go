@@ -499,3 +499,74 @@ func TestASupersededEditionDoesNotHoldArticlesAlive(t *testing.T) {
 		t.Errorf("the feed holds %d articles, want only the one the current edition shows", got)
 	}
 }
+
+// A page's memory of a feed is held to a count, not to a date.
+//
+// By count because this table is not a filter: an article a page has already shown is still
+// eligible for the next edition, it just waits behind everything the page has not offered
+// yet. A hash going early costs a place in a queue, on an article old enough that nothing was
+// reaching it anyway — so the bound can be the cheap one that never needs a retention
+// calculation passed in and never stops bounding.
+func TestShownIsHeldToACount(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	p, err := s.CreatePrincipal(ctx, "alice", "correct-horse", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := s.Pages(ctx, p.ID)
+	if err != nil || len(pages) == 0 {
+		t.Fatal(err)
+	}
+	page := pages[0].ID
+
+	// Two feeds, so the cap is per (page, feed) rather than per page.
+	const over = 40
+	for _, feed := range []string{"f_one", "f_two"} {
+		for i := range MaxItemsPerFeed + over {
+			if _, err := s.derived.ExecContext(ctx,
+				`INSERT INTO shown (page_id, feed_id, guid_hash, shown_at) VALUES (?, ?, ?, ?)`,
+				page, feed, GUIDHash(feed+"-"+time.Duration(i).String()),
+				unix(s.Now().Add(-time.Duration(i)*time.Minute))); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	n, err := s.PruneShown(ctx)
+	if err != nil {
+		t.Fatalf("PruneShown(): %v", err)
+	}
+	if n != 2*over {
+		t.Errorf("pruned %d rows, want %d — %d over the ceiling on each of two feeds", n, 2*over, over)
+	}
+
+	for _, feed := range []string{"f_one", "f_two"} {
+		var held int
+		if err := s.derived.QueryRowContext(ctx,
+			`SELECT count(*) FROM shown WHERE page_id = ? AND feed_id = ?`, page, feed).Scan(&held); err != nil {
+			t.Fatal(err)
+		}
+		if held != MaxItemsPerFeed {
+			t.Errorf("%s holds %d entries, want %d", feed, held, MaxItemsPerFeed)
+		}
+	}
+
+	// And it kept the most recent: the very first hash written is the newest, and the
+	// oldest of the batch is what went.
+	var kept int
+	if err := s.derived.QueryRowContext(ctx,
+		`SELECT count(*) FROM shown WHERE page_id = ? AND feed_id = ? AND guid_hash = ?`,
+		page, "f_one", GUIDHash("f_one-"+time.Duration(0).String())).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 1 {
+		t.Error("the newest entry was pruned, so the ceiling took from the wrong end")
+	}
+
+	// Running it again takes nothing: it is a ceiling, not a decay.
+	if n, err = s.PruneShown(ctx); err != nil || n != 0 {
+		t.Errorf("a second pass pruned %d rows (err %v), want none", n, err)
+	}
+}
