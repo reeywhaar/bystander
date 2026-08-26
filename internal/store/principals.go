@@ -56,6 +56,22 @@ type Principal struct {
 	CreatedAt  time.Time
 	DisabledAt time.Time // zero when enabled
 
+	// DeletedAt is when this account asked to be erased, or zero.
+	//
+	// The account keeps working meanwhile. That is not a loose end: signing in is what
+	// calls the request off, so the grace period is a week of chances to change your mind
+	// rather than a week of being locked out of an account you still own. It is also what
+	// makes this safe against a borrowed session — whoever really owns the account undoes
+	// it by doing the ordinary thing.
+	DeletedAt time.Time
+
+	// DeletionCancelledAt is when a request to be erased was last withdrawn, or zero.
+	//
+	// Kept because the withdrawal is otherwise invisible: signing in silently un-schedules
+	// an erasure, and somebody who asked, forgot, and signed in a fortnight later is owed
+	// the news that it was called off on their behalf.
+	DeletionCancelledAt time.Time
+
 	// hash is the bcrypt hash. Unexported so it cannot be serialised into a response by
 	// somebody adding a json tag to a struct they did not read to the bottom of.
 	hash string
@@ -63,6 +79,9 @@ type Principal struct {
 
 // Disabled reports whether this account has been switched off.
 func (p *Principal) Disabled() bool { return !p.DisabledAt.IsZero() }
+
+// ScheduledForDeletion reports whether this account is waiting to be erased.
+func (p *Principal) ScheduledForDeletion() bool { return !p.DeletedAt.IsZero() }
 
 // CreatePrincipal makes an account and the settings row that belongs to it.
 //
@@ -142,21 +161,25 @@ func insertPrincipal(ctx context.Context, tx *sql.Tx, p *Principal, now time.Tim
 	return p, nil
 }
 
-const principalColumns = `id, username, slug, password_hash, role, created_at, disabled_at`
+const principalColumns = `id, username, slug, password_hash, role, created_at, disabled_at,
+	deleted_at, deletion_cancelled_at`
 
 func scanPrincipal(row interface{ Scan(...any) error }) (*Principal, error) {
 	var (
-		p        Principal
-		role     string
-		created  int64
-		disabled sql.NullInt64
+		p                          Principal
+		role                       string
+		created                    int64
+		disabled, deleted, cleared sql.NullInt64
 	)
-	if err := row.Scan(&p.ID, &p.Username, &p.Slug, &p.hash, &role, &created, &disabled); err != nil {
+	if err := row.Scan(&p.ID, &p.Username, &p.Slug, &p.hash, &role, &created, &disabled,
+		&deleted, &cleared); err != nil {
 		return nil, err
 	}
 	p.Role = Role(role)
 	p.CreatedAt = time.Unix(created, 0).UTC()
 	p.DisabledAt = timeFrom(disabled)
+	p.DeletedAt = timeFrom(deleted)
+	p.DeletionCancelledAt = timeFrom(cleared)
 	return &p, nil
 }
 

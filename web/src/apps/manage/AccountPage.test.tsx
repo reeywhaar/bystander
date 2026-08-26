@@ -17,6 +17,8 @@ function account(overrides: Partial<Account> = {}): Account {
     public_indexing: false,
     recovery_email: "",
     recovery_pending: "",
+    deletion_cancelled_at: 0,
+    last_admin: false,
     mail_configured: true,
     ...overrides,
   };

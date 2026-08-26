@@ -7,6 +7,7 @@ import {
   deleteAccountSessions,
   getAccount,
   getAccountSessions,
+  postAccountDeletion,
   postAccountPassword,
   postAccountRecovery,
   postAccountRecoveryConfirm,
@@ -547,6 +548,20 @@ export function useRevokeOtherSessions() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.sessions });
     },
+  });
+}
+
+/**
+ * Asks for this account to be erased.
+ *
+ * Nothing is invalidated. Every session ended with the request — including this one — so
+ * there is nothing left that could be refetched, and trying would only produce a 401 for the
+ * boundary to catch on the way out.
+ */
+export function useDeleteAccount() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (password: string) => callApi(postAccountDeletion(password)),
   });
 }
 

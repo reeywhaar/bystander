@@ -37,6 +37,8 @@ CREATE TABLE principals (
   role          TEXT    NOT NULL CHECK (role IN ('admin','user')),
   created_at    INTEGER NOT NULL,
   disabled_at   INTEGER,
+  deleted_at            INTEGER,                            -- asked to be erased
+  deletion_cancelled_at INTEGER,                            -- ...and withdrew it by signing in
   slug          TEXT    NOT NULL DEFAULT ''                 -- the public name; empty until chosen
 );
 CREATE UNIQUE INDEX principals_slug ON principals(slug) WHERE slug <> '';
@@ -52,6 +54,24 @@ the cost later does not invalidate existing rows.
 Disabling sets `disabled_at` and deletes the principal's sessions. It does not delete
 their feeds — a disabled account that is re-enabled should find its subscriptions where
 it left them.
+
+`deleted_at` and `deletion_cancelled_at` are somebody leaving. Asking sets `deleted_at` and
+ends every session; the account keeps working, and a sweep erases it once `DeletionGrace` —
+a week — has passed. **Signing in withdraws the request**, which is not a courtesy: a
+deletion pressed by mistake or through a borrowed session has to be recoverable by the person
+who owns the account, without asking anybody, and signing in is the one thing they can always
+do. `deletion_cancelled_at` records that withdrawal, because otherwise it is invisible —
+an account quietly stops being scheduled and nothing says why or when.
+
+The purge takes what belongs to the person and leaves what belongs to everybody. In `main.db`
+that is the cascade: sessions, tags, subscriptions, pages and their filters, recovery,
+shares — invitations keep their row and lose their pointer. In `derived.db` it is done
+explicitly rather than left to the orphan sweep, because an erasure that depends on a garbage
+collector running later is an erasure that has not happened yet. **Feeds and items are never
+touched**: they are held once for the whole instance, a subscription is the only part of that
+relationship anybody owns, and one person leaving must not take another person's reading with
+them. A feed left with no followers is collected afterwards by `DeleteOrphanFeeds`, on the
+same terms as unsubscribing from it by hand.
 
 `slug` is the name a published page is addressed by, and it is deliberately **not** the
 username. Two names for two jobs: one to sign in with, one to be known by — and the one to

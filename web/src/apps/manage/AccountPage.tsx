@@ -15,6 +15,7 @@ import {
 } from "@app/queries/hooks";
 
 import { PublicNameDialog } from "@app/apps/manage/PublicNameDialog";
+import { DeleteAccountDialog } from "@app/apps/manage/DeleteAccountDialog";
 import { RecoveryDialog } from "@app/apps/manage/RecoveryDialog";
 import { SessionsDialog } from "@app/apps/manage/SessionsDialog";
 
@@ -43,6 +44,7 @@ export function AccountPage() {
   const [again, setAgain] = useState("");
   const [signingOut, setSigningOut] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [proving, setProving] = useState(false);
 
   if (account.isPending) return <Spinner />;
@@ -83,6 +85,20 @@ export function AccountPage() {
           here since {absolute(me.created_at)}.
         </p>
       </section>
+
+      {/* A deletion is called off by signing in rather than by pressing anything, which
+          means it is called off silently. Somebody who asked, forgot, and signed in a
+          fortnight later is owed the news — and somebody who did not ask in the first place
+          is owed it more. The server only reports this while it is recent, so it goes away
+          on its own rather than becoming a permanent notice about a thing that did not
+          happen. */}
+      {me.deletion_cancelled_at ? (
+        <Alert tone="note">
+          You asked for this account to be deleted, and signing in on{" "}
+          {absolute(me.deletion_cancelled_at)} cancelled it. Nothing was erased.
+          If that was not you, change your password.
+        </Alert>
+      ) : null}
 
       <section className="flex flex-col gap-3 border-t border-rule pt-8">
         <h2 className="font-serif text-xl text-ink">Change your password</h2>
@@ -317,6 +333,39 @@ export function AccountPage() {
         </div>
       </section>
 
+      <section className="flex flex-col gap-3 border-t border-rule pt-8">
+        <h2 className="font-serif text-xl text-ink">Delete your account</h2>
+        <p className="max-w-prose text-sm text-ink-muted">
+          Nothing goes today. Your account is marked and erased a week later —
+          every feed you follow, your tags, your front pages and the record of
+          what you have read. Signing in during that week cancels it, which is
+          also what makes a deletion you did not ask for something you can undo
+          by yourself.
+        </p>
+
+        {/* Said plainly rather than left to be discovered. An instance with no administrator
+            has no way back that does not involve a shell on the host, so this is the one
+            account that cannot go — and finding that out after typing your password into a
+            danger button is a worse way to learn it. */}
+        {me.last_admin ? (
+          <Alert tone="note">
+            You are the only administrator here, and an instance with none has
+            no way back. Invite somebody else and make them an administrator
+            first.
+          </Alert>
+        ) : null}
+
+        <div>
+          <Button
+            variant="danger"
+            disabled={me.last_admin}
+            onClick={() => setLeaving(true)}
+          >
+            Delete your account…
+          </Button>
+        </div>
+      </section>
+
       {/* Mounted only while open, so it starts from what is on record every time rather
           than from whatever was typed and abandoned last time. */}
       {proving ? (
@@ -324,6 +373,10 @@ export function AccountPage() {
       ) : null}
 
       <SessionsDialog open={reviewing} onClose={() => setReviewing(false)} />
+
+      {leaving ? (
+        <DeleteAccountDialog open onClose={() => setLeaving(false)} />
+      ) : null}
 
       <PublicNameDialog
         account={me}

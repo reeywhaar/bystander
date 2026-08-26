@@ -274,6 +274,28 @@ func (h *harness) signInElsewhere(username, password string) *http.Client {
 }
 
 // mainPage is the signed-in account's main page id, for the tests that address a page.
+// secondAdmin creates another administrator, for the tests where the signed-in one must not
+// be the last. Its own jar, and the returned client holds its session.
+//
+// A second invitation rather than promoting an existing account, because there is no endpoint
+// that changes a role: an administrator is made by being invited as one.
+func (h *harness) secondAdmin(username string) *http.Client {
+	h.t.Helper()
+	return h.acceptAs(store.RoleAdmin, username)
+}
+
+// confirmRecovery walks the signed-in account through proving an address, so a test that
+// cares about what is *sent* there does not repeat the two steps that get there.
+// The relay is passed in rather than made here: h.relay() replaces the recorder, so making a
+// second one would leave the caller holding the one nothing is sent to any more.
+func (h *harness) confirmRecovery(t *testing.T, relay *sentMail, address string) {
+	t.Helper()
+	h.expect(h.do(http.MethodPost, "/api/account/recovery",
+		map[string]string{"email": address}), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodPost, "/api/account/recovery/confirm",
+		map[string]string{"code": relay.codeSentTo(t, address)}), http.StatusOK, nil)
+}
+
 // me is the signed-in account's id, for the tests that seed through the store rather than
 // through the API.
 func (h *harness) me(t *testing.T) string {
@@ -306,8 +328,14 @@ func (h *harness) mainPage() string {
 // able to reach another's things.
 func (h *harness) signInAsSomebodyElse(username string) *http.Client {
 	h.t.Helper()
+	return h.acceptAs(store.RoleUser, username)
+}
 
-	_, token, err := h.store.CreateInvite(h.t.Context(), store.RoleUser, "", "")
+// acceptAs mints an invitation of one role and accepts it in a jar of its own.
+func (h *harness) acceptAs(role store.Role, username string) *http.Client {
+	h.t.Helper()
+
+	_, token, err := h.store.CreateInvite(h.t.Context(), role, "", "")
 	if err != nil {
 		h.t.Fatalf("CreateInvite(): %v", err)
 	}

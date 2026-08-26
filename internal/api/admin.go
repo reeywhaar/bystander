@@ -14,7 +14,13 @@ type userBody struct {
 	Role       string `json:"role"`
 	CreatedAt  int64  `json:"created_at"`
 	DisabledAt *int64 `json:"disabled_at"`
-	FeedCount  int    `json:"feed_count"`
+	// DeletedAt is when this account asked to be erased, or absent.
+	//
+	// Here so a row does not simply vanish from the list one day with nothing having said
+	// it would. An administrator is not asked to approve it and cannot call it off — it is
+	// somebody's own account — but they should not be surprised by it either.
+	DeletedAt *int64 `json:"deleted_at"`
+	FeedCount int    `json:"feed_count"`
 }
 
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +41,10 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		if p.Disabled() {
 			at := p.DisabledAt.Unix()
 			body.DisabledAt = &at
+		}
+		if p.ScheduledForDeletion() {
+			at := p.DeletedAt.Unix()
+			body.DeletedAt = &at
 		}
 		// A count rather than the list: an administrator wants to know whether an account
 		// is in use, not what it reads.

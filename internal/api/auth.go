@@ -49,6 +49,25 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Signing in is how a request to be erased is withdrawn. Before the session is issued,
+	// so that an account cannot be purged between the check and the cookie — and before the
+	// log line, so that "signed in" and "deletion called off" arrive in the order they
+	// happened.
+	//
+	// Deliberately not something somebody has to find and press. The whole design of the
+	// grace period rests on this being the ordinary act: whoever really owns the account
+	// undoes a deletion — their own, or one made through a session somebody borrowed — by
+	// doing the thing they were going to do anyway.
+	cancelled, err := s.store.CancelDeletion(r.Context(), p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if cancelled {
+		s.log.Info("a request to erase an account was withdrawn by signing in",
+			"principal", p.ID, "username", p.Username)
+	}
+
 	if err := s.sessions.Issue(r.Context(), w, r, p.ID); err != nil {
 		s.fail(w, r, err)
 		return

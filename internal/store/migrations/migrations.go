@@ -82,6 +82,7 @@ var Main = []Migration{
 	mainInviteSurvivesItsAccount,
 	mainLandingPage,
 	mainSessionDevices,
+	mainAccountDeletion,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db

@@ -325,6 +325,7 @@ GET    /api/account/sessions             every device this account is signed in 
 DELETE /api/account/sessions             → 204, every session but this one
 DELETE /api/account/sessions/{id}        → 204, one session, including this one
 GET    /api/account/export               a zip — the one endpoint that is not JSON
+POST   /api/account/deletion             {password} → {deleted_at, purge_at, notified}
 ```
 
 Changing a password ends every other session and keeps this one. "Changing my password signs
@@ -338,6 +339,34 @@ matches nothing rather than deleting their session, which makes the scoping and 
 same operation. Revoking your *own* session is allowed and answers 204 with the cookie cleared —
 it is a coherent thing to want, and refusing would only mean the button had to be called
 something else.
+
+`POST /api/account/deletion` **erases nothing.** It marks the account, ends every session
+including the one that asked, and a sweep removes it a week later. Any sign-in during that
+week withdraws the request — see the login handler, where the withdrawal happens, and note
+that it is deliberately not a button somebody has to find.
+
+That shape is the whole point. "Delete my account" pressed by mistake, or pressed by somebody
+holding a session they should not have, must be recoverable, and the only recovery that works
+for a person who has lost both their password and their account is one they can perform
+without asking anybody. The password is still required — being signed in is not the same as
+knowing it — but that is the weaker of the two protections; signing in is the stronger.
+
+A note goes to the recovery address if there is one, naming the date and saying that signing
+in cancels it. `notified` says whether it went: an account with no address on file has no
+safety net, and the interface says which of the two happened rather than implying the better
+one. Failing to send never fails the request — an instance with a broken relay would
+otherwise be an instance nobody can leave.
+
+Asking twice answers with the date already set rather than pushing it back. The last
+administrator is refused with `409`, and `GET /api/account` carries `last_admin` so the page
+says so before the button is pressed rather than after.
+
+What is erased is what belongs to the person: the account, its sessions, tags, subscriptions,
+pages and filters, recovery address, shared links, and — in `derived.db`, explicitly rather
+than by a later garbage collection — its editions, what they were shown and what they read.
+**Feeds and articles are not erased.** They are the instance's, held once and shared by
+everyone who follows them, so one person leaving is invisible to everybody else; a feed left
+with no followers is collected afterwards on the same terms as unsubscribing by hand.
 
 `GET /api/account/export` is **the one endpoint that answers with something other than JSON**,
 and the exception is deliberate. It streams `application/zip` straight to the socket — one

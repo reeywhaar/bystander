@@ -1,5 +1,5 @@
 import { createApiAction, type ApiAction } from "@app/api/request";
-import type { Account, Session } from "@app/api/types";
+import type { Account, ScheduledDeletion, Session } from "@app/api/types";
 
 /** `GET /api/account` — your own account, which is the only one you can see this way. */
 export function getAccount(): ApiAction<Account> {
@@ -96,5 +96,24 @@ export function deleteAccountSession(id: string): ApiAction<void> {
 export function deleteAccountSessions(): ApiAction<void> {
   return createApiAction((d) =>
     d.call({ method: "DELETE", path: "/api/account/sessions" }),
+  );
+}
+
+/**
+ * `POST /api/account/deletion` — asks for this account to be erased, a week from now.
+ *
+ * Nothing is erased when this returns. Every session ends, including the one that asked, and
+ * signing in at any point during the week calls the whole thing off — which is what makes a
+ * deletion made through a borrowed session recoverable by the person who owns it.
+ */
+export function postAccountDeletion(
+  password: string,
+): ApiAction<ScheduledDeletion> {
+  return createApiAction((d) =>
+    d.call({
+      method: "POST",
+      path: "/api/account/deletion",
+      body: { password },
+    }),
   );
 }

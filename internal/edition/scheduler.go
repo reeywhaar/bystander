@@ -77,6 +77,24 @@ func (s *Scheduler) generateDue(ctx context.Context) {
 // sweep collects what has expired. Everything it touches is in derived.db, and everything
 // it touches is reconstructible — which is why it can afford to be this blunt.
 func (s *Scheduler) sweep(ctx context.Context) {
+	// Accounts whose week has run out, first — before anything below reads the lists of
+	// what is live. This is the one part of the sweep that is not housekeeping: it is the
+	// second half of somebody asking to be erased, and it is here rather than on a clock of
+	// its own because erasing the principal is only half of it. Everything in main.db goes
+	// by cascade; the editions, what was shown and what was read live in the other database
+	// and are collected by the passes below, in this same run.
+	if erased, err := s.store.PurgeDeletedAccounts(ctx, store.DeletionGrace); err != nil {
+		s.log.Error("could not erase accounts that asked to be", "error", err)
+	} else {
+		for _, account := range erased {
+			// Named, and at Info. After this there is nothing left to look either the id
+			// or the name up in, and an erasure that leaves no trace anywhere is
+			// indistinguishable from a bug that lost somebody's account.
+			s.log.Info("erased an account that asked to be",
+				"principal", account.ID, "username", account.Username)
+		}
+	}
+
 	// Pages rather than accounts, which covers both: a deleted account takes its pages with
 	// it by cascade, and a page deleted on its own leaves an edition behind that nothing else
 	// would collect.

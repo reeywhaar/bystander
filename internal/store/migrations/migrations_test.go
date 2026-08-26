@@ -59,6 +59,7 @@ var released = []struct{ name, sha string }{
 	{"20260825235815_main_invite_survives_its_account", "92cecd85e42a197867093fef2892301858aaaed162b9031d44733d5367ccce0f"},
 	{"20260826005150_main_landing_page", "fdc55ffd942a36467ca51cb701af501de050b4d695d5af659887be76ca0b36d1"},
 	{"20260826015027_main_session_devices", "9cabb87dc7371f01e4310aad98b5d8d4e826f77e6b54d540be2365ef6c324da3"},
+	{"20260826024458_main_account_deletion", "ae755365e789418241384e0601fc331d9ce9b7ef4ba8c3a6bc06d2399b57e3c3"},
 }
 
 func all() []Migration {

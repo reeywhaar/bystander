@@ -45,6 +45,23 @@ type accountBody struct {
 	// administrator's answer and the interface does not argue with it — where this is false
 	// the control is absent rather than shown and refused.
 	PublicIndexing bool `json:"public_indexing"`
+	// DeletionCancelledAt is when a request to erase this account was withdrawn, or zero.
+	//
+	// Only while it is recent — see writeAccount. A deletion is called off by signing in
+	// rather than by pressing anything, which means it is called off silently, and somebody
+	// who asked, forgot, and signed in a fortnight later is owed the news that their request
+	// was withdrawn on their behalf. Once that has been read it is history, and a permanent
+	// notice about a thing that did not happen is noise.
+	DeletionCancelledAt int64 `json:"deletion_cancelled_at"`
+	// LastAdmin is whether this account is the only administrator left.
+	//
+	// Here so the page can say why leaving is not on offer, rather than letting somebody
+	// find out by typing their password into a danger button and being refused — the same
+	// reason MailConfigured is here. There is no recovery from an instance with no
+	// administrator that does not involve a shell on the host, and somebody deleting
+	// themselves is a likelier way to arrive there than an administrator deleting the last
+	// of their colleagues.
+	LastAdmin bool `json:"last_admin"`
 	// MailConfigured is whether a relay exists at all.
 	//
 	// Here because a recovery address is worth nothing without one, and a page that
@@ -91,6 +108,28 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
+	// Reported only while it is recent, and the window is the grace period itself: long
+	// enough that anybody who comes back within it is told, and over by the time the request
+	// they withdrew would have taken effect anyway. Decided here rather than in the browser,
+	// so there is one definition of "recent" rather than two that can drift.
+	cancelled := int64(0)
+	if !p.DeletionCancelledAt.IsZero() &&
+		s.store.Now().Sub(p.DeletionCancelledAt) < store.DeletionGrace {
+		cancelled = p.DeletionCancelledAt.Unix()
+	}
+
+	// Counted only for an administrator: an ordinary account is never the last one,
+	// whatever else is true of the instance.
+	last := false
+	if p.Role == store.RoleAdmin && !p.Disabled() {
+		n, err := s.store.CountAdmins(r.Context())
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		last = n <= 1
+	}
+
 	writeJSON(w, http.StatusOK, accountBody{
 		Username:        p.Username,
 		Role:            string(p.Role),
@@ -101,6 +140,9 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, id string)
 		RecoveryEmail:   proved,
 		RecoveryPending: pending,
 		MailConfigured:  relay,
+
+		DeletionCancelledAt: cancelled,
+		LastAdmin:           last,
 	})
 }
 

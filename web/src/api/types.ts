@@ -60,6 +60,22 @@ export interface Session {
   device: string;
 }
 
+/** What came of asking for an account to be erased. */
+export interface ScheduledDeletion {
+  /** When the request was made, and when it takes effect. Seconds. */
+  deleted_at: number;
+  purge_at: number;
+  /**
+   * Whether a note went to the recovery address.
+   *
+   * Reported rather than assumed. The message is the safety net for the case this most
+   * needs one — somebody else pressing it through a session they should not have — and an
+   * account with no address on file has no safety net. The interface says which of the two
+   * happened instead of implying the better one.
+   */
+  notified: boolean;
+}
+
 export interface Account {
   username: string;
   role: Role;
@@ -71,6 +87,23 @@ export interface Account {
    * publishing a page should not oblige anybody to announce theirs.
    */
   public_name: string;
+  /**
+   * When a request to erase this account was withdrawn, or 0.
+   *
+   * Only while it is recent — the server decides what recent means, so there is one
+   * definition rather than two that can drift. A deletion is called off by signing in
+   * rather than by pressing anything, which means it is called off silently, and somebody
+   * who asked, forgot, and signed in a fortnight later is owed the news.
+   */
+  deletion_cancelled_at: number;
+  /**
+   * Whether this account is the only administrator left.
+   *
+   * The one account that cannot be deleted: there is no recovery from an instance with no
+   * administrator that does not involve a shell on the host. Said plainly rather than left
+   * to be discovered by typing a password into a danger button and being refused.
+   */
+  last_admin: boolean;
   /** An address this account has *proved* it can read, or empty. */
   recovery_email: string;
   /**
