@@ -15,6 +15,18 @@ const variants: Record<Variant, string> = {
   danger: "border border-rule text-accent hover:bg-accent/10 px-3.5 py-2",
 };
 
+/**
+ * The classes a button wears, for the things that are not buttons.
+ *
+ * A download is an `<a href download>` and not a button: the browser then streams the file
+ * to disk itself, shows its own progress and never holds it in memory — which is the whole
+ * point of an endpoint that streams. It should still *look* like the controls beside it, and
+ * one exported string is a smaller price than making Button polymorphic over its element.
+ */
+export function buttonClasses(variant: Variant = "quiet", className = "") {
+  return `${base} ${variants[variant]} ${className}`;
+}
+
 export function Button({
   variant = "quiet",
   className = "",

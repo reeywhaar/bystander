@@ -239,6 +239,35 @@ describe("AccountPage", () => {
  * A second name, not the username: a username is a credential half the world reuses, and
  * publishing a page is no reason to oblige anybody to announce theirs.
  */
+describe("AccountPage, the export", () => {
+  // A link and not a button. The archive is streamed as it is read, so handing it to the
+  // browser means neither side holds the whole thing — and a fetch-to-blob would give back
+  // exactly the memory the endpoint was written to avoid.
+  it("hands the download to the browser rather than fetching it", async () => {
+    const { transport } = render(account());
+
+    const link = await screen.findByRole("link", {
+      name: "Download your data",
+    });
+    expect(link).toHaveAttribute("href", "/api/account/export");
+    expect(link).toHaveAttribute("download");
+    expect(transport.calls.some((c) => c.path === "/api/account/export")).toBe(
+      false,
+    );
+  });
+
+  // The unread half is bounded by how long articles are kept, and somebody who is not told
+  // that concludes their reader lost the rest.
+  it("says how far back each half reaches", async () => {
+    render(account());
+
+    expect(await screen.findByText(/thirty days/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/as far as you have followed the feed/),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("AccountPage, the public name", () => {
   it("says there is none, and asks for one", async () => {
     const { transport } = renderWith(<AccountPage />, {

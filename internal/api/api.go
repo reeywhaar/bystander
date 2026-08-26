@@ -118,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/account/recovery", s.requireSession(s.beginRecovery))
 	mux.Handle("POST /api/account/recovery/confirm", s.requireSession(s.confirmRecovery))
 	mux.Handle("DELETE /api/account/recovery", s.requireSession(s.clearRecovery))
+	mux.Handle("GET /api/account/export", s.requireSession(s.exportArchive))
 	mux.Handle("GET /api/account/sessions", s.requireSession(s.listSessions))
 	mux.Handle("DELETE /api/account/sessions", s.requireSession(s.revokeOtherSessions))
 	mux.Handle("DELETE /api/account/sessions/{id}", s.requireSession(s.revokeSession))

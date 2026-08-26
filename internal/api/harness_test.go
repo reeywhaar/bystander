@@ -274,6 +274,19 @@ func (h *harness) signInElsewhere(username, password string) *http.Client {
 }
 
 // mainPage is the signed-in account's main page id, for the tests that address a page.
+// me is the signed-in account's id, for the tests that seed through the store rather than
+// through the API.
+func (h *harness) me(t *testing.T) string {
+	t.Helper()
+	var body accountBody
+	h.expect(h.do(http.MethodGet, "/api/account", nil), http.StatusOK, &body)
+	p, err := h.store.PrincipalByUsername(t.Context(), body.Username)
+	if err != nil {
+		t.Fatalf("PrincipalByUsername(): %v", err)
+	}
+	return p.ID
+}
+
 func (h *harness) mainPage() string {
 	h.t.Helper()
 	var pages []pageBody

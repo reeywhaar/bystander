@@ -313,6 +313,54 @@ the one being read, and spending somebody's page on a slider would be a surprise
 The save never fails because composing did. A page that could not be composed is not a page
 that was not saved.
 
+### Account
+
+```
+GET    /api/account                      your own account, and what this instance can do for it
+POST   /api/account/password             {current_password, new_password} → 204
+POST   /api/account/recovery             {email} → 204, a code sent
+POST   /api/account/recovery/confirm     {code} → the account
+DELETE /api/account/recovery             → 204, address and anything in flight forgotten
+GET    /api/account/sessions             every device this account is signed in on
+DELETE /api/account/sessions             → 204, every session but this one
+DELETE /api/account/sessions/{id}        → 204, one session, including this one
+GET    /api/account/export               a zip — the one endpoint that is not JSON
+```
+
+Changing a password ends every other session and keeps this one. "Changing my password signs
+out my other devices" is what people mean by it, and signing them out of the tab they are
+typing in would be a strange way to confirm it worked. `DELETE /api/account/sessions` keeps
+this one for the same reason.
+
+A session is named by an id derived from the stored hash of its cookie, so nothing replayable
+appears in a URL. Revoking by that id matches within the caller's own rows: somebody else's id
+matches nothing rather than deleting their session, which makes the scoping and the lookup the
+same operation. Revoking your *own* session is allowed and answers 204 with the cookie cleared —
+it is a coherent thing to want, and refusing would only mean the button had to be called
+something else.
+
+`GET /api/account/export` is **the one endpoint that answers with something other than JSON**,
+and the exception is deliberate. It streams `application/zip` straight to the socket — one
+`export.json` inside, written as it is read — so neither the server nor the browser ever holds
+the whole thing. The client asks for it with a plain `<a href download>` rather than through
+the dispatcher, which would parse it as JSON and buffer into memory exactly what the streaming
+avoids.
+
+Everything cheap and bounded is read *before* the status goes out, so an ordinary failure is
+still an honest 500. What remains after the first byte is the two long sections, read in
+batches of `store.ExportBatch` — batched rather than from one open cursor because
+`SetMaxOpenConns(1)` means a cursor held open while the response blocks on a slow client would
+stall every other request against that database for the length of the download. If a batch
+fails mid-stream the archive is abandoned *without its central directory*, so every tool that
+opens a zip refuses it. A short archive that opens cleanly and is quietly missing half of
+somebody's history is worse than none.
+
+The document carries no ids. Tags name their parent, feeds are named by URL, and an article
+names its feed the same way — an id means nothing outside the instance that minted it, and the
+point of an export is to be read somewhere else. It carries no password hash, no session and no
+invitation either: this is a copy of somebody's data for them to keep, and a bcrypt hash in a
+file on a laptop is a liability to whoever holds it and of no use to them.
+
 ### Publishing
 
 ```

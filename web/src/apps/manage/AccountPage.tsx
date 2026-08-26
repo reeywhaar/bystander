@@ -3,7 +3,7 @@ import { useState } from "react";
 import { postLogout } from "@app/api/actions/auth";
 import { useApiCall } from "@app/api/provider";
 import { Alert } from "@app/components/ui/Alert";
-import { Button } from "@app/components/ui/Button";
+import { Button, buttonClasses } from "@app/components/ui/Button";
 import { Field } from "@app/components/ui/Field";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute } from "@app/lib/time";
@@ -257,6 +257,30 @@ export function AccountPage() {
               {forget.isPending ? "Removing…" : "Remove it"}
             </Button>
           ) : null}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-rule pt-8">
+        <h2 className="font-serif text-xl text-ink">Your data</h2>
+        <p className="max-w-prose text-sm text-ink-muted">
+          A zip holding one JSON file: this account, your tags, every feed you
+          follow and what you filed it under, your front pages and what each
+          draws from, everything you have read, and everything still waiting.
+          Enough to rebuild this somewhere else, or simply to keep.
+        </p>
+        <p className="max-w-prose text-sm text-ink-muted">
+          What you have read reaches back as far as you have followed the feed.
+          What is still waiting reaches back only as far as the articles
+          themselves are kept, which is thirty days — this is a front page, not
+          an archive of everything ever published.
+        </p>
+        <div>
+          {/* A link rather than a button. The archive is written straight to the socket as
+              it is read, so letting the browser take it to disk means neither side ever
+              holds the whole thing — and the download survives leaving this page. */}
+          <a className={buttonClasses()} href="/api/account/export" download>
+            Download your data
+          </a>
         </div>
       </section>
 
