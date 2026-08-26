@@ -140,8 +140,13 @@ func serve(parent context.Context) error {
 	httpServer := &http.Server{
 		Addr:    app.ListenAddr,
 		Handler: server.Handler(),
-		// A slow client must not be able to hold a connection open indefinitely. The
-		// write timeout is generous because nothing here streams.
+		// A slow client must not be able to hold a connection open indefinitely.
+		//
+		// One response does stream — the account export, which is written as it is read
+		// and can run to megabytes for a reader with years of history. It pushes its own
+		// deadline forward as each batch goes out, so this ceiling applies to every
+		// ordinary response and a stalled export is still cut off. See
+		// api.ExportWriteWindow.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

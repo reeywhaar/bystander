@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"bystander/internal/app"
 	"bystander/internal/store"
@@ -82,6 +83,15 @@ func (s *Server) exportArchive(w http.ResponseWriter, r *http.Request) {
 	// The one endpoint that is not JSON, so it is the one endpoint that has to say so.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
+	// The server's write timeout is a ceiling on one response, and this is the one response
+	// that is not written in a burst — a reader with years of history on a slow connection
+	// is exactly who would be cut off mid-archive, and a truncated zip is the failure this
+	// endpoint takes the most trouble to avoid. The deadline is pushed forward on every
+	// batch instead: a client still receiving keeps its connection for as long as it needs,
+	// and one that has stopped is still cut off, which is what the timeout was for.
+	extend := writeDeadline(w, s.store.Now)
+	extend()
+
 	archive := zip.NewWriter(w)
 	entry, err := archive.Create(ExportEntry)
 	if err != nil {
@@ -99,11 +109,11 @@ func (s *Server) exportArchive(w http.ResponseWriter, r *http.Request) {
 	doc.member("tags", tags)
 	doc.member("feeds", feeds)
 	doc.member("pages", pages)
-	streamMember(doc, "read", s.pager(names, func(after *store.ExportCursor) ([]store.ExportedArticle, error) {
+	streamMember(doc, "read", s.pager(names, extend, func(after *store.ExportCursor) ([]store.ExportedArticle, error) {
 		return s.store.ExportRead(ctx, p.ID, after, store.ExportBatch)
 	}, func(a store.ExportedArticle) int64 { return a.ReadAt }))
 
-	streamMember(doc, "unread", s.pager(names, func(after *store.ExportCursor) ([]store.ExportedArticle, error) {
+	streamMember(doc, "unread", s.pager(names, extend, func(after *store.ExportCursor) ([]store.ExportedArticle, error) {
 		return s.store.ExportUnread(ctx, p.ID, feedIDs, after, store.ExportBatch)
 	}, func(a store.ExportedArticle) int64 { return a.PublishedAt }))
 
@@ -131,6 +141,7 @@ func (s *Server) exportArchive(w http.ResponseWriter, r *http.Request) {
 // guards against is an archive that never ends.
 func (s *Server) pager(
 	names map[string][2]string,
+	extend func(),
 	fetch func(*store.ExportCursor) ([]store.ExportedArticle, error),
 	sortKey func(store.ExportedArticle) int64,
 ) func() ([]store.ExportedArticle, error) {
@@ -141,6 +152,7 @@ func (s *Server) pager(
 		if done {
 			return nil, nil
 		}
+		extend()
 		batch, err := fetch(cursor)
 		if err != nil {
 			return nil, err
@@ -162,6 +174,26 @@ func (s *Server) pager(
 			}
 		}
 		return batch, nil
+	}
+}
+
+// ExportWriteWindow is how long a stalled export is given before the connection is cut.
+//
+// Per batch rather than per response: it is a ceiling on silence, not on the download.
+const ExportWriteWindow = 2 * time.Minute
+
+// writeDeadline returns a function that pushes this response's write deadline forward.
+//
+// A no-op where the deadline cannot be set — `httptest.NewRecorder` has no connection to
+// set one on, and neither does a middleware that has wrapped the writer without passing
+// `Unwrap` through. Failing to extend a deadline is not a reason to fail an export.
+func writeDeadline(w http.ResponseWriter, now func() time.Time) func() {
+	control := http.NewResponseController(w)
+	if err := control.SetWriteDeadline(now().Add(ExportWriteWindow)); err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = control.SetWriteDeadline(now().Add(ExportWriteWindow))
 	}
 }
 
