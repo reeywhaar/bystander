@@ -440,3 +440,65 @@ func TestEveryBandReachesEveryFeed(t *testing.T) {
 		t.Errorf("the page draws from %d feeds, want all five: %v", len(drawn), drawn)
 	}
 }
+
+// A publication carried in two feeds is two rows, and only one of them belongs on the page.
+//
+// This is what a mirror looks like: the same piece at a publication's own domain and at its
+// Substack, two feeds, two item ids, one link. Deduping on the id let both through and the
+// page carried the same article twice, one above the other — on live data 46 links were held
+// by more than one feed.
+func TestOneArticleInTwoFeedsIsShownOnce(t *testing.T) {
+	own := &Source{FeedID: "own", Priority: 50}
+	mirror := &Source{FeedID: "mirror", Priority: 50}
+
+	// Three shared pieces, plus one only the mirror carries, so the page is not simply
+	// short of anything else to draw.
+	for i := range 3 {
+		link := fmt.Sprintf("https://example.com/p/%d", i)
+		own.Fresh = append(own.Fresh, &store.Item{
+			ID: fmt.Sprintf("own-%d", i), FeedID: "own", GUID: fmt.Sprintf("own-%d", i),
+			Title: fmt.Sprintf("Piece %d", i), Link: link,
+		})
+		mirror.Fresh = append(mirror.Fresh, &store.Item{
+			// A different id, and — as happens on real feeds — sometimes a different
+			// title for the same URL.
+			ID: fmt.Sprintf("mirror-%d", i), FeedID: "mirror", GUID: fmt.Sprintf("mirror-%d", i),
+			Title: fmt.Sprintf("Piece %d (mirrored)", i), Link: link,
+		})
+	}
+	mirror.Fresh = append(mirror.Fresh, &store.Item{
+		ID: "mirror-only", FeedID: "mirror", GUID: "mirror-only",
+		Title: "Only here", Link: "https://example.com/p/only",
+	})
+
+	picks := Select(sources(own, mirror), 20, 99)
+
+	seen := map[string]string{}
+	for _, pick := range picks {
+		if first, dup := seen[pick.Item.Link]; dup {
+			t.Fatalf("%s is on the page twice, as %q and %q", pick.Item.Link, first, pick.Item.Title)
+		}
+		seen[pick.Item.Link] = pick.Item.Title
+	}
+	// Four distinct articles exist between the two feeds, and all four should be drawn:
+	// stepping over a duplicate must not cost the page a place.
+	if len(picks) != 4 {
+		t.Errorf("drew %d articles, want the 4 distinct ones", len(picks))
+	}
+}
+
+// An article with no link is itself, not one of a crowd. Feeds that omit the link exist, and
+// keying every one of them on the empty string would let a page show exactly one.
+func TestArticlesWithNoLinkAreNotAllTheSameArticle(t *testing.T) {
+	src := &Source{FeedID: "quiet", Priority: 50}
+	for i := range 5 {
+		src.Fresh = append(src.Fresh, &store.Item{
+			ID: fmt.Sprintf("quiet-%d", i), FeedID: "quiet",
+			GUID: fmt.Sprintf("quiet-%d", i), Title: fmt.Sprintf("Untitled %d", i),
+		})
+	}
+
+	if picks := Select(sources(src), 10, 7); len(picks) != 5 {
+		t.Errorf("drew %d link-less articles, want all 5", len(picks))
+	}
+}

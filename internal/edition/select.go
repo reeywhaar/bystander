@@ -129,12 +129,25 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 				items := band(sources[id])
 				for ; quota > 0 && cursor[id] < len(items); cursor[id]++ {
 					item := items[cursor[id]]
-					// A feed reachable more than one way is still one queue, so an article
-					// already on the page is stepped over rather than placed twice.
-					if taken[item.ID] {
+					// An article already on the page is stepped over rather than placed
+					// twice — and what makes two rows the same article is the link, not
+					// the id.
+					//
+					// A publication carried in two feeds is two rows: the same piece at
+					// dataengineeringweekly.com/feed and at its Substack mirror has two
+					// ids, because an item belongs to the feed it arrived in and feeds are
+					// shared between everybody following them. Deduping on the id let both
+					// onto the page, one above the other, and on live data 46 links were
+					// held by more than one feed.
+					//
+					// The link exactly, never the title. The one pair of same-titled
+					// articles on that instance was three different publications' "Coming
+					// soon" placeholder, and merging those would lose two real articles to
+					// save nobody from a duplicate.
+					if taken[identify(item)] {
 						continue
 					}
-					taken[item.ID] = true
+					taken[identify(item)] = true
 					picks = append(picks, store.Pick{Item: item})
 					quota--
 					placed++
@@ -179,6 +192,18 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 // A feed is never allotted more than it has left. Its unused places are not redistributed
 // here; the caller apportions again over what remains, which is the same thing and
 // terminates.
+// identify is what makes two rows the same article for the purposes of one page.
+//
+// The link, which is the publisher's own name for the piece and is the same wherever it is
+// syndicated. Falling back to the id where a feed gave no link, so that link-less articles are
+// each themselves rather than all one.
+func identify(item *store.Item) string {
+	if item.Link != "" {
+		return item.Link
+	}
+	return "id:" + item.ID
+}
+
 func apportion(rng *rand.Rand, room int, order []string, left map[string]int, sources map[string]*Source) map[string]int {
 	total := 0
 	for id := range left {
