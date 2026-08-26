@@ -101,7 +101,7 @@ CREATE TABLE invites (
   created_at   INTEGER NOT NULL,
   expires_at   INTEGER NOT NULL,
   accepted_at  INTEGER,
-  principal_id TEXT    REFERENCES principals(id) ON DELETE CASCADE,
+  principal_id TEXT    REFERENCES principals(id) ON DELETE SET NULL,
   email        TEXT    NOT NULL DEFAULT ''             -- '' when handed over rather than sent
 );
 ```
@@ -112,6 +112,17 @@ invitation.
 
 An accepted invite keeps its row and points at the principal it produced. That is the
 audit trail, and it is the reason accepting sets `accepted_at` rather than deleting.
+
+**It survives that principal too.** `principal_id` was `ON DELETE CASCADE`, which meant
+deleting an account deleted the invitation that made it, taking the answer to "who let this
+person in" with it — the one question the row is kept for. It is `SET NULL` now, matching
+`created_by` beside it, which had already settled the same question the same way. The listing
+then shows the invitation as accepted with nobody to name, which is the truth about an account
+that has been deleted.
+
+Nothing about single use rests on this. An accepted invitation is refused by its `accepted_at`
+stamp, and the row keeps that either way; before, a deleted account left no row and the link
+died by being unknown instead. What was being lost was the record, never the guarantee.
 
 `email` is the address it was sent to, and accepting binds it to the new account as a
 **proved** recovery address — straight into `user_recovery`, with no code to type. The proof
