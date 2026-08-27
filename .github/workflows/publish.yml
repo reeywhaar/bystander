@@ -18,14 +18,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version: "1.27"
           cache: true
 
-      - uses: actions/setup-node@v6
+      - name: Set up Node
+        uses: actions/setup-node@v6
         with:
           node-version: current
           cache: npm
@@ -38,13 +41,15 @@ jobs:
             echo "gofmt needed on:"; echo "$unformatted"; exit 1
           fi
 
-      - run: go vet ./...
+      - name: Vet
+        run: go vet ./...
 
       # Works without the frontend having been built: web/dist/.gitkeep is tracked, so the
       # //go:embed in web/embed.go resolves and the binary falls back to its placeholder
       # page. That is the whole reason the file is committed — and the whole reason
       # vite.config.ts does not empty the directory.
-      - run: go test ./...
+      - name: Test the backend
+        run: go test ./...
 
       - name: Install frontend dependencies
         working-directory: web
@@ -74,16 +79,20 @@ jobs:
       version: ${{ steps.sha.outputs.short }}
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out
+        uses: actions/checkout@v7
 
       # Only needed for the final alpine stage's apk step, which is the one thing that runs
       # on the target architecture. The npm and Go builds are pinned to $BUILDPLATFORM and
       # cross-compile, so nothing expensive happens under emulation.
-      - uses: docker/setup-qemu-action@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
-      - uses: docker/setup-buildx-action@v4
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v4
+      - name: Sign in to GHCR
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -94,7 +103,8 @@ jobs:
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/build-push-action@v7
+      - name: Build and push the reader
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -114,7 +124,8 @@ jobs:
       # A step on this job rather than a job of its own, so it reuses the checkout, QEMU,
       # buildx and GHCR login above. Its own cache scope because the two images share no
       # layers — a stdlib-only Go binary and 7-Zip, against a Vite build and a SQLite driver.
-      - uses: docker/build-push-action@v7
+      - name: Build and push the backup sidecar
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: backup/Dockerfile
@@ -136,9 +147,11 @@ jobs:
         run: |
           docker run --rm "$IMAGE" version
 
+          # :3000 published as well, which is the one place doing that is right — the runner
+          # has to reach it for the step below, and the container is removed at the end of it.
           docker run -d --name smoke \
             -e BYSTANDER_PUBLIC_URL=http://localhost:8080 \
-            -p 8080:80 "$IMAGE"
+            -p 8080:80 -p 3000:3000 "$IMAGE"
 
           for _ in $(seq 30); do
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
@@ -162,20 +175,12 @@ jobs:
             printf '%s' "$body" | grep -q '<div id="root">'
           done
 
-          # The backup listener. Published here only so the runner can reach it — this is the
-          # one place that is the right thing to do, and it proves the archive is a real
-          # database. A backup that is not one is the failure nobody discovers until the day
-          # they need it.
-          docker rm -f smoke >/dev/null
-          docker run -d --name smokebackup \
-            -e BYSTANDER_PUBLIC_URL=http://localhost:8080 \
-            -p 8080:80 -p 3000:3000 "$IMAGE"
-
-          for _ in $(seq 30); do
-            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-
+      # Its own step, against the container the step above left running, so a failure here
+      # says "the backup port" rather than "the smoke test". A backup that is not a database
+      # is the failure nobody discovers until the day they need it, which makes it worth its
+      # own line in the log.
+      - name: Smoke-test the backup port
+        run: |
           curl -fsS -o /tmp/backup.tgz http://127.0.0.1:3000/backup
           tar tzf /tmp/backup.tgz | grep -qx 'main.db'
           # Not merely present: extractable, and SQLite's own magic at the front of it.
@@ -191,7 +196,7 @@ jobs:
             fi
           fi
 
-          docker rm -f smokebackup >/dev/null
+          docker rm -f smoke >/dev/null
 
   # A job of its own rather than steps on `publish`, because a failing `test` *skips*
   # `publish` rather than failing it, and a step in a job that never starts cannot report
