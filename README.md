@@ -293,8 +293,7 @@ a day away.
 | `BYSTANDER_PUBLIC_URL` | *required* | The address you open in a browser, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where the two databases live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `BYSTANDER_BACKUP_LISTEN` | *off* | Address for the unauthenticated backup listener, e.g. `:3000`. See [Backups](#backups) |
-| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the archive carries `derived.db` too |
+| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the backup archive carries `derived.db` too. See [Backups](#backups) |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
 `X-Forwarded-Host` are both client-supplied, and an invitation link built from a header a
@@ -304,7 +303,7 @@ rather than guessing. It also decides whether the session cookie carries `Secure
 
 The listen port is `:80` inside the container and is not configurable. Remap it with `-p`.
 
-There is no config file. Five variables do not need one, and three of them have defaults.
+There is no config file. Four variables do not need one, and three of them have defaults.
 
 ## Command line
 
@@ -346,17 +345,18 @@ carried.
 
 `GET /backup` returns the databases as a `.tgz`, taken with `VACUUM INTO` — so it is a
 consistent copy of a running instance, with the write-ahead log folded in and no sidecar files.
-It lives on **a listener of its own**, off unless you name an address:
+It lives on **a listener of its own**, `:3000` inside the container, and that listener serves
+nothing else.
 
 ```
--e BYSTANDER_BACKUP_LISTEN=:3000
 -e BYSTANDER_BACKUP_DERIVED=true    # include derived.db as well; default is main.db alone
 ```
 
 **It is unauthenticated, so the port must never be published.** It hands over every password
 hash and session on the instance. It has a listener of its own precisely so that "not exposed"
-is a fact about your deployment rather than about a middleware being right — `-p 3000:3000` is
-the mistake, and there is no reason to write it.
+is a fact about your deployment rather than about a middleware being right: publishing the
+reader with `-p 8080:80` cannot reach it, and the mistake that would is `-p 3000:3000`, which
+there is no reason to write.
 
 Restoring is extracting, and there is no `POST /restore`. Stop the container first, because
 writing over a live data directory corrupts it:
@@ -374,8 +374,44 @@ fresh page — and offers back everything you had already read, because that rec
 ### The sidecar
 
 `ghcr.io/reeywhaar/bystander-backup` fetches that archive on a loop, optionally encrypts it
-with AES-256, uploads it, and prunes old copies — three from today, one a day for three days,
-one a week old, one a month old. It never has to be reachable from outside either.
+with AES-256, uploads it to [backio](https://github.com/Reeywhaar/backio), and prunes old
+copies. It never has to be reachable from outside either.
+
+| variable | default | what |
+| --- | --- | --- |
+| `BYSTANDER_URL` | `http://bystander:3000` | where the backup listener is |
+| `BACKUP_INTERVAL` | `3600` | seconds between backups |
+| `BACKUP_DIR` | `/backups` | where local copies are kept; set it and copies are always kept there |
+| `BACKUP_PASSWORD` | unset | when set, keep and upload a 7-Zip AES-256 `.zip` instead of the plain `.tgz` |
+| `BACKUP_TOKEN` | unset | backio token; **unset means local copies only, no upload** |
+| `BACKIO_SUBDIRECTORY` | required *when uploading* | remote directory; must match the token's grant |
+| `BACKIO_URL` | `http://backio:8080` | backio |
+| `BACKIO_PROVIDER` | `gdrive` | rclone remote name |
+
+Archives are named `bystander-<YYYYMMDD_HHMMSS>.<tgz|zip>`, mode `0600`.
+
+**Mount nothing at `/backups` and no local copies are kept at all.** The image does not create
+that directory, and Docker creates a mount target the image is missing — so the directory
+exists exactly when a volume is mounted over it. Without one, each archive goes to a temp
+directory the run deletes once the upload is done, because a copy in the container's writable
+layer would vanish with the container anyway, which is the one moment a local copy would have
+earned its keep. With neither a volume nor a `BACKUP_TOKEN` there is nowhere to put the
+archive, and the run says so and exits non-zero rather than backing up to nothing.
+
+**Retention, applied to the local directory and the remote alike:** the three newest archives
+from the newest day, the newest archive of each of the three newest days, and the newest
+archive of the previous week and the previous month. Seven at most, whatever the interval.
+
+Every slot is a calendar bucket keeper — the newest archive of a day, an ISO week, a month —
+rather than an archive of a given age. A bucket's keeper is settled once the bucket ends, so
+each run prunes to the same set the last one did, and the week and month slots hold real week-
+and month-old copies instead of whatever the first run happened to pin.
+
+Pruning the remote needs `read` and `delete` on the backio token. With a `create`-only token
+the uploads still work and the remote simply is not pruned.
+
+`BACKUP_PASSWORD` is worth setting when the remote is not yours — but the password is not kept
+anywhere, so an archive whose passphrase is lost is an archive nobody can open.
 
 ```yaml
 services:
@@ -383,12 +419,11 @@ services:
     image: ghcr.io/reeywhaar/bystander:latest
     environment:
       BYSTANDER_PUBLIC_URL: https://read.example.com
-      BYSTANDER_BACKUP_LISTEN: ":3000"
       BYSTANDER_BACKUP_DERIVED: "true"
     volumes:
       - bystander-data:/data
     ports:
-      - "8080:80"          # the reader. Note that :3000 is NOT published.
+      - "8080:80"          # the reader. :3000 is deliberately NOT published.
 
   backup:
     image: ghcr.io/reeywhaar/bystander-backup:latest
@@ -404,9 +439,9 @@ volumes:
   bystander-backups:
 ```
 
-That is the whole of a local-only setup: mount something at `/backups` and copies are kept
-there. Mounting nothing and setting `BACKUP_TOKEN` uploads instead and keeps none — and with
-neither, it refuses to start rather than fetching a backup every hour only to delete it.
+That is a local-only setup, and it is complete: the two containers share a network, the sidecar
+reaches `:3000` across it, and nothing is published but the reader. To send copies off the host
+as well, add `BACKUP_TOKEN` and `BACKIO_SUBDIRECTORY` and point `BACKIO_URL` at a backio.
 
 ## What it deliberately does not do
 

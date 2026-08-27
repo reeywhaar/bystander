@@ -27,6 +27,17 @@ const ProjectURL = "https://github.com/reeywhaar/bystander"
 // should have to think about twice.
 const ListenAddr = ":80"
 
+// BackupListenAddr is where GET /backup serves a tgz of the databases, on a listener of its
+// own. Fixed for the same reason ListenAddr is: a port number inside a container is not a
+// thing an operator should have to think about twice.
+//
+// A second listener rather than a route on the first, and that is the security model, because
+// there is no other one — the route is unauthenticated. It is meant for a sibling container on
+// a private network, and separate listeners make "not exposed" a property of the deployment
+// rather than of a middleware being right: publishing the reader with `-p 8080:80` cannot
+// reach it, and the mistake that would is `-p 3000:3000`, which nobody writes by accident.
+const BackupListenAddr = ":3000"
+
 // Version is the build this is, stamped at link time:
 //
 //	-ldflags "-X bystander/internal/app.Version=$(git rev-parse --short HEAD)"

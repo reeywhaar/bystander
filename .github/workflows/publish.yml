@@ -162,13 +162,13 @@ jobs:
             printf '%s' "$body" | grep -q '<div id="root">'
           done
 
-          # The backup listener, which is off unless it is asked for — so this both proves
-          # the switch works and proves the archive is a real one. A backup that is not a
-          # database is the failure nobody discovers until they need it.
+          # The backup listener. Published here only so the runner can reach it — this is the
+          # one place that is the right thing to do, and it proves the archive is a real
+          # database. A backup that is not one is the failure nobody discovers until the day
+          # they need it.
           docker rm -f smoke >/dev/null
           docker run -d --name smokebackup \
             -e BYSTANDER_PUBLIC_URL=http://localhost:8080 \
-            -e BYSTANDER_BACKUP_LISTEN=:3000 \
             -p 8080:80 -p 3000:3000 "$IMAGE"
 
           for _ in $(seq 30); do

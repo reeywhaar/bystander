@@ -466,9 +466,10 @@ sweep.
 
 ## The backup port
 
-`GET /backup` lives on **a listener of its own** — `BYSTANDER_BACKUP_LISTEN`, off unless an
-address is named — and is the only route that listener serves. It is not reachable on the
-reader's port at all, and the reader's routes are not reachable on it.
+`GET /backup` lives on **a listener of its own**, `:3000` inside the container, and is the only
+route that listener serves. It is not reachable on the reader's port at all, and the reader's
+routes are not reachable on it. Fixed rather than configurable, like the reader's own port: a
+port number inside a container is not a thing an operator should have to think about twice.
 
 ```sh
 curl -O -J http://bystander:3000/backup
@@ -493,7 +494,9 @@ endpoint rather than a `tar` over the volume: a WAL database is three files with
 state spread across them, so a file-level copy of a running instance is a copy of a moment that
 never existed.
 
-**Unauthenticated, so the port must never be published.** Publishing it hands every password
+**Unauthenticated, so the port must never be published.** Publishing the reader with
+`-p 8080:80` cannot reach it; the mistake that would is `-p 3000:3000`, and there is no reason
+to write it. Publishing it hands every password
 hash and session to anyone who can reach the host. It is meant for a sibling container on a
 private network. There is no token because the client is a container with no browser and nobody
 to type one — a credential whose only purpose is to be read by a process on the same private

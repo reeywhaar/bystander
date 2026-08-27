@@ -13,7 +13,6 @@ ghcr.io/reeywhaar/bystander:latest
 | `BYSTANDER_PUBLIC_URL` | *required* | Origin for generated links, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where `main.db` and `derived.db` live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `BYSTANDER_BACKUP_LISTEN` | *off* | Address for the backup listener, e.g. `:3000`. Unauthenticated; never publish it |
 | `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the archive carries `derived.db` too |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
