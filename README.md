@@ -293,6 +293,8 @@ a day away.
 | `BYSTANDER_PUBLIC_URL` | *required* | The address you open in a browser, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where the two databases live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `BYSTANDER_BACKUP_LISTEN` | *off* | Address for the unauthenticated backup listener, e.g. `:3000`. See [Backups](#backups) |
+| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the archive carries `derived.db` too |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
 `X-Forwarded-Host` are both client-supplied, and an invitation link built from a header a
@@ -302,7 +304,7 @@ rather than guessing. It also decides whether the session cookie carries `Secure
 
 The listen port is `:80` inside the container and is not configurable. Remap it with `-p`.
 
-There is no config file. Three variables do not need one.
+There is no config file. Five variables do not need one, and three of them have defaults.
 
 ## Command line
 
@@ -327,15 +329,84 @@ That asymmetry is the point of the split. Losing `derived.db` costs one fetch cy
 losing `main.db` loses the product — and what is in it is small: accounts, feeds and the
 settings around them, not the articles.
 
-Back `main.db` up with `sqlite3 main.db ".backup out.db"` or a filesystem snapshot, not
-`cp`: a plain copy of a WAL database while it is being written is a copy of an inconsistent
-moment.
+**Do not back it up with `cp`, or by `tar`-ing the volume.** A SQLite database in WAL mode is
+not one file — it is `main.db`, `main.db-wal` and `main.db-shm`, and the committed state is
+spread across the three. Copy them at slightly different moments, which is what any file-level
+backup of a running service does, and what you have kept is a database as it never was. That is
+what the backup port below is for; `sqlite3 main.db ".backup out.db"` or a filesystem snapshot
+are the other two honest answers.
 
 Articles are kept for as long as the longest window anybody set needs — a month at least,
 a year at most, since unbounded growth is not a setting anybody meant to choose. The record
 of what a page has *shown* is kept three times longer than that, so it always outlives the
 article it refers to and a long-dormant feed cannot resurface something that page has already
 carried.
+
+## Backups
+
+`GET /backup` returns the databases as a `.tgz`, taken with `VACUUM INTO` — so it is a
+consistent copy of a running instance, with the write-ahead log folded in and no sidecar files.
+It lives on **a listener of its own**, off unless you name an address:
+
+```
+-e BYSTANDER_BACKUP_LISTEN=:3000
+-e BYSTANDER_BACKUP_DERIVED=true    # include derived.db as well; default is main.db alone
+```
+
+**It is unauthenticated, so the port must never be published.** It hands over every password
+hash and session on the instance. It has a listener of its own precisely so that "not exposed"
+is a fact about your deployment rather than about a middleware being right — `-p 3000:3000` is
+the mistake, and there is no reason to write it.
+
+Restoring is extracting, and there is no `POST /restore`. Stop the container first, because
+writing over a live data directory corrupts it:
+
+```sh
+docker stop bystander
+tar xzf bystander-20260825_031500.tgz -C /var/lib/docker/volumes/bystander-data/_data
+docker start bystander
+```
+
+A restored instance that finds an account in `main.db` does not mint a new invitation, so
+signing in works immediately. If you left `derived.db` out, the reader refetches and composes a
+fresh page — and offers back everything you had already read, because that record lives there.
+
+### The sidecar
+
+`ghcr.io/reeywhaar/bystander-backup` fetches that archive on a loop, optionally encrypts it
+with AES-256, uploads it, and prunes old copies — three from today, one a day for three days,
+one a week old, one a month old. It never has to be reachable from outside either.
+
+```yaml
+services:
+  bystander:
+    image: ghcr.io/reeywhaar/bystander:latest
+    environment:
+      BYSTANDER_PUBLIC_URL: https://read.example.com
+      BYSTANDER_BACKUP_LISTEN: ":3000"
+      BYSTANDER_BACKUP_DERIVED: "true"
+    volumes:
+      - bystander-data:/data
+    ports:
+      - "8080:80"          # the reader. Note that :3000 is NOT published.
+
+  backup:
+    image: ghcr.io/reeywhaar/bystander-backup:latest
+    environment:
+      BYSTANDER_URL: http://bystander:3000
+      BACKUP_INTERVAL: "3600"
+      BACKUP_PASSWORD: a-long-passphrase   # optional; without it the .tgz is kept as-is
+    volumes:
+      - bystander-backups:/backups
+
+volumes:
+  bystander-data:
+  bystander-backups:
+```
+
+That is the whole of a local-only setup: mount something at `/backups` and copies are kept
+there. Mounting nothing and setting `BACKUP_TOKEN` uploads instead and keeps none — and with
+neither, it refuses to start rather than fetching a backup every hour only to delete it.
 
 ## What it deliberately does not do
 

@@ -716,6 +716,28 @@ unsubscribed from keeps its own title and loses its source, which is the honest 
 
 ---
 
+## Snapshots are taken with `VACUUM INTO`
+
+`Store.Snapshot` is how a backup is made, and it is a method rather than a `tar` over the
+mounted directory for one reason: a database in `journal_mode=WAL` is three files — `main.db`,
+`main.db-wal`, `main.db-shm` — and the committed state is spread across them. Copying the three
+at slightly different moments is what any file-level backup of a running service does, and what
+it produces is a database as it never was.
+
+`VACUUM INTO` asks SQLite for the database as of one read transaction, with the log folded in,
+and writes a single self-contained file with no sidecars. It is smaller than the original too:
+the copy is written page by page with no free list, so a database that has had a year of
+articles pruned out of it comes back the size of what is in it. Measured on a real instance,
+315KB became 262KB.
+
+The two-database split shows up here as a policy: `main.db` is always in the archive and
+`derived.db` only when asked for. Not quite the "delete it freely" line the split is usually
+described by — `read_articles` lives in derived, so an instance restored without it offers back
+every article its owner has read. Cheap to include and worth including; still the operator's
+call, since it is the difference between a backup of the product and a backup of the cache too.
+
+---
+
 ## Migrations
 
 **One Go file per change**, in `internal/store/migrations/`, named

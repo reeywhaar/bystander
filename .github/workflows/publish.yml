@@ -111,6 +111,20 @@ jobs:
           # "unknown/unknown" attestation entry beside it.
           provenance: false
 
+      # A step on this job rather than a job of its own, so it reuses the checkout, QEMU,
+      # buildx and GHCR login above. Its own cache scope because the two images share no
+      # layers — a stdlib-only Go binary and 7-Zip, against a Vite build and a SQLite driver.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backup/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}-backup:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+          provenance: false
+
       # The Dockerfile already fails the build if an entry is empty, so this is not that
       # check. It records the version in the run log, and — more usefully — proves the
       # published image actually serves the bundle rather than the "not built" placeholder,
@@ -148,7 +162,36 @@ jobs:
             printf '%s' "$body" | grep -q '<div id="root">'
           done
 
+          # The backup listener, which is off unless it is asked for — so this both proves
+          # the switch works and proves the archive is a real one. A backup that is not a
+          # database is the failure nobody discovers until they need it.
           docker rm -f smoke >/dev/null
+          docker run -d --name smokebackup \
+            -e BYSTANDER_PUBLIC_URL=http://localhost:8080 \
+            -e BYSTANDER_BACKUP_LISTEN=:3000 \
+            -p 8080:80 -p 3000:3000 "$IMAGE"
+
+          for _ in $(seq 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          curl -fsS -o /tmp/backup.tgz http://127.0.0.1:3000/backup
+          tar tzf /tmp/backup.tgz | grep -qx 'main.db'
+          # Not merely present: extractable, and SQLite's own magic at the front of it.
+          tar xzf /tmp/backup.tgz -C /tmp main.db
+          head -c 15 /tmp/main.db | grep -q 'SQLite format 3'
+
+          # And the route is not reachable on the reader's port, which is the whole reason
+          # it has a listener of its own.
+          if curl -fsS -o /tmp/leak http://127.0.0.1:8080/backup 2>/dev/null; then
+            if head -c 2 /tmp/leak | od -An -tx1 | grep -q '1f 8b'; then
+              echo "/backup served an archive on the reader's port"
+              exit 1
+            fi
+          fi
+
+          docker rm -f smokebackup >/dev/null
 
   # A job of its own rather than steps on `publish`, because a failing `test` *skips*
   # `publish` rather than failing it, and a step in a job that never starts cannot report

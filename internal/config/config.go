@@ -1,6 +1,6 @@
 // Package config models bystander's configuration, which is entirely environment-driven.
 //
-// There is no config file and does not need to be one: four variables, three of which
+// There is no config file and does not need to be one: five variables, four of which
 // have defaults. A file would have to be mounted, kept in sync with the compose stanza
 // that mounts it, and parsed — all to express what `docker run -e` already expresses.
 //
@@ -11,9 +11,13 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+
+	"bystander/internal/app"
 )
 
 // Environment variables read by this package.
@@ -30,6 +34,24 @@ const (
 
 	// LogLevelEnv sets the slog level: debug, info, warn or error.
 	LogLevelEnv = "BYSTANDER_LOG_LEVEL"
+
+	// BackupListenEnv is where GET /backup serves a tgz of the databases, on a listener of
+	// its own. Empty turns it off, which is the default.
+	//
+	// Off unless asked for, because the route is unauthenticated: it is meant for a sibling
+	// container on a private network, and an operator who publishes the port has handed out
+	// every password hash on the instance. A backup port nobody switched on is a backup port
+	// nobody can expose by accident.
+	BackupListenEnv = "BYSTANDER_BACKUP_LISTEN"
+
+	// BackupDerivedEnv includes derived.db in the archive.
+	//
+	// Off by default, which is the two-database split showing up in the backup policy:
+	// main.db cannot be recovered from anywhere and derived.db mostly can. Mostly, because
+	// read_articles lives there — an instance restored without it offers back every article
+	// its owner has already read. Worth switching on for most people; not worth deciding for
+	// them.
+	BackupDerivedEnv = "BYSTANDER_BACKUP_DERIVED"
 )
 
 // Defaults for everything that has one.
@@ -45,6 +67,11 @@ type Config struct {
 
 	DataDir  string
 	LogLevel slog.Level
+
+	// BackupListen is the address for the backup listener, "" meaning do not serve it.
+	BackupListen string
+	// BackupDerived is whether the archive carries derived.db as well as main.db.
+	BackupDerived bool
 
 	// Secure is whether the session cookie carries the Secure attribute, which is
 	// PublicURL being https and nothing else. Derived here rather than re-decided at
@@ -81,7 +108,61 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if v := strings.TrimSpace(os.Getenv(BackupListenEnv)); v != "" {
+		addr, err := parseListen(v)
+		if err != nil {
+			return nil, err
+		}
+		cfg.BackupListen = addr
+	}
+
+	if v := strings.TrimSpace(os.Getenv(BackupDerivedEnv)); v != "" {
+		on, err := parseBool(BackupDerivedEnv, v)
+		if err != nil {
+			return nil, err
+		}
+		cfg.BackupDerived = on
+	}
+
 	return cfg, nil
+}
+
+// parseListen normalises a listen address and refuses the one that would be a disaster.
+//
+// A bare port is accepted and written out as ":3000", because that is how everybody writes
+// one and rejecting it teaches nothing.
+//
+// The refusal is [app.ListenAddr]: the two servers cannot share a port, and the failure if
+// they tried would be the second one losing the race and the reader answering /backup to the
+// open internet — the single worst outcome available here. Better a container that will not
+// start.
+func parseListen(v string) (string, error) {
+	// A bare port, which is how everybody writes one.
+	if !strings.Contains(v, ":") {
+		v = ":" + v
+	}
+	_, port, err := net.SplitHostPort(v)
+	if err != nil {
+		return "", fmt.Errorf("%s: %q is not a listen address, e.g. :3000", BackupListenEnv, v)
+	}
+	if port == "" {
+		return "", fmt.Errorf("%s: %q names no port", BackupListenEnv, v)
+	}
+
+	_, reader, err := net.SplitHostPort(app.ListenAddr)
+	if err == nil && port == reader {
+		return "", fmt.Errorf("%s: %q is the port the reader itself listens on; the backup "+
+			"route is unauthenticated and must not be reachable there", BackupListenEnv, v)
+	}
+	return v, nil
+}
+
+func parseBool(name, v string) (bool, error) {
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s: %q is not true or false", name, v)
+	}
+	return on, nil
 }
 
 func parsePublicURL(raw string) (*url.URL, error) {

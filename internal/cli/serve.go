@@ -153,13 +153,45 @@ func serve(parent context.Context) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	errs := make(chan error, 1)
+	// A second server, on its own address, serving GET /backup and nothing else — off unless
+	// an operator names one. Two `http.Server`s rather than one mux with a route on it,
+	// because a route is reachable by whoever can reach the port it is on: the reader's port
+	// is what a reverse proxy publishes, and this route hands over every password hash on the
+	// instance. Separate listeners make "not exposed" a property of the deployment rather
+	// than of a middleware being right.
+	var backupServer *http.Server
+	if cfg.BackupListen != "" {
+		backupServer = &http.Server{
+			Addr:    cfg.BackupListen,
+			Handler: server.BackupHandler(),
+			// Longer than the reader's, alone among these. The archive is built before a
+			// byte is written — a tar entry needs its size up front — so a large instance
+			// spends that time inside the handler, and a backup cut off at sixty seconds
+			// would fail exactly on the instances that most need one.
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      10 * time.Minute,
+			IdleTimeout:       120 * time.Second,
+		}
+	}
+
+	errs := make(chan error, 2)
 	go func() {
 		log.Info("listening", "addr", app.ListenAddr, "public_url", cfg.PublicURL.String(), "version", app.Version)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}
 	}()
+	if backupServer != nil {
+		go func() {
+			log.Warn("serving backups on a second listener; this route is unauthenticated, "+
+				"so the port must not be published",
+				"addr", cfg.BackupListen, "derived", cfg.BackupDerived)
+			if err := backupServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errs <- err
+			}
+		}()
+	}
 
 	select {
 	case err := <-errs:
@@ -170,6 +202,12 @@ func serve(parent context.Context) error {
 
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
+	if backupServer != nil {
+		// Before the reader, and its error is dropped: a backup in flight is worth the few
+		// seconds, and nothing about failing to stop it cleanly changes what the operator
+		// should do next.
+		_ = backupServer.Shutdown(shutdown)
+	}
 	return httpServer.Shutdown(shutdown)
 }
 

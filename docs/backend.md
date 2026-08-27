@@ -19,6 +19,7 @@ internal/
   mail/              SMTP, and the one message this sends
   ids/               prefixed, sortable identifiers
   api/               HTTP handlers, middleware, SPA serving
+backup/              the backup sidecar: its own image, stdlib only
 web/
   embed.go           //go:embed all:dist
 ```

@@ -464,6 +464,45 @@ asked about yet — a queue that has not caught up, not a failure. `POST .../ret
 `image_retry_at` for one reason, or for all of them, and the queue picks them up on its next
 sweep.
 
+## The backup port
+
+`GET /backup` lives on **a listener of its own** — `BYSTANDER_BACKUP_LISTEN`, off unless an
+address is named — and is the only route that listener serves. It is not reachable on the
+reader's port at all, and the reader's routes are not reachable on it.
+
+```sh
+curl -O -J http://bystander:3000/backup
+```
+
+`200` with `Content-Type: application/gzip`, an accurate `Content-Length`, and
+`Content-Disposition: attachment; filename="bystander-<YYYYMMDD_HHMMSS>.tgz"`. The archive
+mirrors the data directory, so restoring is extracting it over the mount:
+
+| member | when |
+| --- | --- |
+| `main.db` | always |
+| `derived.db` | when `BYSTANDER_BACKUP_DERIVED` is set |
+
+Every member is a regular file with mode `0600` — the archive carries every password hash on
+the instance. There are no directory entries, so extracting cannot re-chmod a data directory
+that already exists.
+
+The archive is assembled in memory before the response starts, so a `200` is never a partial
+backup. Both databases are produced with `VACUUM INTO`, which is the whole reason this is an
+endpoint rather than a `tar` over the volume: a WAL database is three files with the committed
+state spread across them, so a file-level copy of a running instance is a copy of a moment that
+never existed.
+
+**Unauthenticated, so the port must never be published.** Publishing it hands every password
+hash and session to anyone who can reach the host. It is meant for a sibling container on a
+private network. There is no token because the client is a container with no browser and nobody
+to type one — a credential whose only purpose is to be read by a process on the same private
+network is a lock on a door inside the house. A listener of its own is what makes "not exposed"
+a property of the deployment rather than of a middleware being right.
+
+Restore is an extract, not an endpoint — there is no `POST /restore`. Stop the service first,
+because writing over a live data directory corrupts it.
+
 ## Handler conventions
 
 - One file per resource in `internal/api`, one function per endpoint.

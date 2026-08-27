@@ -13,6 +13,8 @@ ghcr.io/reeywhaar/bystander:latest
 | `BYSTANDER_PUBLIC_URL` | *required* | Origin for generated links, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where `main.db` and `derived.db` live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `BYSTANDER_BACKUP_LISTEN` | *off* | Address for the backup listener, e.g. `:3000`. Unauthenticated; never publish it |
+| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the archive carries `derived.db` too |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
 `X-Forwarded-Host` are both client-supplied, and an invitation link built from a header a
@@ -125,6 +127,25 @@ CMD ["serve"]
 Split so `docker compose up` runs the daemon while `docker run --rm IMAGE invite` replaces
 the command rather than appending to it.
 
+## The backup image
+
+A second image, `backup/Dockerfile`, published as `ghcr.io/reeywhaar/bystander-backup`. It
+fetches `GET /backup` on a loop, optionally encrypts with 7-Zip's AES-256, uploads, and prunes.
+
+A separate image rather than a second command in the main one: it has nothing to do with
+serving a page, it wants a different restart cadence, and keeping it out means the reader image
+gains neither 7-Zip nor a reason to hold an upload credential.
+
+It builds from the repo root so it can see `go.mod`, and skips `go mod download` — `backup/`
+imports only the standard library, checked with an empty module cache and `GOPROXY=off` rather
+than assumed. 7-Zip comes from the project's own static build pinned by checksum, not `apk add
+7zip`: the packaged binary links libstdc++, which is 2.8 MB of an image whose Go binary is a
+few, and a tarball from a web server arrives unsigned so the digest is the only thing between a
+compromised mirror and a binary that handles the backup password.
+
+The schedule lives in `backup_loop.sh` rather than inside the process, so a stuck run cannot
+silently skip the next one — the container restarts instead.
+
 ## CI
 
 `.github/workflows/publish.yml`, three jobs.
@@ -133,7 +154,9 @@ the command rather than appending to it.
 `npm test`. The Go tests run with no frontend build present; `web/dist/.gitkeep` is tracked
 precisely so they can.
 
-**publish** — needs `test`. Publishing `latest` unconditionally means a broken commit
+**publish** — needs `test`. Builds both images, the sidecar as a step on the same job so it
+reuses the checkout, QEMU, buildx and GHCR login, with a cache scope of its own because the two
+share no layers. Publishing `latest` unconditionally means a broken commit
 becomes the image everyone pulls, and the tests take under a minute. Builds
 `linux/amd64,linux/arm64` to GHCR with the built-in `GITHUB_TOKEN`; no secret to configure.
 QEMU is set up only for the final Alpine stage — everything expensive is pinned to
