@@ -757,6 +757,36 @@ The pictures there are shown whole, not cropped — `max-h-80`, `object-contain`
 to a drawn shape because a page is a composition; this is a sample, and a comic with its
 punchline cut off answers the question wrongly.
 
+**It is also where the feed gets filed**, in the one case where Add actually subscribes —
+a single feed found from an address. Ten articles is the moment somebody knows where a feed
+belongs, and adding it untagged meant finding it again in the list afterwards to say what they
+already knew. The chips sit above the scroll window, not inside it: they are part of the same
+decision as the Add below, so they must not be something you scroll away from.
+
+The other two callers pass no `filing`, and both absences are load-bearing. Over the picker
+each row already carries its own chips, and a second set would be two answers to one question.
+For a feed already followed there is no Add at all, and the filing belongs to that feed's own
+dialog.
+
+`TagChips` is that row — the same component in the preview and in a feed's dialog, because
+filing is one gesture wherever it happens. `FeedPlan`'s rows keep a second kind of chip,
+dashed, for a tag a source named that nobody here has yet; that belongs where a list arrived
+carrying a taxonomy somebody has to accept or refuse, and nowhere else.
+
+Both chip rows offer **New tag**, which opens `NewTagDialog` over whichever dialog asked and
+ticks what it makes. Without it, "no tags yet" is a dead end reached at precisely the moment
+somebody knows the answer.
+
+## A tag is three decisions, asked once
+
+`NewTagDialog` takes the name, where it sits, and how often it appears. The field-and-a-button
+at the top of the tags page could only take the first, so every tag arrived on its own at the
+default weight and the other two were set afterwards from a row somebody had to find again.
+
+A dialog rather than a wider form above the list, because the list *is* the page: three
+controls sitting open at the top of it are three controls in the way, every time somebody comes
+here to change a priority. The row still carries all three for changing one's mind later.
+
 ## Every dialog's buttons sit in the same place
 
 `Modal` takes a `footer` and lays it out; no dialog arranges its own row. Six of them

@@ -7,8 +7,9 @@ import { Field } from "@app/components/ui/Field";
 import { Modal } from "@app/components/ui/Modal";
 
 import { MarkReadDialog } from "@app/apps/manage/MarkReadDialog";
+import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
+import { TagChips } from "@app/apps/manage/TagChips";
 import { ARTICLE_WINDOWS } from "@app/lib/constants";
-import { tagLabel } from "@app/lib/tags";
 import { useRemoveFeed, useUpdateFeed } from "@app/queries/hooks";
 
 /**
@@ -47,6 +48,7 @@ export function FeedDialog({
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [reach, setReach] = useState(0);
   const [marking, setMarking] = useState(false);
+  const [makingTag, setMakingTag] = useState(false);
 
   // Keyed on which feed, not on the feed object. The object changes identity every time
   // the list refetches — which is after every change made in here — and resetting on that
@@ -199,37 +201,21 @@ export function FeedDialog({
 
       <div className="flex flex-col gap-1.5">
         <p className="text-xs text-ink-muted">Filed under</p>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {tags.length === 0 ? (
-            <p className="text-xs text-ink-faint">
-              No tags yet. Tags are how you say which kinds of thing appear more
-              often.
-            </p>
-          ) : (
-            tags.map((tag) => {
-              const on = tagIDs.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() =>
-                    setTagIDs((was) =>
-                      on ? was.filter((id) => id !== tag.id) : [...was, tag.id],
-                    )
-                  }
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${
-                    on
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-rule text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  {tagLabel(tags, tag.id)}
-                </button>
-              );
-            })
-          )}
-        </div>
+        {/* Making one from here rather than sending somebody to the tags page and back:
+            this is the moment they know where the feed belongs, and everything typed in
+            this dialog is unsaved until Save — leaving would throw it away. */}
+        <TagChips
+          tags={tags}
+          chosen={tagIDs}
+          onToggle={(id) =>
+            setTagIDs((was) =>
+              was.includes(id)
+                ? was.filter((other) => other !== id)
+                : [...was, id],
+            )
+          }
+          onNew={() => setMakingTag(true)}
+        />
       </div>
 
       {/* How far back a page reaches into *this* feed. A news site worth a day and a blog
@@ -269,6 +255,16 @@ export function FeedDialog({
           around unopened. */}
       {marking ? (
         <MarkReadDialog feed={feed} open onClose={() => setMarking(false)} />
+      ) : null}
+      {/* Ticked on the way out, because the only reason to make a tag from in here is to
+          file this feed under it. */}
+      {makingTag ? (
+        <NewTagDialog
+          open
+          tags={tags}
+          onClose={() => setMakingTag(false)}
+          onCreated={(tag) => setTagIDs((was) => [...was, tag.id])}
+        />
       ) : null}
     </Modal>
   );

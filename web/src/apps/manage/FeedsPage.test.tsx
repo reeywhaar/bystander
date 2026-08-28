@@ -492,6 +492,135 @@ describe("FeedsPage, before following anything", () => {
   });
 
   /*
+   * Filing is the point of reading the preview: ten articles is when somebody knows where a
+   * feed belongs, and adding it untagged meant finding it again in the list afterwards to
+   * say what they already knew.
+   */
+  it("files the previewed feed under what was ticked", async () => {
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [news, world, art] },
+      "POST /api/feeds/discover": {
+        body: { candidates: [candidate("The Example", preview.feed_url)] },
+      },
+      "POST /api/feeds/preview": { body: preview },
+      "POST /api/feeds/import": { body: { added: 1, skipped: [], tags: [] } },
+    });
+
+    await type("example.com");
+    const shown = await screen.findByText("A story about a thing");
+    const dialog = within(shown.closest("dialog")!);
+
+    // A nested tag is named by its whole path, which is what the importer files under.
+    await userEvent.click(dialog.getByRole("button", { name: "News / World" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.find(
+        (call) => call.path === "/api/feeds/import",
+      );
+      expect(sent?.body).toEqual({
+        feeds: [
+          {
+            feed_url: preview.feed_url,
+            title: "The Example",
+            site_url: "https://example.com",
+            priority: 50,
+            reach: 604800,
+            tag_paths: [["News", "World"]],
+          },
+        ],
+      });
+    });
+  });
+
+  /*
+   * The dead end this closes: with no tags at all, "no tags yet" arrives at exactly the
+   * moment somebody knows where the feed belongs. Making one from here has to tick it too,
+   * or it is the same dead end one step further along.
+   */
+  it("makes a tag from the preview and files the feed under it", async () => {
+    const made: Tag = {
+      id: "t_made",
+      name: "Long reads",
+      parent_id: null,
+      priority: 50,
+      created_at: 0,
+    };
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/tags": { status: 201, body: made },
+      "POST /api/feeds/discover": {
+        body: { candidates: [candidate("The Example", preview.feed_url)] },
+      },
+      "POST /api/feeds/preview": { body: preview },
+      "POST /api/feeds/import": { body: { added: 1, skipped: [], tags: [] } },
+    });
+
+    await type("example.com");
+    const shown = await screen.findByText("A story about a thing");
+    const dialog = within(shown.closest("dialog")!);
+
+    await userEvent.click(dialog.getByRole("button", { name: "New tag +" }));
+    await userEvent.type(screen.getByLabelText("Name"), "Long reads");
+
+    // The tag list refetches after the write, which is what puts the new chip on screen.
+    transport.recording["GET /api/tags"] = { body: [made] };
+    await userEvent.click(screen.getByRole("button", { name: "Make it" }));
+
+    await screen.findByRole("button", { name: "Long reads" });
+    await userEvent.click(dialog.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.find(
+        (call) => call.path === "/api/feeds/import",
+      );
+      expect(sent?.body).toEqual({
+        feeds: [
+          {
+            feed_url: preview.feed_url,
+            title: "The Example",
+            site_url: "https://example.com",
+            priority: 50,
+            reach: 604800,
+            tag_paths: [["Long reads"]],
+          },
+        ],
+      });
+    });
+  });
+
+  // Over the picker each row already carries its own chips, and a second set in the preview
+  // would be two answers to one question.
+  it("offers no filing in the preview when the picker is behind it", async () => {
+    renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [news, art] },
+      "POST /api/feeds/discover": {
+        body: {
+          candidates: [
+            candidate("Posts", "https://example.com/posts.xml"),
+            candidate("Comments", "https://example.com/comments.xml"),
+          ],
+        },
+      },
+      "POST /api/feeds/preview": { body: preview },
+    });
+
+    await type("example.com");
+    await screen.findByText("Posts");
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Preview" })[0]!,
+    );
+
+    const shown = await screen.findByText("A story about a thing");
+    expect(
+      within(shown.closest("dialog")!).queryByText("File it under"),
+    ).toBeNull();
+  });
+
+  /*
    * A site that turns out to offer five feeds chose none of them, so the list starts with
    * nothing ticked — otherwise "None" is the first thing anybody has to press.
    */

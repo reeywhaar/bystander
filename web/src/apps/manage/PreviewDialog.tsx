@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-import type { PreviewItem } from "@app/api/types";
+import type { PreviewItem, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Modal } from "@app/components/ui/Modal";
 import { Spinner } from "@app/components/ui/Spinner";
 import { since } from "@app/lib/time";
 import { usePreviewFeed } from "@app/queries/hooks";
+
+import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
+import { TagChips } from "@app/apps/manage/TagChips";
 
 /**
  * What a feed has published, before anybody follows it.
@@ -29,6 +32,7 @@ export function PreviewDialog({
   onClose,
   onAdd,
   adding = false,
+  filing,
 }: {
   /** What to look at: a title to show while it loads, and the address to fetch. */
   feed: { title: string; feed_url: string } | null;
@@ -47,8 +51,28 @@ export function PreviewDialog({
    */
   onAdd?: () => void;
   adding?: boolean;
+
+  /**
+   * Somewhere to file it, for the one case where pressing Add actually subscribes.
+   *
+   * Left out over the picker, where each row already carries its own chips and a second set
+   * here would be two answers to one question. Left out for a feed already followed, where
+   * the filing belongs to that feed's own dialog.
+   *
+   * Here because this is the moment somebody knows where a feed goes: they have just read
+   * ten of its articles. Adding it untagged meant finding it again in the list afterwards to
+   * say the thing they already knew.
+   */
+  filing?: {
+    tags: Tag[];
+    /** Tag ids currently on. */
+    chosen: string[];
+    onToggle: (id: string) => void;
+    onCreated: (tag: Tag) => void;
+  };
 }) {
   const preview = usePreviewFeed();
+  const [makingTag, setMakingTag] = useState(false);
 
   // Asked for when the dialog opens on something, and asked again when it opens on something
   // else. A mutation rather than a query, so nothing here is cached — pressing Preview a
@@ -85,12 +109,36 @@ export function PreviewDialog({
         )
       }
     >
+      {/* Above the articles, and outside the box they scroll in. It is part of the same
+          decision as the Add below it, so it must not be something you scroll away from —
+          and this dialog is several screens tall by design. */}
+      {filing ? (
+        <div className="flex flex-col gap-1.5 border-b border-rule pb-3">
+          <p className="text-xs text-ink-muted">File it under</p>
+          <TagChips
+            tags={filing.tags}
+            chosen={filing.chosen}
+            onToggle={filing.onToggle}
+            onNew={() => setMakingTag(true)}
+          />
+        </div>
+      ) : null}
+
       {preview.isPending ? (
         <Spinner />
       ) : preview.error ? (
         <Alert>{preview.error.message}</Alert>
       ) : preview.data ? (
         <Preview items={preview.data.items} />
+      ) : null}
+
+      {makingTag && filing ? (
+        <NewTagDialog
+          open
+          tags={filing.tags}
+          onClose={() => setMakingTag(false)}
+          onCreated={filing.onCreated}
+        />
       ) : null}
     </Modal>
   );

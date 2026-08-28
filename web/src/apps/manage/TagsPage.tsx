@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
 import type { Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
@@ -7,22 +7,13 @@ import { Priority } from "@app/components/ui/Priority";
 import { Select } from "@app/components/ui/Select";
 import { Spinner } from "@app/components/ui/Spinner";
 import { DEFAULT_PRIORITY } from "@app/lib/constants";
-import {
-  useAddTag,
-  useRemoveTag,
-  useTags,
-  useUpdateTag,
-} from "@app/queries/hooks";
+import { useRemoveTag, useTags, useUpdateTag } from "@app/queries/hooks";
+
+import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
 
 export function TagsPage() {
   const tags = useTags();
-  const add = useAddTag();
-  const [name, setName] = useState("");
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    add.mutate({ name }, { onSuccess: () => setName("") });
-  }
+  const [making, setMaking] = useState(false);
 
   if (tags.isPending) return <Spinner />;
   if (tags.error) throw tags.error;
@@ -39,27 +30,20 @@ export function TagsPage() {
           a probability, not an order — a tag at 90 shows up more than one at 10
           without ever silencing it, and 0 means never.
         </p>
-        <form onSubmit={submit} className="flex gap-2">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={48}
-            placeholder="World News, Art, Long reads…"
-            aria-label="Tag name"
-            className="flex-1 rounded-md border border-rule bg-paper-raised px-3 py-2 text-sm
-              placeholder:text-ink-faint focus-visible:outline-2 focus-visible:outline-accent"
-          />
-          <Button type="submit" variant="primary" disabled={add.isPending}>
-            Add tag
-          </Button>
-        </form>
-        {add.error ? (
-          <div className="mt-3">
-            <Alert>{add.error.message}</Alert>
-          </div>
-        ) : null}
+        {/* A button rather than a field and a button. A tag is three decisions — the name,
+            where it sits, how often it appears — and the field could only take the first,
+            so every tag arrived on its own at the default and the other two were set
+            afterwards from a row somebody had to find again. */}
+        <Button variant="primary" onClick={() => setMaking(true)}>
+          New tag
+        </Button>
       </section>
+
+      <NewTagDialog
+        open={making}
+        tags={tags.data}
+        onClose={() => setMaking(false)}
+      />
 
       <section className="flex flex-col">
         {tags.data.length === 0 ? (

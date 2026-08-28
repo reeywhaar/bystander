@@ -3,8 +3,14 @@ import { Button } from "@app/components/ui/Button";
 import { Reach } from "@app/components/ui/Reach";
 import { tagLabel, tagPath } from "@app/lib/tags";
 
-/** A tag chip is identified by the tag it names, whether or not that tag exists yet. */
-const ownKey = (id: string) => "id:" + id;
+/**
+ * A tag chip is identified by the tag it names, whether or not that tag exists yet.
+ *
+ * `ownKey` is exported because the preview files a feed too, choosing only from tags that
+ * already exist — so it builds a selection [toImport] understands without having to know how
+ * a chip is keyed.
+ */
+export const ownKey = (id: string) => "id:" + id;
 const newKey = (path: string[]) => "new:" + path.join("/");
 
 /** What has been ticked: which feeds, and which tags on each. */

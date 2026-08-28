@@ -11,6 +11,7 @@ import {
   initialSelection,
   kept,
   offered,
+  ownKey,
   toImport,
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
@@ -57,22 +58,50 @@ export function FeedsPage() {
   // The feed being looked at, from either flow. What its Add means follows from whether the
   // picker is open behind it: on its own it subscribes, and over a list it ticks a row.
   const [previewing, setPreviewing] = useState<PlannedFeed | null>(null);
+  // Where the previewed feed is to be filed, for the flow where Add subscribes. Held here
+  // rather than in the dialog because it outlives it: the dialog unmounts on Add, and this
+  // is what goes up with the subscription.
+  const [filing, setFiling] = useState<string[]>([]);
 
-  function subscribe(feed: PlannedFeed) {
-    // One feed and no choice of which: straight in, untagged. The picker is for when a site
-    // offers several — see below.
-    add.mutate(toImport([feed], initialSelection([feed]), tags.data ?? []), {
-      onSuccess: () => {
-        setUrl("");
-        setChoices(null);
-        setPreviewing(null);
+  /**
+   * Show one feed, starting it off filed where the source said it belonged.
+   *
+   * Matched tags only — ones you already have. A tag the source named that nobody here has
+   * is a taxonomy arriving in the post, and the picker draws that distinction with a dashed
+   * chip precisely because it is a decision. One feed by address is not that situation, and
+   * anything missing is a New tag away.
+   */
+  function look(feed: PlannedFeed) {
+    setFiling(feed.tags.filter((tag) => tag.tag_id).map((tag) => tag.tag_id));
+    setPreviewing(feed);
+  }
+
+  function subscribe(feed: PlannedFeed, tagIDs: string[]) {
+    // A selection of exactly one feed, filed under exactly what was chosen in the preview.
+    // Built by hand rather than through initialSelection, which seeds from what the source
+    // said — that was the starting point, and this is where it ended up.
+    add.mutate(
+      toImport(
+        [feed],
+        {
+          skipped: new Set<string>(),
+          tags: new Map([[feed.feed_url, new Set(tagIDs.map(ownKey))]]),
+        },
+        tags.data ?? [],
+      ),
+      {
+        onSuccess: () => {
+          setUrl("");
+          setChoices(null);
+          setPreviewing(null);
+        },
+        onError: (error) => {
+          setChoices(null);
+          setPreviewing(null);
+          setProblem(error.message);
+        },
       },
-      onError: (error) => {
-        setChoices(null);
-        setPreviewing(null);
-        setProblem(error.message);
-      },
-    });
+    );
   }
 
   /**
@@ -93,7 +122,7 @@ export function FeedsPage() {
       setPreviewing(null);
       return;
     }
-    subscribe(feed);
+    subscribe(feed, filing);
   }
 
   function submit(event: FormEvent) {
@@ -112,7 +141,7 @@ export function FeedsPage() {
           // Shown rather than subscribed. An address is not a description, and this is the
           // moment somebody can still say no cheaply — after it is a subscription, saying no
           // means unfollowing and losing the read marks with it.
-          setPreviewing(fresh[0]);
+          look(fresh[0]);
         } else {
           // Nothing ticked. A site that turns out to offer five feeds chose none of them,
           // and a screen that starts by assuming all five makes "None" the first thing
@@ -185,6 +214,23 @@ export function FeedsPage() {
         onClose={() => setPreviewing(null)}
         onAdd={addPreviewed}
         adding={add.isPending}
+        // Only where Add subscribes. Over the picker each row carries its own chips, and a
+        // second set here would be two answers to one question.
+        filing={
+          choices === null
+            ? {
+                tags: tags.data ?? [],
+                chosen: filing,
+                onToggle: (id) =>
+                  setFiling((was) =>
+                    was.includes(id)
+                      ? was.filter((other) => other !== id)
+                      : [...was, id],
+                  ),
+                onCreated: (tag) => setFiling((was) => [...was, tag.id]),
+              }
+            : undefined
+        }
       />
       <FeedDialog
         feed={feeds.data.find((feed) => feed.id === editingID) ?? null}
