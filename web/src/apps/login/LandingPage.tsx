@@ -4,6 +4,7 @@ import { Colophon } from "@app/components/Colophon";
 import { GitHubIcon } from "@app/components/icons/GitHubIcon";
 import { GuestMasthead } from "@app/components/GuestMasthead";
 import { SignInDialog } from "@app/components/SignInDialog";
+import { Pulse, Train } from "@app/apps/login/Separators";
 import { PRODUCT } from "@app/lib/constants";
 import type { Voice } from "@app/lib/voice";
 
@@ -26,34 +27,60 @@ export function LandingPage() {
     <>
       <GuestMasthead onSignIn={() => setSigningIn(true)} source />
 
-      <main className="mx-auto max-w-[1100px] px-6 py-16 sm:py-24">
-        <Reveal>
-          <h1 className="headline voice-didone max-w-[18ch] text-4xl text-ink sm:text-6xl">
-            An RSS reader with no unread count.
-          </h1>
-          <p className="mt-4 text-sm text-ink-faint">
-            by{" "}
-            <a
-              href={PRODUCT.author.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-ink"
-            >
-              {PRODUCT.author.name}
-            </a>
-          </p>
-          <p className="prose-summary mt-8 max-w-2xl text-lg text-ink-muted">
-            It fetches your feeds on a schedule and composes a{" "}
-            <span className="text-ink">front page</span> from them — a fixed set
-            of articles, in fixed positions, laid out like a newspaper. When the
-            next page is made, the previous one is gone for good.
-          </p>
-          <p className="prose-summary mt-4 max-w-2xl text-lg text-ink-muted">
-            Nothing accumulates. Nothing is owed. A feed that publishes forty
-            items a day contributes the same handful as one that publishes two.
-          </p>
+      {/* Under the masthead's rule, before the page's own top margin rather than after it — a
+          coloured band below the nameplate, which is where a paper puts one. Out of `main`
+          entirely for that: inside it the band sat below six rems of air and read as the first
+          thing in the article instead of the last thing in the header.
 
-          {/* Free software you run yourself, said at the top rather than at the bottom.
+ Between the masthead's rule and the headline, with the page's own top padding split in
+          half around it: `main` used to open on `py-16 sm:py-24`, and the band takes half of
+          that on each side. So the space is the same space it always was, cut in two by the
+          rule, and it stays on the scale rather than becoming a measured number that has to be
+          re-derived whenever the padding changes.
+
+          Flush against the masthead it read as one thick rule with a stripe in it. With paper
+          either side, the hairline closes the header and the band opens the page. */}
+      <div className="my-8 flex flex-col gap-0.5 sm:my-12">
+        <Train seed={1} />
+        <Train seed={2} />
+        <Train seed={3} />
+      </div>
+
+      {/* The measure lives on the wrappers below rather than on `main`, so the moving rules can
+          be children of something as wide as the window. Bleeding them out of a centred column
+          instead would mean `100vw`, which is the window *including* whatever the scrollbar
+          takes — and so a horizontal scrollbar on every platform that gives its scrollbar
+          room. */}
+      <main className="pb-16 sm:pb-24">
+        <div className="mx-auto max-w-[1100px] px-6">
+          <Reveal>
+            <h1 className="headline voice-didone max-w-[18ch] text-4xl text-ink sm:text-6xl">
+              An RSS reader with no unread count.
+            </h1>
+            <p className="mt-4 text-sm text-ink-faint">
+              by{" "}
+              <a
+                href={PRODUCT.author.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-ink"
+              >
+                {PRODUCT.author.name}
+              </a>
+            </p>
+            <p className="prose-summary mt-8 max-w-2xl text-lg text-ink-muted">
+              It fetches your feeds on a schedule and composes a{" "}
+              <span className="text-ink">front page</span> from them — a fixed
+              set of articles, in fixed positions, laid out like a newspaper.
+              When the next page is made, the previous one is gone for good.
+            </p>
+            <p className="prose-summary mt-4 max-w-2xl text-lg text-ink-muted">
+              Nothing accumulates. Nothing is owed. A feed that publishes forty
+              items a day contributes the same handful as one that publishes
+              two.
+            </p>
+
+            {/* Free software you run yourself, said at the top rather than at the bottom.
               
               It used to be the last sentence on the page, under "Getting in", where it read
               as a footnote about licensing. It is not a footnote: for most of the people who
@@ -65,180 +92,187 @@ export function LandingPage() {
               The button is a link, and deliberately: it leaves for somewhere else, and
               anything that can be opened in a new tab or copied should be a thing the
               browser knows is an address. */}
-          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <a
-              href={PRODUCT.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm
-                text-paper hover:bg-accent"
-            >
-              <GitHubIcon className="text-base" />
-              GitHub
-            </a>
-            <p className="text-sm text-ink-muted">
-              Self-hosted, and free to run — one container and one required
-              setting.
-            </p>
-          </div>
-        </Reveal>
-
-        <Reveal>
-          <Shot
-            src="/landing/frontpage.webp"
-            alt="A front page: a lead article with a picture, two features beside it, and a grid of shorter items below."
-            className="mt-14"
-          />
-        </Reveal>
-
-        <Reveal>
-          <Section title="Why" voice="antique">
-            <p>
-              Every reader I have used turns reading into bookkeeping. A number
-              goes up, and the only way to make it go down is to look at
-              everything — so the feeds you love get skimmed alongside the feeds
-              you kept out of habit, and eventually you stop opening the app,
-              because it has become a chore with a scoreboard.
-            </p>
-            <p>
-              This one has no scoreboard. It cannot tell you what you missed,
-              because it does not keep what you missed. You get a page. You read
-              what interests you. Tomorrow you get a different page.
-            </p>
-          </Section>
-        </Reveal>
-
-        <Reveal>
-          <Section title="What it does differently" voice="slab">
-            <Difference title="A page, not a queue">
-              Articles arrive in fixed positions decided when the page was made,
-              and stay there. Where something sits is how you remember where you
-              were — so nothing reorders under you, and marking something read
-              greys it in place rather than removing it.
-            </Difference>
-            <Difference title="Volume buys nothing">
-              Each feed gets a share of the page set by its own priority. A
-              publisher posting two hundred times a day is given exactly what
-              one posting twice is, at the same setting — so following a wire
-              service costs you nothing.
-            </Difference>
-            <Difference title="Priority is a share, not an order">
-              A feed at 90 gets nine times the room of one at 10, and neither is
-              ever silenced. Zero means never, and it is the only thing that
-              does.
-            </Difference>
-            <Difference title="It forgets on purpose">
-              A page is replaced, not archived. What you have actually read is
-              kept under Recently read for as long as you follow the feed it
-              came from — a list of things you are finished with, which asks
-              nothing of you.
-            </Difference>
-          </Section>
-        </Reveal>
-
-        <Reveal>
-          <Section title="What is in it" voice="gothic" wide>
-            <ul className="grid list-disc gap-x-10 gap-y-4 pl-5 sm:grid-cols-2 lg:grid-cols-3">
-              <Feature>
-                Feeds found from a site's address alone — paste example.com and
-                it goes looking. Where a site offers several you pick the ones
-                you want, and you can read a feed's last ten articles before
-                deciding to follow it
-              </Feature>
-              <Feature>
-                A page for the news and another for the long reads — as many as
-                you keep, each drawing from what you tell it
-              </Feature>
-              <Feature>A reach per feed, from a day to no limit</Feature>
-              <Feature>
-                Recently read: what you finished with, kept as long as you
-                follow the feed it came from
-              </Feature>
-              <Feature>
-                Pictures measured before they are placed, so a panorama gets the
-                width it wants and nothing is cropped to a square it was never
-                shot for
-              </Feature>
-              <Feature>Tags, nested as deep as you like</Feature>
-              <Feature>
-                Your feeds in and out, as a plain list or as OPML — hand them
-                over as a link, save them as a file, or paste either kind
-                straight in
-              </Feature>
-              <Feature>Pages you can publish to the open web</Feature>
-              <Feature>Invitations, by link or by email</Feature>
-            </ul>
-          </Section>
-        </Reveal>
-
-        <Reveal>
-          <Strip>
-            <Shot
-              src="/landing/feeds.webp"
-              alt="The feeds somebody follows, each with the sections it is filed under and a priority slider."
-              title="Every feed, and what it is worth to you"
-              description="One slider per feed, and it sets a share of the page rather than a place in a running order. A feed at 90 gets nine times the room of one at 10 and neither is ever silenced — zero means never, and it is the only thing that does. The line underneath says where the feed is filed, how far back it reaches, and whether it is still answering."
-            />
-            <Shot
-              src="/landing/feed.webp"
-              alt="One feed's dialog: its name, the sections it is filed under, and how far back a page reaches into it."
-              title="Everything about one feed, behind its name"
-              description="What to call it, which sections it belongs to, how far back a page may reach into it, and the way to stop following. Nothing is written until you save, so a dialog you close changes nothing — and the name is yours, not the publisher's, if theirs is unbearable."
-            />
-            <Shot
-              src="/landing/pages.webp"
-              alt="The front pages somebody keeps, with how often each is composed and how much is on it."
-              title="As many front pages as you keep"
-              description="One for the news, another for the long reads, a third for comics. Each turns on its own clock — hourly, every six hours, daily or weekly — and holds however much you ask it to. They are separate pages, not filters on one: what you have seen on a page of comics is not something the page of everything has shown you."
-            />
-            <Shot
-              src="/landing/page.webp"
-              alt="A page's filter: each tag and feed on a switch with three positions."
-              title="What each page draws from"
-              description="Every tag and every feed on one switch with three positions: take it, say nothing about it, or keep it off. A feed you have an opinion about overrides whatever its tags said, which is the difference between a filter and a rule with exceptions."
-            />
-            <Shot
-              src="/landing/read.webp"
-              alt="Recently read: what has been read, by day."
-              title="The only list here"
-              description="What you have finished with, by day. It counts nothing and never asks for anything — a list of things already dealt with is the one kind that cannot become a chore. It is also what stops a story coming back a year later as though it were new, so it lasts as long as you follow the feed rather than expiring on a timer."
-            />
-          </Strip>
-        </Reveal>
-
-        <Reveal>
-          <Section title="Getting in" voice="humanist">
-            <p>
-              This is somebody's own instance, and it is invitation-only — there
-              is no sign-up, and no default password at any point. If you have
-              an account,{" "}
-              <button
-                type="button"
-                onClick={() => setSigningIn(true)}
-                className="text-accent underline underline-offset-2"
-              >
-                sign in
-              </button>
-              . If you were expecting an invitation, it arrives as a link.
-            </p>
-            <p>
-              To run one of your own, it is a single container and one required
-              setting. The whole of it — the server, this page, and the
-              screenshots above —{" "}
+            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
               <a
                 href={PRODUCT.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-accent underline underline-offset-2"
+                className="flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm
+                text-paper hover:bg-accent"
               >
-                is on GitHub
+                <GitHubIcon className="text-base" />
+                GitHub
               </a>
-              , and there is nothing else to buy or sign up for.
-            </p>
-          </Section>
-        </Reveal>
+              <p className="text-sm text-ink-muted">
+                Self-hosted, and free to run — one container and one required
+                setting.
+              </p>
+            </div>
+          </Reveal>
+        </div>
 
-        <Colophon className="mt-20 border-t border-rule pt-6" />
+        {/* Between the argument and the evidence for it. The train opens the page; this closes
+            what the train opened, and the screenshots begin after it. */}
+        <Pulse className="mt-14" />
+
+        <div className="mx-auto max-w-[1100px] px-6">
+          <Reveal>
+            <Shot
+              src="/landing/frontpage.webp"
+              alt="A front page: a lead article with a picture, two features beside it, and a grid of shorter items below."
+              className="mt-14"
+            />
+          </Reveal>
+
+          <Reveal>
+            <Section title="Why" voice="antique">
+              <p>
+                Every reader I have used turns reading into bookkeeping. A
+                number goes up, and the only way to make it go down is to look
+                at everything — so the feeds you love get skimmed alongside the
+                feeds you kept out of habit, and eventually you stop opening the
+                app, because it has become a chore with a scoreboard.
+              </p>
+              <p>
+                This one has no scoreboard. It cannot tell you what you missed,
+                because it does not keep what you missed. You get a page. You
+                read what interests you. Tomorrow you get a different page.
+              </p>
+            </Section>
+          </Reveal>
+
+          <Reveal>
+            <Section title="What it does differently" voice="slab">
+              <Difference title="A page, not a queue">
+                Articles arrive in fixed positions decided when the page was
+                made, and stay there. Where something sits is how you remember
+                where you were — so nothing reorders under you, and marking
+                something read greys it in place rather than removing it.
+              </Difference>
+              <Difference title="Volume buys nothing">
+                Each feed gets a share of the page set by its own priority. A
+                publisher posting two hundred times a day is given exactly what
+                one posting twice is, at the same setting — so following a wire
+                service costs you nothing.
+              </Difference>
+              <Difference title="Priority is a share, not an order">
+                A feed at 90 gets nine times the room of one at 10, and neither
+                is ever silenced. Zero means never, and it is the only thing
+                that does.
+              </Difference>
+              <Difference title="It forgets on purpose">
+                A page is replaced, not archived. What you have actually read is
+                kept under Recently read for as long as you follow the feed it
+                came from — a list of things you are finished with, which asks
+                nothing of you.
+              </Difference>
+            </Section>
+          </Reveal>
+
+          <Reveal>
+            <Section title="What is in it" voice="gothic" wide>
+              <ul className="grid list-disc gap-x-10 gap-y-4 pl-5 sm:grid-cols-2 lg:grid-cols-3">
+                <Feature>
+                  Feeds found from a site's address alone — paste example.com
+                  and it goes looking. Where a site offers several you pick the
+                  ones you want, and you can read a feed's last ten articles
+                  before deciding to follow it
+                </Feature>
+                <Feature>
+                  A page for the news and another for the long reads — as many
+                  as you keep, each drawing from what you tell it
+                </Feature>
+                <Feature>A reach per feed, from a day to no limit</Feature>
+                <Feature>
+                  Recently read: what you finished with, kept as long as you
+                  follow the feed it came from
+                </Feature>
+                <Feature>
+                  Pictures measured before they are placed, so a panorama gets
+                  the width it wants and nothing is cropped to a square it was
+                  never shot for
+                </Feature>
+                <Feature>Tags, nested as deep as you like</Feature>
+                <Feature>
+                  Your feeds in and out, as a plain list or as OPML — hand them
+                  over as a link, save them as a file, or paste either kind
+                  straight in
+                </Feature>
+                <Feature>Pages you can publish to the open web</Feature>
+                <Feature>Invitations, by link or by email</Feature>
+              </ul>
+            </Section>
+          </Reveal>
+
+          <Reveal>
+            <Strip>
+              <Shot
+                src="/landing/feeds.webp"
+                alt="The feeds somebody follows, each with the sections it is filed under and a priority slider."
+                title="Every feed, and what it is worth to you"
+                description="One slider per feed, and it sets a share of the page rather than a place in a running order. A feed at 90 gets nine times the room of one at 10 and neither is ever silenced — zero means never, and it is the only thing that does. The line underneath says where the feed is filed, how far back it reaches, and whether it is still answering."
+              />
+              <Shot
+                src="/landing/feed.webp"
+                alt="One feed's dialog: its name, the sections it is filed under, and how far back a page reaches into it."
+                title="Everything about one feed, behind its name"
+                description="What to call it, which sections it belongs to, how far back a page may reach into it, and the way to stop following. Nothing is written until you save, so a dialog you close changes nothing — and the name is yours, not the publisher's, if theirs is unbearable."
+              />
+              <Shot
+                src="/landing/pages.webp"
+                alt="The front pages somebody keeps, with how often each is composed and how much is on it."
+                title="As many front pages as you keep"
+                description="One for the news, another for the long reads, a third for comics. Each turns on its own clock — hourly, every six hours, daily or weekly — and holds however much you ask it to. They are separate pages, not filters on one: what you have seen on a page of comics is not something the page of everything has shown you."
+              />
+              <Shot
+                src="/landing/page.webp"
+                alt="A page's filter: each tag and feed on a switch with three positions."
+                title="What each page draws from"
+                description="Every tag and every feed on one switch with three positions: take it, say nothing about it, or keep it off. A feed you have an opinion about overrides whatever its tags said, which is the difference between a filter and a rule with exceptions."
+              />
+              <Shot
+                src="/landing/read.webp"
+                alt="Recently read: what has been read, by day."
+                title="The only list here"
+                description="What you have finished with, by day. It counts nothing and never asks for anything — a list of things already dealt with is the one kind that cannot become a chore. It is also what stops a story coming back a year later as though it were new, so it lasts as long as you follow the feed rather than expiring on a timer."
+              />
+            </Strip>
+          </Reveal>
+
+          <Reveal>
+            <Section title="Getting in" voice="humanist">
+              <p>
+                This is somebody's own instance, and it is invitation-only —
+                there is no sign-up, and no default password at any point. If
+                you have an account,{" "}
+                <button
+                  type="button"
+                  onClick={() => setSigningIn(true)}
+                  className="text-accent underline underline-offset-2"
+                >
+                  sign in
+                </button>
+                . If you were expecting an invitation, it arrives as a link.
+              </p>
+              <p>
+                To run one of your own, it is a single container and one
+                required setting. The whole of it — the server, this page, and
+                the screenshots above —{" "}
+                <a
+                  href={PRODUCT.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline underline-offset-2"
+                >
+                  is on GitHub
+                </a>
+                , and there is nothing else to buy or sign up for.
+              </p>
+            </Section>
+          </Reveal>
+
+          <Colophon className="mt-20 border-t border-rule pt-6" />
+        </div>
       </main>
 
       <SignInDialog

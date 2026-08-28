@@ -112,6 +112,49 @@ describe("LandingPage", () => {
   });
 
   /*
+   * The two moving rules. Nothing else on the site moves, so what they are for is worth
+   * stating: this document is not the newspaper, it is the argument for it, and an argument is
+   * allowed to be paced.
+   *
+   * They are canvases, so there is nothing here to assert about how they look — only that both
+   * are on the page, that they are announced as decoration, and that neither sits inside the
+   * measure, since the whole point of them is to run the width of the window.
+   */
+  it("opens with a rule that runs, and closes the argument with one that pulses", () => {
+    const { container } = open();
+    const rules = container.querySelectorAll("canvas");
+
+    // Three trains and one dot rule, each its own canvas and its own loop.
+    expect(rules).toHaveLength(4);
+    for (const rule of rules) {
+      expect(rule).toHaveAttribute("aria-hidden", "true");
+      // Full width, and never inside the measure — the whole point of them is that they run
+      // the width of the window.
+      expect(rule.className).toContain("w-full");
+      expect(rule.closest(".max-w-\\[1100px\\]")).toBeNull();
+    }
+
+    // The trains sit above `main` rather than in it, so they land under the masthead's rule
+    // instead of below the page's top margin. The dot rule stays in the argument.
+    for (const train of [...rules].slice(0, 3)) {
+      expect(train.closest("main")).toBeNull();
+    }
+    expect(rules[3]?.parentElement?.tagName).toBe("MAIN");
+  });
+
+  // The measure moved off `main` and onto wrappers inside it, so the rules could be children of
+  // something as wide as the window. If it ever moves back, the prose loses its measure.
+  it("keeps the prose to a measure even though the rules are not", () => {
+    const { container } = open();
+    const main = container.querySelector("main");
+
+    expect(main?.className).not.toContain("max-w-");
+    expect(
+      main?.querySelectorAll(":scope > .max-w-\\[1100px\\]").length,
+    ).toBeGreaterThan(0);
+  });
+
+  /*
    * The page argues that this reader sets a front page in six display faces. A document
    * making that argument with every heading in one serif is arguing against itself.
    */
