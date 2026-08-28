@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -20,7 +21,6 @@ import (
 	"bystander/internal/jobs"
 	"bystander/internal/session"
 	"bystander/internal/store"
-	"bystander/web"
 )
 
 // shutdownGrace is how long in-flight requests have to finish once a signal arrives.
@@ -59,9 +59,13 @@ func serve(parent context.Context) error {
 		return err
 	}
 
-	spa, err := api.NewSPA(web.Dist(), log)
+	// os.DirFS rather than an embed. The bundle is a directory beside the binary, so a
+	// change to it is not a change to anything the Go compiler has seen — see
+	// config.DefaultWebDir. NewSPA reads the whole of it into memory here and never looks
+	// at the directory again, so a missing one is the same as an empty one: the placeholder.
+	spa, err := api.NewSPA(os.DirFS(cfg.WebDir), log)
 	if err != nil {
-		return fmt.Errorf("load the frontend: %w", err)
+		return fmt.Errorf("load the frontend from %s: %w", cfg.WebDir, err)
 	}
 
 	sessions := session.New(st, cfg.Secure, log)

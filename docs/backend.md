@@ -21,7 +21,7 @@ internal/
   api/               HTTP handlers, middleware, SPA serving
 backup/              the backup sidecar: its own image, stdlib only
 web/
-  embed.go           //go:embed all:dist
+  dist/              the built bundle; read from disk at startup, not compiled in
 ```
 
 `main.go` does two things and then gets out of the way:
@@ -74,9 +74,16 @@ Nothing under `internal/` imports `web`. `internal/api` takes an `fs.FS`, which 
 what keeps the direction clean and what lets its tests drive an `fstest.MapFS` instead of
 whatever the real bundle happens to contain.
 
-**`web/embed.go` cannot move into `internal/`.** `//go:embed` patterns may not contain
-`..`, so no package below `web/` can reach `web/dist`. This is a language rule, not a
-preference.
+**The bundle is read from disk, not embedded.** `serve` hands `api.NewSPA` an
+`os.DirFS` over `BYSTANDER_WEB_DIR` (`/srv/web` in the image, `web/dist` from a checkout).
+
+It used to be `//go:embed all:dist`, and dropping that cost nothing at runtime: `NewSPA`
+walks whatever it is given *once*, at startup, and copies every file into a map — so the
+bundle was in memory because of what `NewSPA` does, not because of where it came from.
+What embedding did cost was the build. It made every stylesheet an input to the Go
+compiler, so a one-line CSS change invalidated the Docker layer that compiles and relinks
+a twenty-megabyte binary. Now the frontend and the binary are built by stages that do not
+depend on each other.
 
 ## `internal/store`
 
@@ -221,7 +228,7 @@ The rules it follows:
   `http.FileServerFS` quirk that would otherwise need working around.
 - Content types come from an explicit table, not `mime.TypeByExtension` — that reads
   `/etc/mime.types`, which a scratch container may not have.
-- The build gzips the bundle before embedding. A `foo.js.gz` registers under `/foo.js`, so
+- The build gzips the bundle in place. A `foo.js.gz` registers under `/foo.js`, so
   nothing downstream knows; `Vary: Accept-Encoding` is set whenever a file has a
   compressed form, and the ETag is keyed on the *uncompressed* bytes so both
   representations share one validator.
@@ -248,8 +255,9 @@ The rules it follows:
 
 ## Testing
 
-- Tests beside sources. `go test ./...` must pass with **no frontend build present** —
-  `web/dist/.gitkeep` is tracked so the embed resolves.
+- Tests beside sources. `go test ./...` must pass with **no frontend build present**. That
+  is free now that the bundle is read at startup: a missing or empty directory is the same
+  as an empty one, and `NewSPA` falls back to its placeholder page.
 - The store's tests run against a temporary file, not `:memory:`. WAL behaves differently
   in memory, and WAL is the thing being relied on.
 - Constructors take `now func() time.Time` so expiry is driven, not slept through.

@@ -476,7 +476,7 @@ as well, add `BACKUP_TOKEN` and `BACKIO_SUBDIRECTORY` and point `BACKIO_URL` at 
 ```
 go test ./...                    # works with no frontend build present
 cd web && npm ci && npm test
-cd web && npm run build          # then rebuild the binary to embed it
+cd web && npm run build          # served from web/dist; no Go rebuild needed
 
 docs/screenshots/capture.mjs      # regenerate the screenshots above
 web/scripts/fetch-fonts.sh       # re-download the headline faces
@@ -485,9 +485,10 @@ web/scripts/fetch-fonts.sh       # re-download the headline faces
 Both scripts write files that are committed, so neither is part of a build. They exist so
 that "where did these come from" has an answer that can be re-run.
 
-`web/dist/.gitkeep` is tracked and `vite.config.ts` deliberately does not empty the
-directory: `//go:embed all:dist` needs something to match, or a fresh clone fails to
-compile before Node has ever run.
+The bundle is read from `web/dist` at startup rather than compiled into the binary, so a
+frontend change needs no Go rebuild — and in the image the two are built by stages that do
+not depend on each other. `BYSTANDER_WEB_DIR` moves it; a directory that is missing or
+empty gets the placeholder page.
 
 Design notes live in [`docs/`](docs/) — the entity model, the selection algorithm, the API
 conventions, and the reasoning behind each. [`docs/meta.txt`](docs/meta.txt) records the commit

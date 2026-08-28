@@ -40,11 +40,35 @@ const (
 	// its owner has already read. Worth switching on for most people; not worth deciding for
 	// them.
 	BackupDerivedEnv = "BYSTANDER_BACKUP_DERIVED"
+
+	// WebDirEnv is where the built frontend lives.
+	//
+	// Set in the image, and rarely anywhere else. It exists because the bundle is a
+	// directory of files beside the binary rather than something compiled into it — see
+	// DefaultWebDir for why, and internal/api/spa.go for what is done with it.
+	WebDirEnv = "BYSTANDER_WEB_DIR"
 )
 
 // Defaults for everything that has one.
 const (
 	DefaultDataDir = "/data"
+
+	// DefaultWebDir is where the image puts the bundle.
+	//
+	// A directory read at startup rather than an //go:embed of web/dist, which is what this
+	// used to be. Embedding made the bundle an input to the Go compile, so every edit to a
+	// stylesheet invalidated the build layer and Docker recompiled and relinked twenty-odd
+	// megabytes of binary to serve a file it had already built.
+	//
+	// Nothing is given up by that. api.NewSPA walks whatever it is handed once, at startup,
+	// and copies every file into a map — so the bundle was only ever in memory because of
+	// what NewSPA does with it, not because of where it came from. Embedded or read off the
+	// disk, the same bytes end up in the same map and the file system is never touched again.
+	//
+	// A checkout is the other case this has to serve: `go run .` from the repository root
+	// finds web/dist, and a tree that has never run `npm run build` finds nothing and gets
+	// the placeholder, exactly as an empty embed did.
+	DefaultWebDir = "/srv/web"
 )
 
 // Config is everything the process was told at startup.
@@ -55,6 +79,9 @@ type Config struct {
 
 	DataDir  string
 	LogLevel slog.Level
+
+	// WebDir is the built frontend, read once at startup.
+	WebDir string
 
 	// BackupDerived is whether the archive carries derived.db as well as main.db.
 	BackupDerived bool
@@ -80,12 +107,17 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		PublicURL: public,
 		DataDir:   DefaultDataDir,
+		WebDir:    DefaultWebDir,
 		LogLevel:  slog.LevelInfo,
 		Secure:    public.Scheme == "https",
 	}
 
 	if dir := strings.TrimSpace(os.Getenv(DataDirEnv)); dir != "" {
 		cfg.DataDir = dir
+	}
+
+	if dir := strings.TrimSpace(os.Getenv(WebDirEnv)); dir != "" {
+		cfg.WebDir = dir
 	}
 
 	if v := strings.TrimSpace(os.Getenv(LogLevelEnv)); v != "" {

@@ -21,11 +21,10 @@ export default defineConfig({
   resolve: { alias: { "@app": "/src" } },
   build: {
     outDir: "dist",
-    // NOT emptyOutDir. `dist/.gitkeep` is tracked, and it is the only thing standing
-    // between a fresh clone and `pattern dist: no matching files found` at compile time —
-    // //go:embed needs something to match before Node has ever run here. Emptying the
-    // directory deletes it, and the failure shows up as a Go build error in CI with no
-    // obvious connection to a frontend config.
+    // NOT emptyOutDir. `dist/.gitkeep` is tracked so the directory exists in a fresh
+    // clone, which is what lets `go run .` serve its placeholder instead of erroring on a
+    // path that is not there. It used to matter far more: the bundle was compiled into the
+    // binary with //go:embed, and an absent dist failed the Go build outright.
     //
     // Nothing accumulates as a result: the HTML entries are overwritten by name, and
     // `npm run build` removes dist/assets and dist/landing first — the two directories whose

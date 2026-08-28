@@ -31,15 +31,14 @@ RUN for entry in index login manage admin public; do \
       test -s "dist/$entry.html" || { echo "dist/$entry.html is missing or empty"; exit 1; }; \
     done
 
-# Gzip the bundle before it is embedded, replacing each original: it takes a few hundred
-# kilobytes off the binary, and the compressed bytes are then served from memory rather than
-# recompressed per request. internal/api/spa.go registers a "foo.js.gz" under "/foo.js", so
-# nothing downstream knows.
+# Gzip the bundle in place, replacing each original: the compressed bytes are then read into
+# memory at startup and served as they are, rather than being recompressed per request.
+# internal/api/spa.go registers a "foo.js.gz" under "/foo.js", so nothing downstream knows.
 #
 # Text only, since gzipping a raster image makes it bigger. -9 because this runs once.
 RUN find dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.svg' -o -name '*.json' -o -name '*.map' \) \
       -exec gzip -9 {} + && \
-    echo "embedded bundle: $(du -sh dist | cut -f1)"
+    echo "bundle: $(du -sh dist | cut -f1)"
 
 # ---------------------------------------------------------------------------
 # The binary.
@@ -55,9 +54,12 @@ RUN go mod download
 # any of the untracked working directories a checkout tends to grow.
 COPY main.go ./
 COPY internal ./internal
-COPY web/embed.go ./web/embed.go
-COPY --from=web /src/web/dist ./web/dist
 
+# The bundle is deliberately not copied in here. It used to be, and embedded — which made
+# every stylesheet an input to the compiler: this layer went stale on any frontend change, and
+# Docker recompiled and relinked twenty megabytes of binary to serve a file the stage above had
+# already built. It goes into the runtime image instead, so this stage moves only when Go does.
+#
 # CGO_ENABLED=0 because modernc.org/sqlite is pure Go — which is the whole reason the
 # runtime stage needs no toolchain and the binary is static.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
@@ -75,6 +77,10 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 
 COPY --from=build /out/bystander /usr/local/bin/bystander
+
+# The frontend, read into memory once at startup. BYSTANDER_WEB_DIR overrides the path;
+# config.DefaultWebDir is this one, so nothing has to be set.
+COPY --from=web /src/web/dist /srv/web
 
 # main.db and derived.db live here. Mount it, or every account disappears when this
 # container is replaced — and the way back in is the first-run invitation link, printed to

@@ -106,8 +106,8 @@ Multi-stage:
    first so `npm ci` caches until a dependency actually changes. All four HTML entries
    asserted non-empty afterwards — an empty build is otherwise invisible until somebody
    loads the page.
-2. **Gzip** — the bundle is compressed before embedding. Smaller binary, and the
-   compressed bytes are served from memory rather than recompressed per request. Text
+2. **Gzip** — the bundle is compressed in place. The compressed bytes are read into
+   memory at startup and served as they are, rather than recompressed per request. Text
    only; gzipping a `.webp` makes it bigger.
 3. **Binary** — `golang:1.27-alpine`, cross-compiled, `CGO_ENABLED=0`, `-trimpath`,
    version stamped through `-ldflags`. Static because `modernc.org/sqlite` is pure Go.

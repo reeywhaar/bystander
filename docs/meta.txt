@@ -8,6 +8,6 @@
 # Update the line in the same commit that updates the document. A document nobody trusts is
 # worse than no document, because it costs a reader the time to find out.
 
-readme         7d50e0e  2026-08-27
-design-notes   7d50e0e  2026-08-27
-screenshots    7d50e0e  2026-08-27
+readme         a31de29  2026-08-28
+design-notes   a31de29  2026-08-28
+screenshots    a31de29  2026-08-28
