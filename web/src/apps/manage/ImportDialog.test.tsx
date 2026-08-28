@@ -43,6 +43,27 @@ async function paste(feeds: PlannedFeed[], tags: Tag[] = []) {
 }
 
 describe("ImportDialog", () => {
+  /*
+   * "Nobody said, so a week" is not a setting anybody chose, and it arrives as the same
+   * number the server fills in for a feed found in a site's markup. Shown on every row it
+   * was a chip saying the same thing every time, about something this screen cannot change.
+   */
+  it("says a reach only where the list named one", async () => {
+    await paste([
+      planned({ title: "Default", feed_url: "https://a.example/rss" }),
+      planned({
+        title: "Chosen",
+        feed_url: "https://b.example/rss",
+        reach: 2592000,
+      }),
+    ]);
+
+    await screen.findByText("Chosen");
+    // The one a list exported from bystander carries, which is the case the chip is for.
+    expect(screen.getByText("1m")).toBeInTheDocument();
+    expect(screen.queryByText("1w")).toBeNull();
+  });
+
   // Ticking a feed you already follow does nothing — the server refuses a second
   // subscription — so it is not offered.
   it("leaves out feeds you already follow, and says how many", async () => {

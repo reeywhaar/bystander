@@ -1,6 +1,7 @@
 import type { ImportSelection, PlannedFeed, Tag } from "@app/api/types";
 import { Button } from "@app/components/ui/Button";
 import { Reach } from "@app/components/ui/Reach";
+import { DEFAULT_ARTICLE_WINDOW } from "@app/lib/constants";
 import { tagLabel, tagPath } from "@app/lib/tags";
 
 /**
@@ -279,12 +280,21 @@ function PlanRow({
             <span className="block truncate text-xs text-ink-faint">
               {feed.feed_url}
             </span>
-            {/* What the list says this feed is worth reading back, which arrives with it. A
-                setting somebody is about to accept should be visible before they accept it,
-                not discovered afterwards in the feed's own dialog. */}
-            <span className="mt-1 block">
-              <Reach seconds={feed.reach} />
-            </span>
+            {/* Only when the source actually named one.
+                
+                A setting somebody is about to accept should be visible before they accept
+                it — but "nobody said, so a week" is not a setting anybody chose, and it
+                arrives on the wire as the same number the server fills in for a feed found
+                in a site's markup. Shown always, it was a chip on every row of every list
+                that said the same thing every time and could not be changed from here.
+                
+                What is left is the case it was added for: a list exported from bystander,
+                carrying a reach per feed that somebody set deliberately. */}
+            {feed.reach !== DEFAULT_ARTICLE_WINDOW ? (
+              <span className="mt-1 block">
+                <Reach seconds={feed.reach} />
+              </span>
+            ) : null}
           </span>
         </label>
 

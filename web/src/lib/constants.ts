@@ -79,6 +79,16 @@ export const EDITION_SIZE = { min: 10, max: 200, step: 10 };
  *  or down from ordinary rather than away from an edge. */
 export const DEFAULT_PRIORITY = 50;
 
+/**
+ * What a feed reaches back by default — a week. Matches `store.DefaultArticleWindow`.
+ *
+ * Here so a list of feeds about to be added can tell a reach somebody chose from the one the
+ * server filled in. The two arrive as the same number: a source that names no reach, or names
+ * one this program does not offer, is given the default before it is ever sent. So this is
+ * what "nobody said" looks like on the wire, and a chip repeating it says nothing.
+ */
+export const DEFAULT_ARTICLE_WINDOW = 604800;
+
 /** What a priority means, in words, for the places a number alone is unhelpful. */
 export function describePriority(priority: number): string {
   if (priority === 0) return "never";

@@ -786,6 +786,14 @@ Those chips appear only on a row that is being kept — filing a feed you are no
 decision about nothing. It is also why a freshly opened picker shows none: a site that offers
 several chose none of them, so nothing is ticked yet.
 
+A row shows its **reach** only where the source actually named one. A feed found in a site's
+markup carries no reach at all, and the server fills in the default before sending — so "a
+week" on the wire is indistinguishable from "nobody said", and a chip repeating it appeared on
+every row of every discovered list, saying the same thing every time about something that
+screen cannot change. What survives is the case it was added for: a list exported from
+bystander, carrying a reach per feed that somebody set deliberately, which is worth seeing
+before it is accepted.
+
 The checkbox is sized in CSS rather than left to the browser, which draws one about thirteen
 pixels wide. The chips below it are indented past it by a fixed amount, and that indent is
 only arithmetic — 16 for the box plus the row's 8 of gap — if the width is one this file
