@@ -54,6 +54,43 @@ quietly smaller build. The Dockerfile asserts each is non-empty afterwards.
 Which shell a navigation receives is decided server-side by prefix, in one function. See
 [backend.md](backend.md#serving-the-spa).
 
+## Icons
+
+Named the way SF Symbols names things, minus the dots that JSX will not take:
+
+    noun[.qualifier][.fill]        person.fill      eye.slash      arrow.right
+    Noun[Qualifier][Fill]Icon      PersonFillIcon   EyeSlashIcon   ArrowRightIcon
+
+The parts read outside in — what it is, then which of it, then how it is drawn — so an
+alphabetical listing of `src/components/icons/` groups the variants of one thing together
+instead of scattering them under whatever adjective came to mind. `FilledPersonIcon` sorts
+under F.
+
+**`Fill` is load-bearing, not decoration.** An unsuffixed name is the outlined cut. The two
+are not interchangeable: a stroke at 1.3 on a sixteen-unit grid reads lighter than the type
+beside it, a silhouette reads at the same weight, and which one a place wants depends on
+whether the icon is standing next to a word or standing alone. Leaving the suffix off a
+filled icon is how a codebase ends up with two `PersonIcon`s that look nothing alike.
+
+Every icon takes `className` and nothing else, is `1em` square, and paints with
+`currentColor` — so it takes the size and colour of whatever it is set beside rather than
+holding either of its own. None of them carry a label: they sit next to the word they stand
+for, so they are `aria-hidden` and the text does the talking.
+
+**A cut is a component, not a prop.** `<PersonIcon mode="fill">` reads better at the call
+site and is the wrong shape: it obliges every icon to draw both cuts or to accept a prop
+with one legal value, and today not one of them has two — Person is filled, Eye is
+outlined, GitHub is a trademark with no outlined form at all. It would also put both sets
+of path data in every chunk that imports either, which is the same reason `src/api/actions`
+exports functions instead of static methods. SF Symbols draws the same line: `person` and
+`person.fill` are two symbols, not one symbol with a parameter. If a noun ever genuinely
+needs both cuts in this codebase, a prop is the better answer for *that* icon — but adding
+it before then buys nothing and promises something untrue.
+
+**Brand marks are not symbols and do not follow this.** `GitHubIcon` is somebody's
+trademark, recognised as one silhouette, and there is no outlined cut of it to distinguish
+— it keeps its own name and is filled because that is what it is.
+
 ## The API layer
 
 Four files under `src/api`. The layering is the point and is not negotiable:

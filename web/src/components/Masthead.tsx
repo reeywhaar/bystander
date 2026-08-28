@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Me } from "@app/api/types";
 import { Logo } from "@app/components/Logo";
-import { PersonIcon } from "@app/components/icons/PersonIcon";
+import { UserLabel } from "@app/components/UserLabel";
 
 /**
  * The band across the top of every island.
@@ -61,12 +61,8 @@ export function Masthead({
               the way out. Sign out used to live here, one slip away from being pressed by
               somebody aiming at the link beside it, and in exchange for that risk it told
               nobody anything. */}
-          <a
-            href="/manage/account"
-            className="flex items-center gap-1.5 text-ink-muted hover:text-ink"
-          >
-            <PersonIcon />
-            {me.username}
+          <a href="/manage/account" className="text-ink-muted hover:text-ink">
+            <UserLabel username={me.username} />
           </a>
         </div>
       </div>
