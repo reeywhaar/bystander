@@ -1,3 +1,4 @@
+import { Logo } from "@app/components/Logo";
 import { GitHubIcon } from "@app/components/icons/GitHubIcon";
 import { PRODUCT } from "@app/lib/constants";
 
@@ -26,11 +27,24 @@ export function GuestMasthead({
 }) {
   return (
     <header className="border-b border-rule">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-5">
-        <a href="/" className="nameplate text-ink hover:text-accent">
-          bystander
+      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-3 px-6 py-5">
+        {/* Sized by height; the lockup is a little over five to one, so the width follows.
+            Shorter than the 30px the wordmark was set at, because the logo carries the article
+            above the name and the head beside it — the same type in this arrangement is half
+            again as tall a block. */}
+        {/* The row is centred, so the logo is set at its whole box — the one that runs from
+            the top of the article to the tail of the y. Cropping it to the baseline would
+            centre a box that is not the drawing, which puts the drawing low by the tail.
+
+            35px, which is the 28 the name was set at plus the descender the box gets back. */}
+        <a
+          href="/"
+          aria-label="the bystander"
+          className="inline-flex text-ink hover:text-accent"
+        >
+          <Logo className="h-[35px] w-auto" />
         </a>
-        <div className="flex basis-full items-center gap-4 text-sm sm:ml-auto sm:basis-auto">
+        <div className="flex basis-full items-baseline gap-4 text-sm sm:ml-auto sm:basis-auto">
           {/* A button, not a link to the login island. Signing in here is not the errand —
               they are reading a page, and being sent away and brought back would lose their
               place in it for a gesture made in passing. */}

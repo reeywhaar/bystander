@@ -1,4 +1,4 @@
-# bystander
+<img src="logo.svg" alt="the bystander" width="380">
 
 An RSS reader with no unread count.
 

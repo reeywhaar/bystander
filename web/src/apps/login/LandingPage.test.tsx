@@ -35,10 +35,13 @@ describe("LandingPage", () => {
   // than from docs/ — which nothing serves.
   it("shows the product rather than describing it", () => {
     open();
-    const shots = screen
+    // Real <img> elements only. The logo in the masthead is an inline SVG and carries the
+    // same role, so an unfiltered query counts the wordmark as a screenshot.
+    const photographs = screen
       .getAllByRole("img")
-      .map((img) => img.getAttribute("src"));
-    expect(shots).toEqual([
+      .filter((el) => el.tagName === "IMG");
+
+    expect(photographs.map((img) => img.getAttribute("src"))).toEqual([
       "/landing/frontpage.webp",
       "/landing/feeds.webp",
       "/landing/feed.webp",
@@ -46,7 +49,7 @@ describe("LandingPage", () => {
       "/landing/page.webp",
       "/landing/read.webp",
     ]);
-    for (const img of screen.getAllByRole("img")) {
+    for (const img of photographs) {
       expect(img).toHaveAttribute("alt", expect.stringMatching(/\S/));
     }
   });
