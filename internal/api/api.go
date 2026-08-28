@@ -105,9 +105,18 @@ func (s *Server) Handler() http.Handler {
 	// refuses as not found — see publicPage.
 	mux.HandleFunc("GET /api/public/{person}/{page}", s.publicPage)
 
+	// What the login form is allowed to know about this instance before anybody signs in.
+	mux.HandleFunc("GET /api/instance", s.publicInstance)
+
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("GET /api/invites/{token}", s.invite)
 	mux.HandleFunc("POST /api/invites/{token}/accept", s.acceptInvite)
+
+	// Getting back in without a password. Unauthenticated by necessity: whoever needs these
+	// cannot sign in, which is the whole reason they are here. See internal/api/recovery.go.
+	mux.HandleFunc("POST /api/recoveries", s.requestRecovery)
+	mux.HandleFunc("GET /api/recoveries/{token}", s.recovery)
+	mux.HandleFunc("POST /api/recoveries/{token}/accept", s.acceptRecovery)
 
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.Handle("GET /api/me", s.requireSession(s.me))
@@ -166,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/users", s.requireAdmin(s.listUsers))
 	mux.Handle("PATCH /api/admin/users/{id}", s.requireAdmin(s.patchUser))
 	mux.Handle("DELETE /api/admin/users/{id}", s.requireAdmin(s.deleteUser))
+	mux.Handle("POST /api/admin/users/{id}/recovery", s.requireAdmin(s.createUserRecovery))
 	mux.Handle("GET /api/admin/invites", s.requireAdmin(s.listInvites))
 	mux.Handle("POST /api/admin/invites", s.requireAdmin(s.createInvite))
 	mux.Handle("DELETE /api/admin/invites/{id}", s.requireAdmin(s.deleteInvite))

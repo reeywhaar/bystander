@@ -52,6 +52,10 @@ func TestShellRouting(t *testing.T) {
 		// A truncated link — messaging apps cut long URLs — belongs to the island that
 		// can say "this link looks incomplete", not to the reader's shell.
 		{"/invite", "login"},
+		{"/forgot", "login"},
+		{"/recover/abc123", "login"},
+		// And a recovery link that a mail client wrapped, for the same reason.
+		{"/recover", "login"},
 		{"/manage", "manage"},
 		{"/manage/feeds", "manage"},
 		{"/admin", "admin"},

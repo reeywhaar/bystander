@@ -86,13 +86,26 @@ behalf, and an endpoint that fetches an arbitrary URL for whoever asks needs a c
 ```
 GET    /healthz                          {"ok": true, "version": "…"}
 
+GET    /api/instance                     {recovery} — what the login form may know
 POST   /api/login                        {username, password} → 204 + Set-Cookie
 GET    /api/invites/{token}              {role, expires_at, invited_by} — validity only
 POST   /api/invites/{token}/accept       {username, password} → 204 + Set-Cookie
+
+POST   /api/recoveries                   {email} → 204, whatever happened
+GET    /api/recoveries/{token}           {username, expires_at, usable, used, voided, expired}
+POST   /api/recoveries/{token}/accept    {password} → 204, and no cookie
 ```
 
 `GET /api/invites/{token}` tells the acceptance page whether the link is live before
 somebody types a password into it. It reveals nothing but its own validity.
+
+The recovery endpoints are unauthenticated by necessity: whoever needs them cannot sign in,
+which is the whole reason they exist. `POST /api/recoveries` answers `204` for an address
+nobody has as readily as for one on file — anything else makes the login page a way to ask
+who has an account here. Accepting sets a password and issues **no cookie**, unlike accepting
+an invitation: the account already existed and the link may have reached the wrong inbox, so
+typing the new password at the login form once is the cheapest confirmation that the right
+person has it. See [mail.md](mail.md#recovery-links).
 
 ### Session
 

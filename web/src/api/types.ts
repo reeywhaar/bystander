@@ -172,6 +172,42 @@ export interface Invite {
   email: string;
 }
 
+/** What a recovery link is, before anybody types a password into it. */
+export interface Recovery {
+  /**
+   * Whose account this opens.
+   *
+   * Shown to whoever holds the token, who could take the account with it, so it gives up
+   * nothing — and it is the one thing that makes the page checkable: a name you do not
+   * recognise means the link was not meant for you.
+   */
+  username: string;
+  expires_at: number;
+  usable: boolean;
+  used: boolean;
+  /** Another link for the same account was used while this one was outstanding. */
+  voided: boolean;
+  expired: boolean;
+}
+
+/** A recovery link an administrator just minted. The URL is readable here and nowhere else. */
+export interface RecoveryLink {
+  url: string;
+  expires_at: number;
+  /** Whose account it opens, echoed back so the dialog can say so beside the link. */
+  username: string;
+}
+
+/** What a stranger at the front door is allowed to know about this instance. */
+export interface PublicInstance {
+  /**
+   * Whether somebody who has forgotten their password can be mailed a link — which is to
+   * say, whether a relay is configured. Where this is false the login form offers nothing,
+   * and being locked out means asking whoever runs the instance.
+   */
+  recovery: boolean;
+}
+
 export interface FeedStub {
   id: string;
   title: string;

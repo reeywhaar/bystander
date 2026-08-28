@@ -23,6 +23,7 @@ import {
   patchAdminUsersById,
   postAdminInvites,
   postAdminSmtpTest,
+  postAdminUsersByIdRecovery,
   putAdminSmtp,
 } from "@app/api/actions/admin";
 import { getMe } from "@app/api/actions/auth";
@@ -650,6 +651,20 @@ export function useRemoveUser() {
       // An account's invitation names who it became, so that listing changes too.
       void client.invalidateQueries({ queryKey: qk.adminInvites });
     },
+  });
+}
+
+/**
+ * Minting a way back into somebody's account.
+ *
+ * Nothing is invalidated afterwards, deliberately: issuing a link changes nothing anybody can
+ * see. No session ends, no password moves, and the listing this was pressed from says exactly
+ * what it said before.
+ */
+export function useCreateUserRecovery() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (id: string) => callApi(postAdminUsersByIdRecovery(id)),
   });
 }
 

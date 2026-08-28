@@ -1,6 +1,7 @@
 import { createApiAction, type ApiAction } from "@app/api/request";
 import type {
   AdminInvite,
+  RecoveryLink,
   Role,
   SmtpConfig,
   SmtpForm,
@@ -34,6 +35,24 @@ export function patchAdminUsersById(
 export function deleteAdminUsersById(id: string): ApiAction<void> {
   return createApiAction((d) =>
     d.call({ method: "DELETE", path: `/api/admin/users/${seg(id)}` }),
+  );
+}
+
+/**
+ * `POST /api/admin/users/{id}/recovery` — mints a way back into somebody's account.
+ *
+ * The reply carries the URL, and it is the only time it can be read: what is stored is a hash,
+ * so a lost link is reissued rather than recovered.
+ *
+ * It changes nothing about the account — no session ends, no password moves, and nobody is
+ * told. An administrator can answer "I am locked out" without locking out somebody who turns
+ * out to have been fine, and an unused link simply lapses.
+ */
+export function postAdminUsersByIdRecovery(
+  id: string,
+): ApiAction<RecoveryLink> {
+  return createApiAction((d) =>
+    d.call({ method: "POST", path: `/api/admin/users/${seg(id)}/recovery` }),
   );
 }
 

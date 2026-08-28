@@ -21,7 +21,12 @@ import (
 const (
 	LoginPath  = "/login"
 	InvitePath = "/invite/"
-	ManagePath = "/manage"
+	// ForgotPath asks for a way back into an account, and RecoverPath is where that way
+	// leads. Both belong to the login island: whoever is on them has no session by
+	// definition, and one of them is reached from a mail rather than from this site at all.
+	ForgotPath  = "/forgot"
+	RecoverPath = "/recover/"
+	ManagePath  = "/manage"
 	// A shared link lands in the manage island: what it opens is the feed picker, which
 	// already lives there, and what somebody does next is subscribe to things.
 	SharePath = "/share"
@@ -268,6 +273,12 @@ func (s *SPA) shellFor(r *http.Request, clean string) asset {
 	// incomplete", which is both true and actionable. Falling through to the reader would
 	// show a stranger the shell of an application they have no account for.
 	case clean == strings.TrimSuffix(InvitePath, "/"), strings.HasPrefix(clean, InvitePath):
+		return s.login
+	case clean == ForgotPath:
+		return s.login
+	// The bare "/recover" too, and for the reason the bare "/invite" is here: a mail client
+	// that wrapped a long URL leaves somebody holding half of one, and that island says so.
+	case clean == strings.TrimSuffix(RecoverPath, "/"), strings.HasPrefix(clean, RecoverPath):
 		return s.login
 	case clean == ManagePath, strings.HasPrefix(clean, ManagePath+"/"):
 		return s.manage

@@ -4,10 +4,10 @@ bystander does not deliver mail. It hands a message to a relay an operator alrea
 their mail provider, or a sending service — and that relay does the rest. Everything here is
 about the handing over.
 
-Two things send: a recovery code, and an invitation. Both are refused outright when no relay
-is configured, before anything is written — an address stored against a relay that does not
-exist is a promise the product cannot keep, and the person finds that out at the worst
-possible moment.
+Three things send: a recovery code, an invitation, and a way back into an account whose
+password is gone. All three are refused outright when no relay is configured, before anything
+is written — an address stored against a relay that does not exist is a promise the product
+cannot keep, and the person finds that out at the worst possible moment.
 
 ## Where the configuration lives
 
@@ -114,7 +114,7 @@ Starting is refused outright when no relay is configured, before anything is wri
 whether this instance can send mail is not a secret from the people whose recovery depends
 on it.
 
-Nothing sends to a proved address yet — that is the reset flow, which does not exist.
+A proved address is what the forgotten-password form reads. See **Recovery links** below.
 
 ## Invitations
 
@@ -160,6 +160,71 @@ deleteAccountRecovery       DELETE /api/account/recovery           forgets both
 One refusal — "that code is wrong or has expired" — covers wrong, expired, exhausted and
 absent alike. Which of the four it was tells a caller something about an account that may not
 be theirs, and tells the owner nothing they could not learn by trying again.
+
+## Recovery links
+
+A recovery link sets a password without knowing the old one. It is a bearer credential with
+256 bits behind it, stored as a hash, good for **a day** — against an invitation's week,
+because an invitation waits for somebody to get round to an account that does not exist yet
+and this one opens an account that is in use.
+
+There are two ways to get one, and they mint the same thing.
+
+**An administrator hands one over.** `POST /api/admin/users/{id}/recovery` returns the URL,
+once. This works on an instance that can send no mail at all, which is the reason the feature
+is not simply "forgot password": self-hosting without a relay is normal, and the alternative
+way back in is a shell on the host.
+
+It is deliberately never *sent* from there, even where a relay exists. An administrator who
+could both mail a link and read it would hold a way into every account; the path that reaches
+an inbox is the account's own to ask for.
+
+**The account asks for one.** `POST /api/recoveries` takes an address and answers `204`
+whatever happens — unknown address, no relay, account disabled, no recovery address on file,
+relay refused. Anything else turns the login page into a way to ask this instance who has an
+account here and what address they use. The cost is that a mistyped address goes uncorrected,
+and the mail carries the correction instead: it names the account, so a link arriving for a
+name you do not recognise is its own answer.
+
+The handler has exactly one exit for that reason. Everything that can fail lives in
+`mailRecoveryLink`, which returns an error the caller logs and does not report; written as a
+refusal per step it is one forgotten `return` away from answering differently for an address
+that exists, and that difference is the whole vulnerability.
+
+Only a **proved** address is looked up. One partway through being proved is one somebody
+typed, and recovering through it would let anybody holding a borrowed session point recovery
+at an inbox of their own and come back for the account later.
+
+**Issuing changes nothing.** No session ends, no password moves, and the account holder is not
+told. That is what makes it safe for an administrator to answer "I am locked out" without
+locking out somebody who turns out to have been fine, and an unused link simply lapses.
+
+**Spending one changes three things at once**, in one transaction: the password is replaced;
+every session for the account ends, because the likeliest reason to be here is that somebody
+else has one; and every other outstanding link for the account is voided, because from that
+moment they cannot be told apart from a stolen one.
+
+Rows survive being spent. "When was this account last recovered, and who asked" is the first
+question anybody investigating a takeover has. `used_at`, `voided_at` and `expires_at` are
+three different endings and the interface says which — sign in with the password you already
+set, open the newer link, or ask for another.
+
+It ends at the login form rather than signed in, unlike accepting an invitation. There the
+account did not exist a moment ago; here it did, the link may have reached the wrong inbox,
+and typing the new password once is the cheapest confirmation that the right person has it.
+
+```
+postAdminUsersByIdRecovery    POST /api/admin/users/{id}/recovery   returns the URL, once
+postRecoveries                POST /api/recoveries                  always 204, whatever happened
+getRecoveriesByToken          GET  /api/recoveries/{token}          which of the four states it is in
+postRecoveriesByTokenAccept   POST /api/recoveries/{token}/accept   sets the password, signs nobody in
+getPublicInstance             GET  /api/instance                    whether a link can be mailed at all
+```
+
+`GET /api/instance` is the one unauthenticated thing that reports on the instance, and it
+reports one bit: whether recovery by mail is on offer. The login form asks before showing
+"Forgotten your password?", because a form that takes an address and says "check your inbox"
+on an instance with no relay is lying to somebody who is already locked out.
 
 ## The API
 

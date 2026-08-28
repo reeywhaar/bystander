@@ -64,14 +64,14 @@ do. `deletion_cancelled_at` records that withdrawal, because otherwise it is inv
 an account quietly stops being scheduled and nothing says why or when.
 
 The purge takes what belongs to the person and leaves what belongs to everybody. In `main.db`
-that is the cascade: sessions, tags, subscriptions, pages and their filters, recovery,
-shares — invitations keep their row and lose their pointer. In `derived.db` it is done
-explicitly rather than left to the orphan sweep, because an erasure that depends on a garbage
-collector running later is an erasure that has not happened yet. **Feeds and items are never
-touched**: they are held once for the whole instance, a subscription is the only part of that
-relationship anybody owns, and one person leaving must not take another person's reading with
-them. A feed left with no followers is collected afterwards by `DeleteOrphanFeeds`, on the
-same terms as unsubscribing from it by hand.
+that is the cascade: sessions, tags, subscriptions, pages and their filters, recovery
+addresses, recovery links, shares — invitations keep their row and lose their pointer. In
+`derived.db` it is done explicitly rather than left to the orphan sweep, because an erasure
+that depends on a garbage collector running later is an erasure that has not happened yet.
+**Feeds and items are never touched**: they are held once for the whole instance, a
+subscription is the only part of that relationship anybody owns, and one person leaving must
+not take another person's reading with them. A feed left with no followers is collected
+afterwards by `DeleteOrphanFeeds`, on the same terms as unsubscribing from it by hand.
 
 `slug` is the name a published page is addressed by, and it is deliberately **not** the
 username. Two names for two jobs: one to sign in with, one to be known by — and the one to
@@ -172,6 +172,39 @@ died by being unknown instead. What was being lost was the record, never the gua
 **proved** recovery address — straight into `user_recovery`, with no code to type. The proof
 is that the link went to that inbox and nowhere else, which is why the API does not hand the
 link back for an invitation it sent. See [mail.md](mail.md#invitations).
+
+### `recovery_links`
+
+```sql
+CREATE TABLE recovery_links (
+  id           TEXT    PRIMARY KEY,                         -- rl_…
+  token_hash   BLOB    NOT NULL UNIQUE,                     -- sha256(token)
+  principal_id TEXT    NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+  created_by   TEXT    REFERENCES principals(id) ON DELETE SET NULL,
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  used_at      INTEGER,
+  voided_at    INTEGER
+);
+```
+
+A way back into an account whose password is gone. Not the recovery *address* — that is
+`user_recovery`, and this is what gets sent to it.
+
+Single use, one day. The shape is the invitation's, and so are the reasons: hashed because the
+token is a bearer credential, and the row survives being spent because "when was this account
+last recovered, and who asked" is the question somebody investigating a takeover has to be able
+to answer. `created_by` is the administrator who issued it and `NULL` when nobody did — a link
+asked for at the forgotten-password form has no author but whoever can read the mailbox.
+
+Nothing is unique per principal. Issuing a link neither cancels the last one nor touches the
+password somebody still knows: it is an extra door, not a new lock. **Spending** one does close
+the others, and `voided_at` is where that is written down — a link still outstanding when a
+different one was used, which from then on cannot be told apart from a stolen one. It is also
+what a mail that failed to leave gets stamped with, since its only copy went nowhere.
+
+`used_at`, `voided_at` and an `expires_at` in the past are three different endings, and the
+page says which. See [mail.md](mail.md#recovery-links).
 
 ### `tags`
 

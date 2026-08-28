@@ -204,6 +204,29 @@ func (s *Store) RecoveryEmail(ctx context.Context, principalID string) (string, 
 	return email, err
 }
 
+// PrincipalByRecoveryEmail finds the account that has proved this address, or nothing.
+//
+// Only the proved table, never the pending one. An address partway through being proved is an
+// address somebody typed, and recovering an account through one would mean anybody who can
+// reach a signed-in session could point recovery at an inbox of their own and come back later.
+//
+// NOCASE, matching the index: the column holds one account per address regardless of how it
+// is spelled, so the lookup has to agree with the rule that put it there.
+func (s *Store) PrincipalByRecoveryEmail(ctx context.Context, email string) (*Principal, error) {
+	address, err := checkAddress(email)
+	if err != nil {
+		return nil, err
+	}
+	p, err := scanPrincipal(s.main.QueryRowContext(ctx, `
+		SELECT `+principalColumns+` FROM principals
+		 WHERE id = (SELECT principal_id FROM user_recovery WHERE email = ? COLLATE NOCASE)`,
+		address))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NotFound("no account is recoverable through %q", address)
+	}
+	return p, err
+}
+
 // PendingRecovery is the address partway through being proved, if there is one.
 //
 // So a page reopened mid-flow can say which address it is waiting on, rather than starting

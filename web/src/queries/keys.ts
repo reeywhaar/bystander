@@ -55,5 +55,8 @@ export const qk = {
 
   /** Keyed by the token, because two links are two different answers. */
   invite: (token: string) => ["invite", token] as const,
+  recovery: (token: string) => ["recovery", token] as const,
+  /** What the login form may know before anybody signs in. Not the admin's settings. */
+  publicInstance: ["public-instance"] as const,
   share: (token: string) => ["share", token] as const,
 };

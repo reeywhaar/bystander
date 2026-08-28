@@ -47,6 +47,9 @@ const (
 	// session is called out here is derived from that hash with [Derive] — a second hash,
 	// so the stored one does not leave the database either.
 	Session = "se_"
+	// RecoveryLink names one way back into an account whose password is gone. Distinct from
+	// the recovery *address*, which is a column on an account rather than a thing with an id.
+	RecoveryLink = "rl_"
 )
 
 // crockford omits I, L, O and U, so an id cannot be misread between similar glyphs or

@@ -9,7 +9,7 @@ Five Vite entries, not one SPA with routes:
 
 | entry | audience | contains |
 | --- | --- | --- |
-| `login.html` | nobody yet | The landing page at `/`, login, invitation acceptance |
+| `login.html` | nobody yet | The landing page at `/`, login, invitation acceptance, password recovery |
 | `index.html` | a reader | The front pages |
 | `manage.html` | a subscriber | Feeds, tags, pages, what has been read |
 | `admin.html` | an administrator | Users, invitations, mail, publishing, pictures |
