@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Colophon } from "@app/components/Colophon";
+import { GitHubIcon } from "@app/components/icons/GitHubIcon";
 import { GuestMasthead } from "@app/components/GuestMasthead";
 import { SignInDialog } from "@app/components/SignInDialog";
 import { PRODUCT } from "@app/lib/constants";
+import type { Voice } from "@app/lib/voice";
 
 /**
  * What a stranger gets at "/".
@@ -22,7 +24,7 @@ export function LandingPage() {
 
   return (
     <>
-      <GuestMasthead onSignIn={() => setSigningIn(true)} />
+      <GuestMasthead onSignIn={() => setSigningIn(true)} source />
 
       <main className="mx-auto max-w-[1100px] px-6 py-16 sm:py-24">
         <Reveal>
@@ -50,6 +52,35 @@ export function LandingPage() {
             Nothing accumulates. Nothing is owed. A feed that publishes forty
             items a day contributes the same handful as one that publishes two.
           </p>
+
+          {/* Free software you run yourself, said at the top rather than at the bottom.
+              
+              It used to be the last sentence on the page, under "Getting in", where it read
+              as a footnote about licensing. It is not a footnote: for most of the people who
+              get this far it is the *offer* — this instance is somebody else's and they
+              cannot have an account on it, so the thing they can actually do is take the
+              whole of it and run their own. A page whose only clear action is a sign-in
+              button nobody can use has no clear action at all.
+              
+              The button is a link, and deliberately: it leaves for somewhere else, and
+              anything that can be opened in a new tab or copied should be a thing the
+              browser knows is an address. */}
+          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <a
+              href={PRODUCT.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm
+                text-paper hover:bg-accent"
+            >
+              <GitHubIcon className="text-base" />
+              Read the source on GitHub
+            </a>
+            <p className="text-sm text-ink-muted">
+              Self-hosted, and free to run — one container and one required
+              setting.
+            </p>
+          </div>
         </Reveal>
 
         <Reveal>
@@ -61,7 +92,7 @@ export function LandingPage() {
         </Reveal>
 
         <Reveal>
-          <Section title="Why">
+          <Section title="Why" voice="antique">
             <p>
               Every reader I have used turns reading into bookkeeping. A number
               goes up, and the only way to make it go down is to look at
@@ -78,7 +109,7 @@ export function LandingPage() {
         </Reveal>
 
         <Reveal>
-          <Section title="What it does differently">
+          <Section title="What it does differently" voice="slab">
             <Difference title="A page, not a queue">
               Articles arrive in fixed positions decided when the page was made,
               and stay there. Where something sits is how you remember where you
@@ -106,7 +137,7 @@ export function LandingPage() {
         </Reveal>
 
         <Reveal>
-          <Section title="What is in it" wide>
+          <Section title="What is in it" voice="gothic" wide>
             <ul className="grid list-disc gap-x-10 gap-y-4 pl-5 sm:grid-cols-2 lg:grid-cols-3">
               <Feature>
                 Feeds found from a site's address alone — paste example.com and
@@ -176,7 +207,7 @@ export function LandingPage() {
         </Reveal>
 
         <Reveal>
-          <Section title="Getting in">
+          <Section title="Getting in" voice="humanist">
             <p>
               This is somebody's own instance, and it is invitation-only — there
               is no sign-up, and no default password at any point. If you have
@@ -192,16 +223,17 @@ export function LandingPage() {
             </p>
             <p>
               To run one of your own, it is a single container and one required
-              setting —{" "}
+              setting. The whole of it — the server, this page, and the
+              screenshots above —{" "}
               <a
                 href={PRODUCT.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-accent underline underline-offset-2"
               >
-                the whole of it is on GitHub
+                is on GitHub
               </a>
-              .
+              , and there is nothing else to buy or sign up for.
             </p>
           </Section>
         </Reveal>
@@ -233,16 +265,29 @@ export function LandingPage() {
  */
 function Section({
   title,
+  voice,
   wide = false,
   children,
 }: {
   title: string;
+  /**
+   * The display face this heading is set in, named rather than drawn.
+   *
+   * The front page draws a voice per card from the article's id, because there the point is
+   * that nobody chose. Here somebody did: this document is written, and its headings run
+   * through the faces in the order they are written in. A page whose typography reshuffled
+   * on reload would be saying the faces are decoration, which is the opposite of the claim
+   * the page is making about them.
+   */
+  voice: Voice;
   wide?: boolean;
   children: ReactNode;
 }) {
   return (
     <section className="mt-20 border-t border-rule pt-10">
-      <h2 className="font-serif text-2xl text-ink">{title}</h2>
+      <h2 className={`headline heading-voiced voice-${voice} text-ink`}>
+        {title}
+      </h2>
       <div
         className={`prose-summary mt-4 flex flex-col gap-4 text-ink-muted ${
           wide ? "" : "max-w-2xl"

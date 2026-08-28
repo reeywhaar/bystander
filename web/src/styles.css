@@ -624,6 +624,31 @@ body {
   }
 
   /*
+   * The landing page's section headings, set in the same six faces the front page is.
+   *
+   * A document arguing that this reader sets a page like a newspaper, with every heading on it
+   * in one serif, is arguing against itself — the faces *are* the argument, and the page that
+   * makes it should be the first evidence for it. So the headings run through the voices, one
+   * each, in a fixed order rather than a drawn one: this page is written rather than composed,
+   * and a reload that reshuffled its typography would say the faces were decoration.
+   *
+   * Sized through `--headline-size` rather than a `text-*` utility, which is the whole reason
+   * this is a class and not a pair of classes at the call site. Tailwind's utilities are
+   * layered above these, so a `text-3xl` beside `.headline` wins the font-size outright and
+   * takes `--voice-scale` out with it — and the scale is exactly what makes six faces at one
+   * size look like one size rather than a specimen sheet. Set the variable and the voice's own
+   * multiplier still applies.
+   */
+  .heading-voiced {
+    --headline-size: 1.625rem;
+  }
+  @media (min-width: 640px) {
+    .heading-voiced {
+      --headline-size: 1.9375rem;
+    }
+  }
+
+  /*
    * The gothic goes up into capitals in the narrow slots, the way a single-column headline
    * in a newspaper does — condensed capitals are what fill one column without hyphenating.
    *
