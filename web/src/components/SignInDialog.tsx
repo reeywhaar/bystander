@@ -1,11 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
-import { postLogin } from "@app/api/actions/auth";
+import { getPublicInstance, postLogin } from "@app/api/actions/auth";
 import { useApiCall } from "@app/api/provider";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
 import { Field } from "@app/components/ui/Field";
 import { Modal } from "@app/components/ui/Modal";
+import { qk } from "@app/queries/keys";
 
 /**
  * Signing in without leaving the page.
@@ -38,6 +40,16 @@ export function SignInDialog({
   onClose: (signedIn?: boolean) => void;
 }) {
   const callApi = useApiCall();
+  // Whether this instance can mail somebody a way back into their account, asked only once
+  // the dialog is open. Both callers mount this permanently and toggle `open`, so without
+  // the gate every stranger arriving at a published page would pay for a question nobody
+  // has asked yet.
+  const instance = useQuery({
+    queryKey: qk.publicInstance,
+    queryFn: ({ signal }) => callApi(getPublicInstance(), signal),
+    enabled: open,
+    retry: false,
+  });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +123,19 @@ export function SignInDialog({
           required
           onChange={(event) => setPassword(event.target.value)}
         />
+
+        {/* An ordinary link out, and it has to be: /forgot lives in the login island, which
+            is a different document from either of the two this dialog opens over. Offered
+            only where a relay exists — a form that takes an address and says "check your
+            inbox" on an instance that cannot send is a promise to somebody already locked
+            out. */}
+        {instance.data?.recovery ? (
+          <p className="text-sm text-ink-muted">
+            <a className="text-accent underline" href="/forgot">
+              Forgotten your password?
+            </a>
+          </p>
+        ) : null}
       </form>
     </Modal>
   );

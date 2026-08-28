@@ -91,6 +91,27 @@ it before then buys nothing and promises something untrue.
 trademark, recognised as one silhouette, and there is no outlined cut of it to distinguish
 — it keeps its own name and is filled because that is what it is.
 
+**A mark beside a word goes inline, never in a flex row.** This has cost two visible bugs
+now, in the masthead's username and in its GitHub link, and both looked fine alone and wrong
+in company:
+
+```tsx
+<span><PersonFillIcon className="mr-[0.2em] inline align-[-0.125em]" />{username}</span>
+```
+
+A flex container takes its baseline from its first flex item; an SVG has no baseline, so one
+is *synthesised* from the bottom margin edge of the box. Put the icon first and the whole
+label is then aligned by the bottom of the mark rather than by its type — so in any row that
+is `items-baseline`, the word drops. Seven pixels at 14px type, measured; enough that
+everybody sees it and nobody can name it. `items-center` on the outer row does not fix it,
+it just moves the near-miss.
+
+Inline, the text carries the baseline and the mark is placed against it like any other inline
+object, which is what `align-[-0.125em]` is for. `UserLabel` exists for exactly this and
+`UserLabel.test.tsx` and `GuestMasthead.test.tsx` both assert it, because it is invisible in
+review and obvious on screen. A padded button is the exception — `flex items-center` is right
+there, since nothing outside it shares a baseline with its contents.
+
 ## The API layer
 
 Four files under `src/api`. The layering is the point and is not negotiable:

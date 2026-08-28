@@ -58,15 +58,20 @@ export function GuestMasthead({
 
           {/* Before the wordmark's own business rather than after it, because somebody who
               has just read what this is wants to see it and somebody with an account is
-              already reaching for Sign in without looking. */}
+              already reaching for Sign in without looking.
+
+              Not a flex row, and that is the whole of the alignment: a flex container takes
+              its baseline from its first item, an SVG has none, so one gets synthesised from
+              the bottom of the mark — and this sits in a row aligned by baseline beside Sign
+              in. Inline, the word carries the baseline, as in UserLabel. */}
           {source ? (
             <a
               href={PRODUCT.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-ink-muted hover:text-ink"
+              className="text-ink-muted hover:text-ink"
             >
-              <GitHubIcon />
+              <GitHubIcon className="mr-[0.4em] inline align-[-0.125em]" />
               GitHub
             </a>
           ) : null}
