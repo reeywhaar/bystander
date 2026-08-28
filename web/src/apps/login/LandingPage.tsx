@@ -74,7 +74,7 @@ export function LandingPage() {
                 text-paper hover:bg-accent"
             >
               <GitHubIcon className="text-base" />
-              Read the source on GitHub
+              GitHub
             </a>
             <p className="text-sm text-ink-muted">
               Self-hosted, and free to run — one container and one required

@@ -78,9 +78,7 @@ describe("LandingPage", () => {
   it("offers the source as the action, not as a footnote", () => {
     open();
 
-    const cta = screen.getByRole("link", {
-      name: /Read the source on GitHub/,
-    });
+    const cta = screen.getByRole("link", { name: "GitHub" });
     expect(cta).toHaveAttribute(
       "href",
       "https://github.com/reeywhaar/bystander",
