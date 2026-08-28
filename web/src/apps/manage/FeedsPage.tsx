@@ -410,7 +410,7 @@ function FeedRow({
 
         {/* The one setting that stays in the list: it is a dial somebody nudges while
             looking at the whole of it, not something they go and open a feed to change. */}
-        <div className="order-4 flex shrink-0 items-center gap-3 sm:order-2 sm:ml-auto">
+        <div className="order-4 shrink-0 sm:order-2 sm:ml-auto">
           {/* What this feed is publishing today, without following it anywhere.
 
               The same dialog the picker uses before subscribing, which is the point: the
@@ -422,25 +422,31 @@ function FeedRow({
               as part of the title — a word growing out of the name rather than a thing to
               press. Together they are the row's controls, in one place, at one weight.
 
+              Inside the weight's own label rather than beside it, because beside it means at
+              the far edge of a fixed-width box that is right-aligned against the track, and
+              an icon alone in seventy pixels of white does not read as a button at all.
+
               An eye rather than the word, because next to a label that already reads "50 ·
               as usual" a second run of small text is one more thing to parse before finding
               the one to press. The name is on the button for anything not reading the
               picture, and the title is in it because a list of forty otherwise offers forty
               buttons that all say the same thing. */}
-          <button
-            type="button"
-            onClick={() => setPreviewing(true)}
-            aria-label={`Preview ${feed.title}`}
-            title={`Preview ${feed.title}`}
-            className="text-ink-faint hover:text-ink"
-          >
-            <EyeIcon className="text-base" />
-          </button>
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}
             onChange={(priority) =>
               update.mutate({ id: feed.id, changes: { priority } })
+            }
+            leading={
+              <button
+                type="button"
+                onClick={() => setPreviewing(true)}
+                aria-label={`Preview ${feed.title}`}
+                title={`Preview ${feed.title}`}
+                className="shrink-0 text-ink-faint hover:text-ink"
+              >
+                <EyeIcon className="text-base" />
+              </button>
             }
           />
         </div>
