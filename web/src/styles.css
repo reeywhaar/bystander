@@ -388,19 +388,90 @@ body {
     --frame-ink: 55%;
     --frame-pad: 0.75rem;
     --frame-width: 1px;
+    --frame-colour: color-mix(
+      in srgb,
+      var(--ink-muted) var(--frame-ink),
+      transparent
+    );
 
-    border: var(--frame-width) solid
-      color-mix(in srgb, var(--ink-muted) var(--frame-ink), transparent);
+    border: var(--frame-width) solid var(--frame-colour);
     padding: var(--frame-pad);
   }
   .frame-solid {
     border-style: solid;
   }
-  .frame-dashed {
-    border-style: dashed;
-  }
+
+  /*
+   * Dashed and dotted are painted rather than stroked, because WebKit does not stroke them.
+   *
+   * On iOS Safari a dashed box drew its top and its bottom and nothing at all down the sides.
+   * That was measured off a screenshot rather than guessed at: the card was exactly the width
+   * the page's own padding gives it, both side edges well inside the screen, and simply blank.
+   * WebKit strokes a dashed border with a dash pattern worked out per side, and the pattern
+   * for the vertical sides comes out empty. Solid was never affected, a solid border being a
+   * fill rather than a stroke — which is also the way out.
+   *
+   * So the line is laid down as four gradients in the border area instead, which is the same
+   * mark made with a fill. The border itself stays exactly where it was and only loses its
+   * colour, so nothing about the box moves: `--frame-width` insets the content by what it
+   * always did, and a boxed card sits on the same gridlines as an unboxed one.
+   *
+   * `background-origin: border-box` is the whole trick. Without it the gradients are laid
+   * inside the padding and the frame draws a second rectangle a few pixels in from itself.
+   *
+   * Everywhere, not only on WebKit. Chromium draws a dotted border as round dots and this
+   * draws square ones, which at a pixel or two is not a difference anybody can see — and a
+   * frame drawn one way on a phone and another on a desktop is two frames, where the whole
+   * claim this page makes is that it is one page seen twice.
+   */
+  .frame-dashed,
   .frame-dotted {
-    border-style: dotted;
+    border-color: transparent;
+    background-origin: border-box;
+    background-repeat: no-repeat;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        var(--frame-colour) 0 var(--frame-dash),
+        transparent var(--frame-dash) var(--frame-step)
+      ),
+      repeating-linear-gradient(
+        to right,
+        var(--frame-colour) 0 var(--frame-dash),
+        transparent var(--frame-dash) var(--frame-step)
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        var(--frame-colour) 0 var(--frame-dash),
+        transparent var(--frame-dash) var(--frame-step)
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        var(--frame-colour) 0 var(--frame-dash),
+        transparent var(--frame-dash) var(--frame-step)
+      );
+    background-size:
+      100% var(--frame-width),
+      100% var(--frame-width),
+      var(--frame-width) 100%,
+      var(--frame-width) 100%;
+    background-position:
+      left top,
+      left bottom,
+      left top,
+      right top;
+  }
+
+  /* The dash and the gap together, at the proportions both engines stroke a dash in: a mark
+     three times as long as the line is thick, and a gap of the same again. */
+  .frame-dashed {
+    --frame-dash: calc(var(--frame-width) * 3);
+    --frame-step: calc(var(--frame-width) * 6);
+  }
+  /* And a dot is as long as the line is thick, which is the whole of what makes it a dot. */
+  .frame-dotted {
+    --frame-dash: var(--frame-width);
+    --frame-step: calc(var(--frame-width) * 2);
   }
 
   /* How strongly the line is inked. The faint end is nearly the paper itself, which is what
