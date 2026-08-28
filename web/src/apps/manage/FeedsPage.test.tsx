@@ -199,7 +199,7 @@ describe("FeedsPage", () => {
     });
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Preview" }),
+      await screen.findByRole("button", { name: "Preview The Example" }),
     );
 
     const shown = await screen.findByText("A story about a thing");

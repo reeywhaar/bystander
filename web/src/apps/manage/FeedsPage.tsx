@@ -19,6 +19,7 @@ import { FeedErrorDialog } from "@app/apps/manage/FeedErrorDialog";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
 import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
+import { EyeIcon } from "@app/components/icons/EyeIcon";
 import { Priority } from "@app/components/ui/Priority";
 import { Spinner } from "@app/components/ui/Spinner";
 import { tagLabel } from "@app/lib/tags";
@@ -323,39 +324,16 @@ function FeedRow({
           belongs beside the name on a wide screen and under everything on a narrow one. */}
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <div className="order-1 flex min-w-0 basis-full flex-col sm:flex-1 sm:basis-auto">
-          <div className="flex min-w-0 items-baseline gap-x-2">
-            {/* The name is the way into everything else about this feed. One affordance
-                rather than a pencil for the title and a disclosure for the rest. */}
-            <button
-              type="button"
-              onClick={() => onOpen(feed)}
-              title={feed.title}
-              className="min-w-0 truncate text-left font-serif text-lg text-ink hover:text-accent"
-            >
-              {feed.title}
-            </button>
-
-            {/* What this feed is publishing today, without following it anywhere.
-                
-                The same dialog the picker uses before subscribing, which is the point: the
-                question "is this still worth having" is the question "was this worth taking",
-                asked later, and it deserves the same answer rather than a different screen.
-                
-                Undecorated, and quiet. It sits directly under a serif name, and a rule beneath
-                it — dashed or otherwise — put a second horizontal mark inside a row that
-                already ends in one, which read as an underline the name had grown rather than
-                as a thing to press. The size and the colour say enough, and the hover says the
-                rest. It sits beside the name because it is about the feed the name refers to,
-                and because a row of buttons down the right of a list turns a list of feeds
-                into a table of controls. */}
-            <button
-              type="button"
-              onClick={() => setPreviewing(true)}
-              className="shrink-0 text-xs text-ink-muted hover:text-ink"
-            >
-              Preview
-            </button>
-          </div>
+          {/* The name is the way into everything else about this feed. One affordance
+              rather than a pencil for the title and a disclosure for the rest. */}
+          <button
+            type="button"
+            onClick={() => onOpen(feed)}
+            title={feed.title}
+            className="truncate text-left font-serif text-lg text-ink hover:text-accent"
+          >
+            {feed.title}
+          </button>
 
           {/* Where the feed comes from, as a way back to it.
               
@@ -426,7 +404,32 @@ function FeedRow({
 
         {/* The one setting that stays in the list: it is a dial somebody nudges while
             looking at the whole of it, not something they go and open a feed to change. */}
-        <div className="order-4 shrink-0 sm:order-2 sm:ml-auto">
+        <div className="order-4 flex shrink-0 items-center gap-3 sm:order-2 sm:ml-auto">
+          {/* What this feed is publishing today, without following it anywhere.
+
+              The same dialog the picker uses before subscribing, which is the point: the
+              question "is this still worth having" is the question "was this worth taking",
+              asked later, and it deserves the same answer rather than a different screen.
+
+              With the weight rather than under the name. Both are things done *to* a feed
+              while looking at the list of them, and a control that sat beside the title read
+              as part of the title — a word growing out of the name rather than a thing to
+              press. Together they are the row's controls, in one place, at one weight.
+
+              An eye rather than the word, because next to a label that already reads "50 ·
+              as usual" a second run of small text is one more thing to parse before finding
+              the one to press. The name is on the button for anything not reading the
+              picture, and the title is in it because a list of forty otherwise offers forty
+              buttons that all say the same thing. */}
+          <button
+            type="button"
+            onClick={() => setPreviewing(true)}
+            aria-label={`Preview ${feed.title}`}
+            title={`Preview ${feed.title}`}
+            className="text-ink-faint hover:text-ink"
+          >
+            <EyeIcon className="text-base" />
+          </button>
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}
