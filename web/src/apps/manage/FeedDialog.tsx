@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
@@ -33,6 +33,9 @@ export function FeedDialog({
 }) {
   const update = useUpdateFeed();
   const remove = useRemoveFeed();
+  // Generated rather than fixed, because two of these on one page would otherwise share an
+  // id and the label would point at whichever mounted first.
+  const noteID = useId();
 
   // Held here until Save, rather than written as you touch things.
   //
@@ -40,6 +43,7 @@ export function FeedDialog({
   // each toggle becomes a request the list underneath has to catch up with. These are
   // choices somebody makes together and confirms once.
   const [name, setName] = useState("");
+  const [note, setNote] = useState("");
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [reach, setReach] = useState(0);
   const [marking, setMarking] = useState(false);
@@ -51,6 +55,7 @@ export function FeedDialog({
   useEffect(() => {
     if (!feed) return;
     setName(feed.title);
+    setNote(feed.note);
     setTagIDs(feed.tag_ids);
     setReach(feed.article_window);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,10 +81,15 @@ export function FeedDialog({
       tagIDs.length === feed.tag_ids.length &&
       tagIDs.every((id) => feed.tag_ids.includes(id));
 
+    // Trimmed before comparing as well as before sending, so opening the dialog and pressing
+    // Save without touching anything is not a write because of a trailing newline.
+    const written = note.trim();
+
     if (
       sameTags &&
       reach === feed.article_window &&
-      override === feed.title_override
+      override === feed.title_override &&
+      written === feed.note
     ) {
       onClose();
       return;
@@ -90,6 +100,7 @@ export function FeedDialog({
         id: feed.id,
         changes: {
           title_override: override,
+          note: written,
           tag_ids: tagIDs,
           article_window: reach,
         },
@@ -155,6 +166,35 @@ export function FeedDialog({
             Use publisher title
           </button>
         ) : null}
+      </div>
+
+      {/* Why this one is here, which is the one thing about a feed nothing else can say.
+          A name is the publisher's and the tags are a filing system; this is the sentence
+          that answers "why am I still reading this" a year later, and it is the difference
+          between unfollowing something confidently and keeping it in case it mattered.
+
+          Optional, and empty on almost every feed. Required, it would be forty sentences
+          written to satisfy a form and not one of them worth reading. */}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={noteID} className="text-sm font-medium text-ink">
+          Why you read it
+        </label>
+        <p id={`${noteID}-hint`} className="text-xs text-ink-muted">
+          A note to yourself, shown under the feed in the list. Nobody else sees
+          it.
+        </p>
+        <textarea
+          id={noteID}
+          aria-describedby={`${noteID}-hint`}
+          value={note}
+          rows={3}
+          maxLength={500}
+          placeholder="Why this is worth following"
+          onChange={(event) => setNote(event.target.value)}
+          className="resize-y rounded-md border border-rule bg-paper-raised px-3 py-2 text-sm
+            text-ink placeholder:text-ink-faint focus-visible:outline-2
+            focus-visible:outline-offset-1 focus-visible:outline-accent"
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

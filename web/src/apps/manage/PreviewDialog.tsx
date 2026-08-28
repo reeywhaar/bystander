@@ -35,13 +35,17 @@ export function PreviewDialog({
   open: boolean;
   onClose: () => void;
   /**
-   * What the button at the bottom does, which is not the same in both places it is used.
+   * What the button at the bottom does, which is not the same in all three places it is used.
    *
    * Asked for one feed it subscribes; asked from a list of several it ticks that one and
    * hands the choice back. Either way the person pressing it has just read the thing and is
    * saying yes to it, which is why it is one button and not two dialogs.
+   *
+   * Left out when the feed is already followed, and then there is nothing to say yes to: the
+   * dialog is being read rather than answered, so it closes and that is all. An Add there
+   * would be a button that either does nothing or unfollows, and neither is what it says.
    */
-  onAdd: () => void;
+  onAdd?: () => void;
   adding?: boolean;
 }) {
   const preview = usePreviewFeed();
@@ -65,14 +69,20 @@ export function PreviewDialog({
       onClose={onClose}
       title={feed?.title || "This feed"}
       footer={
-        <>
-          <Button onClick={onClose} disabled={adding}>
-            Cancel
+        onAdd ? (
+          <>
+            <Button onClick={onClose} disabled={adding}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={onAdd} disabled={adding}>
+              {adding ? "Adding…" : "Add"}
+            </Button>
+          </>
+        ) : (
+          <Button variant="primary" onClick={onClose}>
+            Close
           </Button>
-          <Button variant="primary" onClick={onAdd} disabled={adding}>
-            {adding ? "Adding…" : "Add"}
-          </Button>
-        </>
+        )
       }
     >
       {preview.isPending ? (

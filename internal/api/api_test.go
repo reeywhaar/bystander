@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -640,6 +641,56 @@ func TestTheWindowIsAClosedSet(t *testing.T) {
 		h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
 			map[string]int64{"article_window": good}), http.StatusOK, nil)
 	}
+}
+
+// Why somebody follows a feed is theirs to write down, and the list is where they read it
+// back. It is a note to self, so nothing about it is derived from the feed and nothing about
+// the feed is changed by it.
+func TestNotingWhyAFeedIsFollowed(t *testing.T) {
+	h := newHarness(t)
+	h.signIn(store.RoleUser, "alice")
+	feed := newFeedServer(t, 3)
+
+	var sub subscriptionBody
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, &sub)
+	if sub.Note != "" {
+		t.Fatalf("a new subscription started with note=%q, want none", sub.Note)
+	}
+
+	var noted subscriptionBody
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"note": "  The only place that covers the harbour works.  "}), http.StatusOK, &noted)
+	// Trimmed, so a note that arrives with the whitespace of the field it was typed into is
+	// stored as what was written.
+	if noted.Note != "The only place that covers the harbour works." {
+		t.Errorf("note = %q, want it trimmed and kept", noted.Note)
+	}
+	if noted.Title != "The Example" {
+		t.Errorf("title = %q, want the note to have changed nothing else", noted.Title)
+	}
+
+	// It survives the round trip rather than living in the response to the write.
+	var listed []subscriptionBody
+	h.expect(h.do(http.MethodGet, "/api/feeds", nil), http.StatusOK, &listed)
+	if len(listed) != 1 || listed[0].Note != "The only place that covers the harbour works." {
+		t.Errorf("listed = %+v, want the note on it", listed)
+	}
+
+	// And it can be taken back off.
+	var cleared subscriptionBody
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"note": ""}), http.StatusOK, &cleared)
+	if cleared.Note != "" {
+		t.Errorf("note = %q, want it cleared", cleared.Note)
+	}
+
+	// Bounded, because this is the one field here that takes prose and the list it appears
+	// in has to stay a list. Runes rather than bytes, so a note in Cyrillic gets the room a
+	// note in English does — 500 of these is 1000 bytes and must still be accepted.
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"note": strings.Repeat("я", 500)}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPatch, "/api/feeds/"+sub.ID,
+		map[string]string{"note": strings.Repeat("a", 501)}), http.StatusBadRequest, nil)
 }
 
 // A feed can be given a better name, and the publisher's own has to survive so it can be

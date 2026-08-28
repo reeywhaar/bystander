@@ -15,6 +15,7 @@ const feed: Subscription = {
   title: "The Example",
   feed_title: "The Example",
   title_override: "",
+  note: "",
   priority: 50,
   tag_ids: [],
   article_window: 604800,

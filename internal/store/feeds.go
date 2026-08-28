@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"bystander/internal/ids"
 )
@@ -48,6 +49,14 @@ type Subscription struct {
 	FeedID        string
 	TitleOverride string
 	Priority      int
+
+	// Note is why this person follows this feed, in their own words.
+	//
+	// Theirs and not the publisher's: two people following the same feed have different
+	// reasons for it, and the feed's own description of itself is a different thing that
+	// lives on the feed. Empty for almost every subscription, which is what makes the ones
+	// that have it worth reading.
+	Note string
 
 	// ArticleWindow is how old an article from this feed may be and still reach a page.
 	// Zero is no limit.
@@ -356,7 +365,7 @@ func setSubscriptionTags(ctx context.Context, tx *sql.Tx, principalID, subscript
 	return nil
 }
 
-const subscriptionColumns = `s.id, s.principal_id, s.feed_id, s.title_override, s.priority,
+const subscriptionColumns = `s.id, s.principal_id, s.feed_id, s.title_override, s.note, s.priority,
 	s.max_article_age, s.created_at`
 
 func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error) {
@@ -373,7 +382,7 @@ func scanSubscription(row interface{ Scan(...any) error }) (*Subscription, error
 		interval  int64
 		feedMade  int64
 	)
-	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Priority,
+	if err := row.Scan(&sub.ID, &sub.PrincipalID, &sub.FeedID, &sub.TitleOverride, &sub.Note, &sub.Priority,
 		&window, &created,
 		&feed.ID, &feed.URL, &feed.CanonicalURL, &feed.Title, &feed.SiteURL, &feed.ETag, &feed.LastModified,
 		&lastFetch, &lastOK, &status, &feed.LastError, &feed.LastErrorBody, &feed.FailureCount, &next, &interval, &feedMade); err != nil {
@@ -491,10 +500,18 @@ func (s *Store) SubscriptionByID(ctx context.Context, principalID, id string) (*
 	return sub, tagRows.Err()
 }
 
+// maxNoteRunes bounds the one field here that takes prose.
+//
+// A note is a sentence or two about why a feed is worth following, and nothing about it gets
+// better past a paragraph — the list it appears in has to stay a list. Generous enough that
+// nobody writing in good faith meets it, and small enough that forty of them are still a page.
+const maxNoteRunes = 500
+
 // SubscriptionPatch is what a PATCH said. A nil field is one the request did not mention.
 type SubscriptionPatch struct {
 	Priority      *int
 	TitleOverride *string
+	Note          *string
 	TagIDs        *[]string
 	ArticleWindow *time.Duration
 }
@@ -514,6 +531,17 @@ func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, 
 	if patch.TitleOverride != nil {
 		sub.TitleOverride = strings.TrimSpace(*patch.TitleOverride)
 	}
+	if patch.Note != nil {
+		// Bounded, because this is the one field here that takes prose and nothing about a
+		// note gets better past a paragraph. The bound is on runes rather than bytes so that
+		// a note written in Cyrillic or Japanese gets the same room as one written in
+		// English, which a byte count would quietly halve.
+		note := strings.TrimSpace(*patch.Note)
+		if utf8.RuneCountInString(note) > maxNoteRunes {
+			return Invalid("a note is at most %d characters", maxNoteRunes)
+		}
+		sub.Note = note
+	}
 	if patch.ArticleWindow != nil {
 		if !validWindow(*patch.ArticleWindow) {
 			return Invalid("%s is not one of the windows an article can be picked from", *patch.ArticleWindow)
@@ -528,9 +556,9 @@ func (s *Store) UpdateSubscription(ctx context.Context, principalID, id string, 
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx,
-		`UPDATE subscriptions SET priority = ?, title_override = ?, max_article_age = ?
+		`UPDATE subscriptions SET priority = ?, title_override = ?, note = ?, max_article_age = ?
 		 WHERE id = ? AND principal_id = ?`,
-		sub.Priority, sub.TitleOverride, int64(sub.ArticleWindow.Seconds()), id, principalID)
+		sub.Priority, sub.TitleOverride, sub.Note, int64(sub.ArticleWindow.Seconds()), id, principalID)
 	if err != nil {
 		return err
 	}

@@ -273,6 +273,26 @@ export function FeedsPage() {
   );
 }
 
+/**
+ * A URL as somebody would say it out loud.
+ *
+ * The scheme and a bare trailing slash carry nothing — every site here is served over one of
+ * two schemes and the difference is not this list's business — and dropping them is most of
+ * what makes an address short enough to sit under a name without eliding.
+ *
+ * Left alone if it will not parse. A feed whose site URL is malformed is a thing to show as
+ * it is rather than a thing to guess at, and the browser will say so when it is clicked.
+ */
+function plainly(raw: string) {
+  try {
+    const url = new URL(raw);
+    const shown = url.host + url.pathname + url.search;
+    return shown.endsWith("/") ? shown.slice(0, -1) : shown;
+  } catch {
+    return raw;
+  }
+}
+
 function FeedRow({
   feed,
   tags,
@@ -284,6 +304,7 @@ function FeedRow({
 }) {
   const update = useUpdateFeed();
   const [explaining, setExplaining] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   const failing = feed.failure_count > 0;
   // Full paths, so a nested tag reads as "News / World" rather than losing where it sits.
@@ -297,21 +318,64 @@ function FeedRow({
           track — which on a phone leaves nothing for the name, and `truncate` duly
           truncated it to nothing.
 
-          So on a narrow screen it is three lines: the name, then where it is filed, then
-          the slider. `order` rather than a second copy of the markup, because the slider
+          So on a narrow screen it is four lines: the name, where it is filed, whatever was
+          written about it, and then the slider. `order` rather than a second copy of the markup, because the slider
           belongs beside the name on a wide screen and under everything on a narrow one. */}
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <div className="order-1 flex min-w-0 basis-full items-baseline gap-x-2 sm:flex-1 sm:basis-auto">
-          {/* The name is the way into everything else about this feed. One affordance
-              rather than a pencil for the title and a disclosure for the rest. */}
-          <button
-            type="button"
-            onClick={() => onOpen(feed)}
-            title={feed.title}
-            className="min-w-0 truncate text-left font-serif text-lg text-ink hover:text-accent"
-          >
-            {feed.title}
-          </button>
+        <div className="order-1 flex min-w-0 basis-full flex-col sm:flex-1 sm:basis-auto">
+          <div className="flex min-w-0 items-baseline gap-x-2">
+            {/* The name is the way into everything else about this feed. One affordance
+                rather than a pencil for the title and a disclosure for the rest. */}
+            <button
+              type="button"
+              onClick={() => onOpen(feed)}
+              title={feed.title}
+              className="min-w-0 truncate text-left font-serif text-lg text-ink hover:text-accent"
+            >
+              {feed.title}
+            </button>
+
+            {/* What this feed is publishing today, without following it anywhere.
+                
+                The same dialog the picker uses before subscribing, which is the point: the
+                question "is this still worth having" is the question "was this worth taking",
+                asked later, and it deserves the same answer rather than a different screen.
+                
+                A dashed link rather than a button, at the weight the rest of the quiet
+                affordances here are drawn at. It sits beside the name because it is about the
+                feed the name refers to, and because a row of buttons down the right of a list
+                turns a list of feeds into a table of controls. */}
+            <button
+              type="button"
+              onClick={() => setPreviewing(true)}
+              className="shrink-0 border-b border-dashed border-ink-faint text-xs
+                text-ink-muted hover:border-ink hover:text-ink"
+            >
+              Preview
+            </button>
+          </div>
+
+          {/* Where the feed comes from, as a way back to it.
+              
+              A name is often not enough to place a feed a year later — "Notes", "Blog", a
+              person's name — and the site itself answers in one click what no amount of
+              metadata here would. It leaves this app, so it opens in its own tab.
+              
+              Dimmed and elided, because it is the least of what this row says and some feed
+              addresses are a paragraph long. The scheme is dropped: nobody reads a feed list
+              to find out that a site is served over https. */}
+          {feed.site_url ? (
+            <a
+              href={feed.site_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={feed.site_url}
+              className="min-w-0 truncate text-xs text-ink-faint underline decoration-dotted
+                underline-offset-2 hover:text-ink-muted"
+            >
+              {plainly(feed.site_url)}
+            </a>
+          ) : null}
         </div>
 
         {/* A quieter line for what the name has no room for: where this feed is filed,
@@ -346,9 +410,21 @@ function FeedRow({
           )}
         </p>
 
+        {/* Why this feed is here, when somebody has said.
+            
+            Last and full width, because it is prose rather than a field: it is the thing you
+            read when the name has stopped being enough, and it would crowd the name if it sat
+            beside it. Absent entirely when nothing was written, so a list of forty feeds with
+            two notes in it shows two notes rather than thirty-eight blanks. */}
+        {feed.note ? (
+          <p className="order-3 basis-full text-sm text-ink-muted sm:order-4">
+            {feed.note}
+          </p>
+        ) : null}
+
         {/* The one setting that stays in the list: it is a dial somebody nudges while
             looking at the whole of it, not something they go and open a feed to change. */}
-        <div className="order-3 shrink-0 sm:order-2 sm:ml-auto">
+        <div className="order-4 shrink-0 sm:order-2 sm:ml-auto">
           <Priority
             label={`How often ${feed.title} appears`}
             value={feed.priority}
@@ -365,6 +441,16 @@ function FeedRow({
           feed={feed}
           open={explaining}
           onClose={() => setExplaining(false)}
+        />
+      ) : null}
+
+      {/* No `onAdd`: this feed is already followed, so there is nothing here to say yes to
+          and the dialog closes rather than offering to do something. */}
+      {previewing ? (
+        <PreviewDialog
+          feed={{ title: feed.title, feed_url: feed.url }}
+          open={previewing}
+          onClose={() => setPreviewing(false)}
         />
       ) : null}
     </div>

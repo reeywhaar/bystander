@@ -293,6 +293,12 @@ export interface Subscription {
   /** What the publisher calls it, always — so a rename can show what it overrides. */
   feed_title: string;
   title_override: string;
+  /**
+   * Why this feed is followed, in the follower's own words — not the publisher's description
+   * of itself. Empty for almost every feed, which is what makes the ones that have it worth
+   * reading.
+   */
+  note: string;
   priority: number;
   tag_ids: string[];
   /** Seconds. How old an article from this feed may be and still appear; 0 is no limit. */

@@ -275,6 +275,7 @@ export function useUpdateFeed() {
       changes: {
         priority?: number;
         title_override?: string;
+        note?: string;
         tag_ids?: string[];
         article_window?: number;
       };

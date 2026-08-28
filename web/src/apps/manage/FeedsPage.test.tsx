@@ -40,6 +40,7 @@ function subscription(overrides: Partial<Subscription> = {}): Subscription {
     title: "The Example",
     feed_title: "The Example",
     title_override: "",
+    note: "",
     priority: 50,
     tag_ids: [],
     article_window: 604800,
@@ -100,6 +101,115 @@ describe("FeedsPage", () => {
     render([subscription()], [news]);
 
     expect(await line()).toBe("1w · added 3 days ago · fetched 10 minutes ago");
+  });
+
+  /*
+   * A name is often not enough to place a feed a year later — "Notes", "Blog", somebody's
+   * name — and the site itself answers in one click what no amount of metadata would.
+   */
+  it("offers the way back to the site a feed comes from", async () => {
+    render([subscription({ site_url: "https://example.com/blog/" })], []);
+
+    const link = await screen.findByRole("link", { name: "example.com/blog" });
+    // The address it actually goes to is the whole one; the scheme and the bare trailing
+    // slash are dropped from what is *shown*, because neither carries anything here.
+    expect(link).toHaveAttribute("href", "https://example.com/blog/");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  // A publisher that names no site leaves nothing to link to, and a dead link would be
+  // worse than none.
+  it("says nothing about the site when the feed names none", async () => {
+    render([subscription({ site_url: "" })], []);
+
+    await screen.findByRole("button", { name: "The Example" });
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  /*
+   * Why a feed is here is the one thing about it nothing else can say. The name is the
+   * publisher's and the tags are a filing system; this is what somebody wrote down.
+   */
+  it("shows the note somebody wrote about a feed", async () => {
+    render(
+      [subscription({ note: "The only place that covers the harbour works." })],
+      [],
+    );
+
+    expect(
+      await screen.findByText("The only place that covers the harbour works."),
+    ).toBeInTheDocument();
+  });
+
+  // Empty on almost every feed, and a list of forty showing thirty-eight blanks would be
+  // worse than one showing two notes.
+  it("leaves out the note when there is none", async () => {
+    render([subscription({ note: "" })], []);
+
+    const name = await screen.findByRole("button", { name: "The Example" });
+    expect(name.closest("div")?.parentElement?.textContent).not.toContain(
+      "Why you read it",
+    );
+  });
+
+  it("writes a note from the dialog", async () => {
+    const { transport } = render([subscription()], []);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "The Example" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("Why you read it"),
+      "Kept for the obituaries.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = transport.calls.filter((call) => call.method === "PATCH");
+      expect(sent).toHaveLength(1);
+      expect((sent[0]?.body as { note: string }).note).toBe(
+        "Kept for the obituaries.",
+      );
+    });
+  });
+
+  /*
+   * The same dialog the picker uses before subscribing, because "is this still worth
+   * having" is "was this worth taking" asked later and deserves the same answer.
+   */
+  it("previews a feed it already follows, with nothing to add", async () => {
+    renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [subscription()] },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/preview": {
+        body: {
+          title: "The Example",
+          site_url: "https://example.com",
+          feed_url: "https://example.com/rss",
+          items: [
+            {
+              title: "A story about a thing",
+              link: "https://example.com/1",
+              summary: "<p>What the thing was.</p>",
+              published_at: now - 3600,
+            },
+          ],
+        },
+      },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Preview" }),
+    );
+
+    const shown = await screen.findByText("A story about a thing");
+    const dialog = within(shown.closest("dialog")!);
+    // Nothing to say yes to: this feed is already followed, so the dialog is read and
+    // closed rather than answered.
+    expect(dialog.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(
+      dialog.queryByRole("button", { name: "Add" }),
+    ).not.toBeInTheDocument();
   });
 
   // Everything about a feed now lives behind its name, so the summary line is not
@@ -245,6 +355,7 @@ describe("FeedsPage", () => {
       // One request carrying the whole of what the dialog holds, name included.
       expect(sent[0]?.body).toEqual({
         title_override: "",
+        note: "",
         tag_ids: ["t_art"],
         article_window: 2592000,
       });

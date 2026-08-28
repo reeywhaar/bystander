@@ -28,11 +28,14 @@ type subscriptionBody struct {
 	Title string `json:"title"`
 	// FeedTitle is what the publisher calls it, always — so a rename can show what it is
 	// overriding, and offer to put it back.
-	FeedTitle     string   `json:"feed_title"`
-	TitleOverride string   `json:"title_override"`
-	Priority      int      `json:"priority"`
-	TagIDs        []string `json:"tag_ids"`
-	CreatedAt     int64    `json:"created_at"`
+	FeedTitle     string `json:"feed_title"`
+	TitleOverride string `json:"title_override"`
+	// Note is why this person follows this feed, in their own words — not the publisher's
+	// description of itself. Empty for almost every feed.
+	Note      string   `json:"note"`
+	Priority  int      `json:"priority"`
+	TagIDs    []string `json:"tag_ids"`
+	CreatedAt int64    `json:"created_at"`
 
 	// ArticleWindow is how old an article from this feed may be and still reach a page,
 	// in seconds. Zero is no limit.
@@ -59,6 +62,7 @@ func subscriptionOf(sub *store.Subscription) subscriptionBody {
 		Title:         sub.Title(),
 		FeedTitle:     sub.Feed.Title,
 		TitleOverride: sub.TitleOverride,
+		Note:          sub.Note,
 		Priority:      sub.Priority,
 		TagIDs:        sub.TagIDs,
 		ArticleWindow: int64(sub.ArticleWindow.Seconds()),
@@ -338,6 +342,7 @@ func (s *Server) previewFeed(w http.ResponseWriter, r *http.Request) {
 type patchFeedRequest struct {
 	Priority      *int      `json:"priority"`
 	TitleOverride *string   `json:"title_override"`
+	Note          *string   `json:"note"`
 	TagIDs        *[]string `json:"tag_ids"`
 	ArticleWindow *int64    `json:"article_window"`
 }
@@ -352,6 +357,7 @@ func (s *Server) patchFeed(w http.ResponseWriter, r *http.Request) {
 	patch := store.SubscriptionPatch{
 		Priority:      body.Priority,
 		TitleOverride: body.TitleOverride,
+		Note:          body.Note,
 		TagIDs:        body.TagIDs,
 	}
 	if body.ArticleWindow != nil {
