@@ -341,15 +341,17 @@ function FeedRow({
                 question "is this still worth having" is the question "was this worth taking",
                 asked later, and it deserves the same answer rather than a different screen.
                 
-                A dashed link rather than a button, at the weight the rest of the quiet
-                affordances here are drawn at. It sits beside the name because it is about the
-                feed the name refers to, and because a row of buttons down the right of a list
-                turns a list of feeds into a table of controls. */}
+                Undecorated, and quiet. It sits directly under a serif name, and a rule beneath
+                it — dashed or otherwise — put a second horizontal mark inside a row that
+                already ends in one, which read as an underline the name had grown rather than
+                as a thing to press. The size and the colour say enough, and the hover says the
+                rest. It sits beside the name because it is about the feed the name refers to,
+                and because a row of buttons down the right of a list turns a list of feeds
+                into a table of controls. */}
             <button
               type="button"
               onClick={() => setPreviewing(true)}
-              className="shrink-0 border-b border-dashed border-ink-faint text-xs
-                text-ink-muted hover:border-ink hover:text-ink"
+              className="shrink-0 text-xs text-ink-muted hover:text-ink"
             >
               Preview
             </button>
