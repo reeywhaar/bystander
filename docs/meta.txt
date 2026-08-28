@@ -9,5 +9,5 @@
 # worse than no document, because it costs a reader the time to find out.
 
 readme         a31de29  2026-08-28
-design-notes   a31de29  2026-08-28
+design-notes   42cdae1  2026-08-29
 screenshots    a31de29  2026-08-28

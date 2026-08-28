@@ -32,6 +32,16 @@ Comments explain **why**, never what. A comment restating the line under it is n
 comment recording the reason a line is written the way it is prevents somebody
 "simplifying" it back into a bug.
 
+A comment is as long as the surprise it explains and no longer. Most lines need none; the
+ones that earn a paragraph are the ones where the obvious version is wrong, and the
+paragraph is what stops it being written back. Four lines of code under eighteen lines of
+prose is not thoroughness, it is reasoning that has outgrown its home — move it somewhere
+it is load-bearing, a test that fails when the behaviour is lost or a note in `docs/`, and
+leave a pointer.
+
+Say it once. The same reason repeated in a component, its test and its caller is three
+copies to keep true, and the two that fall behind are the ones somebody will read.
+
 Package doc comments are expected and are the right place for the argument a package
 exists to make — not what the package contains, which is readable, but why it is a package.
 
