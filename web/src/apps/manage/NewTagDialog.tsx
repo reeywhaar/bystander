@@ -106,32 +106,38 @@ export function NewTagDialog({
         onChange={(event) => setName(event.target.value)}
       />
 
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs text-ink-muted">Where it sits</p>
-        <Select
-          small
-          value={parentID}
-          onChange={(event) => setParentID(event.target.value)}
-          aria-label="Where it sits"
-        >
-          <option value="">on its own</option>
-          {candidates.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              under {candidate.name}
-            </option>
-          ))}
-        </Select>
-      </div>
+      {/* Labelled through Select rather than with a heading of its own: it renders the
+          same label, hint and box a Field does, and three hand-written labels in one dialog
+          is how a form ends up with three sizes of label. */}
+      <Select
+        label="Where it sits"
+        value={parentID}
+        onChange={(event) => setParentID(event.target.value)}
+      >
+        <option value="">on its own</option>
+        {candidates.map((candidate) => (
+          <option key={candidate.id} value={candidate.id}>
+            under {candidate.name}
+          </option>
+        ))}
+      </Select>
 
       <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-medium text-ink">How often it appears</p>
         <p className="text-xs text-ink-muted">
-          How often it appears — a probability, not an order. 0 means never.
+          A probability, not an order — 0 means never.
         </p>
-        <Priority
-          label="How often it appears"
-          value={priority}
-          onChange={setPriority}
-        />
+        {/* Pushed right, so the track ends where the field and the select above it end.
+            A Priority is built for the end of a row — a fixed label box against a short
+            track — and left in a column of full-width controls it sits in the middle of
+            the dialog with white space either side, looking like something unfinished. */}
+        <div className="flex justify-end">
+          <Priority
+            label="How often it appears"
+            value={priority}
+            onChange={setPriority}
+          />
+        </div>
       </div>
 
       {add.error ? <Alert>{add.error.message}</Alert> : null}
