@@ -122,24 +122,37 @@ const PITCH = DOT * 3;
  * launched later catch and pass one still travelling. Measured over a whole sequence, the rule
  * is empty about a third of the time and carrying two at once about a fifth of it.
  *
+ * `strength` is how hard it hits. A rule where every wave lands the same is a rule with one
+ * event in it played over and over; some of these barely lift the dots and one comes through
+ * at full height, so what crosses is worth looking up for or not.
+ *
  * Nothing here is random. The sequence is the same on every load, so the rule has a rhythm
  * rather than a shuffle.
  */
 const WAVES = [
-  { gap: 2.4, step: 0.006 },
-  { gap: 1.3, step: 0.012 },
-  { gap: 5.1, step: 0.004 },
-  { gap: 2.0, step: 0.009 },
-  { gap: 3.7, step: 0.005 },
-  { gap: 1.1, step: 0.015 },
-  { gap: 6.4, step: 0.007 },
-  { gap: 2.8, step: 0.01 },
+  { gap: 2.4, step: 0.006, strength: 0.85 },
+  { gap: 1.3, step: 0.012, strength: 0.45 },
+  { gap: 5.1, step: 0.004, strength: 1 },
+  { gap: 2.0, step: 0.009, strength: 0.6 },
+  { gap: 3.7, step: 0.005, strength: 0.9 },
+  { gap: 1.1, step: 0.015, strength: 0.35 },
+  { gap: 6.4, step: 0.007, strength: 0.75 },
+  { gap: 2.8, step: 0.01, strength: 0.55 },
 ];
+
+/**
+ * How far a dot can be pushed when more than one wave is on it.
+ *
+ * Waves add where they meet rather than the loudest simply winning, which is what a wave does.
+ * Without a ceiling two strong ones crossing would double a dot and the crossing would read as
+ * a fault rather than as an event; at half again, it reads as the two of them arriving at once.
+ */
+const CREST = 1.5;
 
 /** When each wave sets off, counted from the top of the sequence, and how fast it goes. */
 const LAUNCHES = WAVES.map((wave, i) => ({
+  ...wave,
   at: WAVES.slice(0, i).reduce((sum, w) => sum + w.gap, 0),
-  step: wave.step,
 }));
 
 /** How long before the whole sequence comes round again. */
@@ -412,9 +425,10 @@ export function Train({
  * what crosses is a phase rather than an object — the way a wave crosses a rope nobody has moved
  * sideways.
  *
- * The waves do not arrive on a beat, and no two travel at the same speed. See WAVES: they come
- * in twos, then not for six seconds, and a fast one launched later will catch and pass a slow
- * one still going. That is what keeps this from being a metronome in the corner of the eye.
+ * The waves do not arrive on a beat, no two travel at the same speed, and no two hit as hard.
+ * See WAVES: they come in twos, then not for six seconds, and a fast one launched later will
+ * catch and pass a slow one still going — lifting the dots it is passing through further than
+ * either would alone. That is what keeps this from being a metronome in the corner of the eye.
  */
 export function Pulse({ className = "" }: { className?: string }) {
   const ref = useCanvas((ctx, w, h, t) => {
@@ -427,20 +441,22 @@ export function Pulse({ className = "" }: { className?: string }) {
     for (let i = 0, n = Math.ceil(w / PITCH) + 1; i < n; i++) {
       const skew = SKEWS[i % SKEWS.length]!;
 
-      // The strongest wave currently over this dot, rather than their sum: two waves crossing
-      // should pass through each other, not add up into one dot twice the size.
-      //
-      // Each is tried a period back as well. The slower waves are still travelling when the
-      // sequence comes round, and without this they would vanish mid-rule at the wrap.
+      // Every wave currently over this dot, added. Where two cross, the dot is lifted by both
+      // — which is what interference looks like and is the one moment this rule has that is
+      // not just a wave going past. CREST is what keeps that from becoming a bulge.
       let swell = 0;
       for (const wave of LAUNCHES) {
         const since = local - wave.at - i * wave.step - skew;
-        swell = Math.max(swell, impulse(since), impulse(since + PERIOD));
+        // The same wave one period back as well, for the slow ones still crossing when the
+        // sequence comes round. Only one of the two can be inside the impulse window, so
+        // adding them is a way of picking whichever it is.
+        swell += wave.strength * (impulse(since) + impulse(since + PERIOD));
       }
+      swell = Math.min(swell, CREST);
 
       const radius = (DOT / 2) * (1 + swell * (PEAKS[i % PEAKS.length]! - 1));
 
-      ctx.globalAlpha = 0.45 + 0.55 * swell;
+      ctx.globalAlpha = Math.min(1, 0.45 + 0.55 * swell);
       ctx.beginPath();
       ctx.arc(i * PITCH + PITCH / 2, mid, radius, 0, Math.PI * 2);
       ctx.fill();
