@@ -773,9 +773,24 @@ filing is one gesture wherever it happens. `FeedPlan`'s rows keep a second kind 
 dashed, for a tag a source named that nobody here has yet; that belongs where a list arrived
 carrying a taxonomy somebody has to accept or refuse, and nowhere else.
 
-Both chip rows offer **New tag**, which opens `NewTagDialog` over whichever dialog asked and
+Every chip row offers **New tag**, which opens `NewTagDialog` over whichever dialog asked and
 ticks what it makes. Without it, "no tags yet" is a dead end reached at precisely the moment
 somebody knows the answer.
+
+In the picker that button is on **each row**, not once above the list, even though a tag is
+not a property of one feed. Filing there is done a row at a time, and a control at the top
+would leave the caller with no answer to "which of these five was it for". `onNewTag` carries
+the feed URL back, so what gets made lands on the row that asked for it.
+
+Those chips appear only on a row that is being kept — filing a feed you are not taking is a
+decision about nothing. It is also why a freshly opened picker shows none: a site that offers
+several chose none of them, so nothing is ticked yet.
+
+The checkbox is sized in CSS rather than left to the browser, which draws one about thirteen
+pixels wide. The chips below it are indented past it by a fixed amount, and that indent is
+only arithmetic — 16 for the box plus the row's 8 of gap — if the width is one this file
+decided. Left to the browser it was three pixels out, which is the kind of misalignment
+everybody sees and nobody can name.
 
 ## A tag is three decisions, asked once
 

@@ -117,6 +117,7 @@ export function FeedPlan({
   selection,
   onChange,
   onPreview,
+  onNewTag,
 }: {
   feeds: PlannedFeed[];
   tags: Tag[];
@@ -130,6 +131,16 @@ export function FeedPlan({
    * "Posts", "Comments" and "Notes", which is the list this screen most often shows.
    */
   onPreview?: (feed: PlannedFeed) => void;
+  /**
+   * Make a tag that does not exist yet, from the row that wants it.
+   *
+   * On each row rather than once above the list, even though a tag is not a property of one
+   * feed. Filing is done a row at a time here, and the moment somebody finds they have
+   * nowhere to put this one is the moment they are looking at it — a control at the top is
+   * somewhere else by then, and it would leave the caller guessing which of five rows the
+   * new tag was for. This way the row that asked is the row it lands on.
+   */
+  onNewTag?: (feedURL: string) => void;
 }) {
   const showing = offered(feeds);
   const hidden = feeds.length - showing.length;
@@ -202,6 +213,7 @@ export function FeedPlan({
             }}
             onToggleTag={(key) => toggleTag(feed.feed_url, key)}
             onPreview={onPreview ? () => onPreview(feed) : undefined}
+            onNewTag={onNewTag ? () => onNewTag(feed.feed_url) : undefined}
           />
         ))}
       </ul>
@@ -231,6 +243,7 @@ function PlanRow({
   onKeep,
   onToggleTag,
   onPreview,
+  onNewTag,
 }: {
   feed: PlannedFeed;
   tags: Tag[];
@@ -239,6 +252,7 @@ function PlanRow({
   onKeep: (keep: boolean) => void;
   onToggleTag: (key: string) => void;
   onPreview?: () => void;
+  onNewTag?: () => void;
 }) {
   // Tags the source named that nobody here has yet.
   const incoming = feed.tags.filter((tag) => !tag.tag_id);
@@ -250,10 +264,15 @@ function PlanRow({
           and thereby choosing it. */}
       <div className="flex items-baseline gap-2 text-sm">
         <label className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2">
+          {/* Sized here rather than left to the browser, which draws one about thirteen
+              pixels wide. The chips below are indented past it by a fixed amount, and that
+              indent is only correct if the box has a width this file decided: 16 for the
+              box plus the row's 8 of gap is the pl-6 underneath. */}
           <input
             type="checkbox"
             checked={keep}
             onChange={(event) => onKeep(event.target.checked)}
+            className="size-4 shrink-0 accent-[var(--accent)]"
           />
           <span className="min-w-0">
             <span className="block truncate text-ink">{feed.title}</span>
@@ -280,7 +299,10 @@ function PlanRow({
         ) : null}
       </div>
 
-      {keep && (tags.length > 0 || incoming.length > 0) ? (
+      {/* Only on a row being kept. Filing a feed you are not taking is a decision about
+          nothing — and that is why this is empty when the list first opens, since a site
+          that offers several chose none of them. */}
+      {keep && (tags.length > 0 || incoming.length > 0 || onNewTag) ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
           {tags.map((tag) => (
             <Chip
@@ -307,6 +329,20 @@ function PlanRow({
                 />
               ))}
             </>
+          ) : null}
+
+          {/* Dashed like the chips beside it, and for the same reason: press it and there
+              will be one more tag than there was. Last, so a row of things to tick is not
+              interrupted by the one thing that opens a dialog. */}
+          {onNewTag ? (
+            <button
+              type="button"
+              onClick={onNewTag}
+              className="rounded-full border border-dashed border-ink-faint px-2.5 py-0.5
+                text-xs text-ink-muted hover:border-ink hover:text-ink"
+            >
+              New tag +
+            </button>
           ) : null}
         </div>
       ) : null}

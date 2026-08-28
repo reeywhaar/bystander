@@ -18,6 +18,7 @@ import {
 import { FeedDialog } from "@app/apps/manage/FeedDialog";
 import { FeedErrorDialog } from "@app/apps/manage/FeedErrorDialog";
 import { ImportDialog } from "@app/apps/manage/ImportDialog";
+import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
 import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { EyeIcon } from "@app/components/icons/EyeIcon";
@@ -62,6 +63,9 @@ export function FeedsPage() {
   // rather than in the dialog because it outlives it: the dialog unmounts on Add, and this
   // is what goes up with the subscription.
   const [filing, setFiling] = useState<string[]>([]);
+  // Which row in the picker asked for a tag it does not have, by feed URL. The row rather
+  // than a bare flag, so what gets made lands on the one that wanted it.
+  const [makingTagFor, setMakingTagFor] = useState<string | null>(null);
 
   /**
    * Show one feed, starting it off filed where the source said it belonged.
@@ -280,12 +284,30 @@ export function FeedsPage() {
               selection={selection}
               onChange={setSelection}
               onPreview={setPreviewing}
+              onNewTag={setMakingTagFor}
             />
 
             {add.error ? <Alert>{add.error.message}</Alert> : null}
           </>
         ) : null}
       </Modal>
+
+      {/* Over the picker, which stays where it is. Ticked on the row that asked, because
+          that row is the whole reason somebody is making a tag mid-list. */}
+      {makingTagFor !== null ? (
+        <NewTagDialog
+          open
+          tags={tags.data ?? []}
+          onClose={() => setMakingTagFor(null)}
+          onCreated={(tag) => {
+            const tagsFor = new Map(selection.tags);
+            const forFeed = new Set(tagsFor.get(makingTagFor) ?? []);
+            forFeed.add(ownKey(tag.id));
+            tagsFor.set(makingTagFor, forFeed);
+            setSelection({ ...selection, tags: tagsFor });
+          }}
+        />
+      ) : null}
 
       <Modal
         open={problem !== null}

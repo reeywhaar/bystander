@@ -11,10 +11,12 @@ import {
   FeedPlan,
   initialSelection,
   kept,
+  ownKey,
   toImport,
   type PlanSelection,
 } from "@app/apps/manage/FeedPlan";
 import { ImportOutcome } from "@app/apps/manage/ImportOutcome";
+import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
 import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 
 /**
@@ -43,6 +45,8 @@ export function ImportDialog({
   // Whichever row is being looked at. Its Add ticks that row rather than importing it: the
   // list is still there to be finished, and the import happens once at the bottom.
   const [previewing, setPreviewing] = useState<PlannedFeed | null>(null);
+  // Which row asked for a tag it does not have, by feed URL — see FeedPlan's onNewTag.
+  const [makingTagFor, setMakingTagFor] = useState<string | null>(null);
 
   const plan = preview.data?.feeds;
   const mine = tags.data ?? [];
@@ -133,11 +137,27 @@ export function ImportDialog({
             selection={selection}
             onChange={setSelection}
             onPreview={setPreviewing}
+            onNewTag={setMakingTagFor}
           />
 
           {run.error ? <Alert>{run.error.message}</Alert> : null}
         </>
       )}
+      {makingTagFor !== null ? (
+        <NewTagDialog
+          open
+          tags={mine}
+          onClose={() => setMakingTagFor(null)}
+          onCreated={(tag) => {
+            const tagsFor = new Map(selection.tags);
+            const forFeed = new Set(tagsFor.get(makingTagFor) ?? []);
+            forFeed.add(ownKey(tag.id));
+            tagsFor.set(makingTagFor, forFeed);
+            setSelection({ ...selection, tags: tagsFor });
+          }}
+        />
+      ) : null}
+
       <PreviewDialog
         feed={previewing}
         open={previewing !== null}

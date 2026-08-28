@@ -647,6 +647,75 @@ describe("FeedsPage, before following anything", () => {
     expect(screen.getByText("0 of 2")).toBeInTheDocument();
   });
 
+  /*
+   * The picker's own dead end, and the reason the button is on each row rather than once
+   * above the list: filing here is done a row at a time, and a control at the top would
+   * leave "which of these five did you mean" unanswerable.
+   */
+  it("makes a tag from a row in the picker and ticks it there", async () => {
+    const made: Tag = {
+      id: "t_made",
+      name: "Blogs",
+      parent_id: null,
+      priority: 50,
+      created_at: 0,
+    };
+    const { transport } = renderWith(<FeedsPage />, {
+      "GET /api/feeds": { body: [] },
+      "GET /api/tags": { body: [] },
+      "POST /api/tags": { status: 201, body: made },
+      "POST /api/feeds/discover": {
+        body: {
+          candidates: [
+            candidate("Posts", "https://example.com/posts.xml"),
+            candidate("Comments", "https://example.com/comments.xml"),
+          ],
+        },
+      },
+      "POST /api/feeds/import": { body: { added: 1, skipped: [], tags: [] } },
+    });
+
+    await type("example.com");
+    await screen.findByText("Posts");
+
+    // Nothing is ticked when the list opens, so there is no filing to do yet — and that is
+    // why the row showed no chips at all until now.
+    expect(screen.queryByRole("button", { name: "New tag +" })).toBeNull();
+    await userEvent.click(screen.getAllByRole("checkbox")[0]!);
+
+    transport.recording["GET /api/tags"] = { body: [made] };
+    await userEvent.click(screen.getByRole("button", { name: "New tag +" }));
+    await userEvent.type(screen.getByLabelText("Name"), "Blogs");
+    await userEvent.click(screen.getByRole("button", { name: "Make it" }));
+
+    // Ticked on the row that asked, so the tag it was made for is already chosen.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Blogs" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add 1" }));
+    await waitFor(() => {
+      const sent = transport.calls.find(
+        (call) => call.path === "/api/feeds/import",
+      );
+      expect(sent?.body).toEqual({
+        feeds: [
+          {
+            feed_url: "https://example.com/posts.xml",
+            title: "Posts",
+            site_url: "https://example.com",
+            priority: 50,
+            reach: 604800,
+            tag_paths: [["Blogs"]],
+          },
+        ],
+      });
+    });
+  });
+
   it("ticks the row it was opened from, and leaves the list up", async () => {
     const { transport } = renderWith(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
