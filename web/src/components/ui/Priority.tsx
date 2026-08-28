@@ -28,9 +28,12 @@ export function Priority({
    * against the track, and a 16px icon alone in seventy pixels of white reads as a mistake
    * rather than as a button.
    *
-   * The value goes left-aligned when there is one, so the two are a pair rather than two
-   * things at opposite ends of the same box. The track still cannot move: the box is the
-   * same width whatever is in it, which is the whole reason it has one.
+   * It rides with the value against the track rather than holding a position of its own, so
+   * the pair is tight and whatever slack the box has falls to the left of both, where there
+   * is nothing to notice it. The cost is that it shifts a little as the value's wording
+   * changes — but the only time that happens is while somebody is dragging the thumb, which
+   * is the one moment they are not reaching for it. The track itself still cannot move: the
+   * box is the same width whatever is in it, which is the whole reason it has one.
    */
   leading?: ReactNode;
 }) {
@@ -47,9 +50,9 @@ export function Priority({
       // the same space at every value and nothing moves while the thumb does.
       format={(priority) => (
         <span
-          className={`inline-flex w-32 items-center gap-2 text-left ${
-            leading ? "" : "sm:justify-end"
-          } ${priority === 0 ? "text-accent" : ""}`}
+          className={`inline-flex w-32 items-center gap-2 text-left sm:justify-end ${
+            priority === 0 ? "text-accent" : ""
+          }`}
         >
           {leading}
           <span>
