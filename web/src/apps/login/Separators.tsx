@@ -109,39 +109,7 @@ const DOT = 2;
 const PITCH = DOT * 3;
 
 /**
- * The waves: how long after the one before each sets off, and how fast it then travels.
- *
- * Both are written out, and both are deliberately uneven.
- *
- * A rule that pulses on a fixed beat is a metronome, and a metronome is the one thing on a page
- * that cannot be ignored — the eye locks to it and then waits for it. So the gaps run from just
- * over a second to more than six.
- *
- * `step` is seconds per dot, which is the wave's speed. On a laptop screen the quickest crosses
- * in about a second and the slowest takes over three, and that spread is what lets a wave
- * launched later catch and pass one still travelling. Measured over a whole sequence, the rule
- * is empty about a third of the time and carrying two at once about a fifth of it.
- *
- * `strength` is how hard it hits. A rule where every wave lands the same is a rule with one
- * event in it played over and over; some of these barely lift the dots and one comes through
- * at full height, so what crosses is worth looking up for or not.
- *
- * Nothing here is random. The sequence is the same on every load, so the rule has a rhythm
- * rather than a shuffle.
- */
-const WAVES = [
-  { gap: 2.4, step: 0.006, strength: 0.85 },
-  { gap: 1.3, step: 0.012, strength: 0.45 },
-  { gap: 5.1, step: 0.004, strength: 1 },
-  { gap: 2.0, step: 0.009, strength: 0.6 },
-  { gap: 3.7, step: 0.005, strength: 0.9 },
-  { gap: 1.1, step: 0.015, strength: 0.35 },
-  { gap: 6.4, step: 0.007, strength: 0.75 },
-  { gap: 2.8, step: 0.01, strength: 0.55 },
-];
-
-/**
- * How far a dot can be pushed when more than one wave is on it.
+ * How high a dot can be pushed when more than one wave is on it.
  *
  * Waves add where they meet rather than the loudest simply winning, which is what a wave does.
  * Without a ceiling two strong ones crossing would double a dot and the crossing would read as
@@ -149,37 +117,56 @@ const WAVES = [
  */
 const CREST = 1.5;
 
-/** When each wave sets off, counted from the top of the sequence, and how fast it goes. */
-const LAUNCHES = WAVES.map((wave, i) => ({
-  ...wave,
-  at: WAVES.slice(0, i).reduce((sum, w) => sum + w.gap, 0),
-}));
-
-/** How long before the whole sequence comes round again. */
-const PERIOD = WAVES.reduce((sum, wave) => sum + wave.gap, 0);
-
 /** How long one dot takes to rise, and how much longer to settle. */
 const RISE = 0.09;
 const FALL = 0.55;
 
-/**
- * How high each dot rises, cycled by position.
- *
- * A wave in which every dot rises to the same height reads as one shape sliding along rather
- * than as a row of things each answering in its own way. Ten values against a swell about
- * fifteen dots wide puts the variation inside a single wave, which is where it can be seen.
- */
-const PEAKS = [2.8, 2.1, 3.2, 2.4, 1.9, 2.9, 2.3, 3.1, 2.0, 2.6];
+/** How many waves are in one sequence, and how many dots before the variation repeats. */
+const WAVE_COUNT = 8;
+const GRAIN = 10;
 
 /**
- * Seconds each dot lags behind where an even wave would have put it.
+ * One dot rule, drawn from a seed.
  *
- * The front of a real wave is not a straight line. Without this the swell arrives as a ruled
- * edge travelling sideways.
+ * Everything about it comes out of the one stream, for the same reason the train's cars do:
+ * a rule whose rhythm is a written list is a rule that has to be re-tuned by hand every time
+ * anything about it changes, and there is nothing here a person needs to have chosen.
+ *
+ * What the ranges are for:
+ *
+ * `gap` is the wait before a wave sets off. It runs from just over a second to more than six,
+ * because a rule that pulses on a beat is a metronome, and a metronome is the one thing on a
+ * page that cannot be ignored — the eye locks to it and then waits for it.
+ *
+ * `step` is seconds per dot, so it is the wave's speed. The spread is what lets a wave launched
+ * later catch and pass one still travelling.
+ *
+ * `strength` is how hard it lands. Some barely lift the dots and one comes through at full
+ * height, so what crosses is worth looking up for or it is not.
+ *
+ * `peaks` and `skews` vary the dots rather than the waves: how high each rises, and how far it
+ * lags behind where an even wave would have put it. Ten of each against a swell about fifteen
+ * dots wide puts the variation *inside* a single wave, which is where it can be seen — and the
+ * lag is what makes the front arrive as a wave rather than as a ruled edge travelling sideways.
  */
-const SKEWS = [
-  0, 0.006, -0.003, 0.009, -0.002, 0.004, -0.006, 0.002, 0.007, -0.004,
-];
+function pulse(seed: number) {
+  const next = generator(seed);
+  const waves = Array.from({ length: WAVE_COUNT }, () => ({
+    gap: 1.1 + next() * 5.3,
+    step: 0.004 + next() * 0.011,
+    strength: 0.35 + next() * 0.65,
+  }));
+  return {
+    // Each wave, and the moment it sets off counted from the top of the sequence.
+    launches: waves.map((wave, i) => ({
+      ...wave,
+      at: waves.slice(0, i).reduce((sum, w) => sum + w.gap, 0),
+    })),
+    period: waves.reduce((sum, wave) => sum + wave.gap, 0),
+    peaks: Array.from({ length: GRAIN }, () => 1.9 + next() * 1.3),
+    skews: Array.from({ length: GRAIN }, () => (next() - 0.5) * 0.018),
+  };
+}
 
 type RGB = [number, number, number];
 
@@ -430,31 +417,44 @@ export function Train({
  * catch and pass a slow one still going — lifting the dots it is passing through further than
  * either would alone. That is what keeps this from being a metronome in the corner of the eye.
  */
-export function Pulse({ className = "" }: { className?: string }) {
+export function Pulse({
+  seed,
+  className = "",
+}: {
+  /** Which rule this is. The same seed is the same rule, every time. */
+  seed?: number;
+  className?: string;
+}) {
+  const [drawn] = useState(() => Math.floor(Math.random() * 2 ** 31));
+  const { launches, period, peaks, skews } = useMemo(
+    () => pulse(seed ?? drawn),
+    [seed, drawn],
+  );
+
   const ref = useCanvas((ctx, w, h, t) => {
     const faint = rgb(token("--ink-faint"));
     ctx.fillStyle = `rgb(${faint[0]} ${faint[1]} ${faint[2]})`;
     const mid = h / 2;
 
-    const local = ((t % PERIOD) + PERIOD) % PERIOD;
+    const local = ((t % period) + period) % period;
 
     for (let i = 0, n = Math.ceil(w / PITCH) + 1; i < n; i++) {
-      const skew = SKEWS[i % SKEWS.length]!;
+      const skew = skews[i % skews.length]!;
 
       // Every wave currently over this dot, added. Where two cross, the dot is lifted by both
       // — which is what interference looks like and is the one moment this rule has that is
       // not just a wave going past. CREST is what keeps that from becoming a bulge.
       let swell = 0;
-      for (const wave of LAUNCHES) {
+      for (const wave of launches) {
         const since = local - wave.at - i * wave.step - skew;
         // The same wave one period back as well, for the slow ones still crossing when the
         // sequence comes round. Only one of the two can be inside the impulse window, so
         // adding them is a way of picking whichever it is.
-        swell += wave.strength * (impulse(since) + impulse(since + PERIOD));
+        swell += wave.strength * (impulse(since) + impulse(since + period));
       }
       swell = Math.min(swell, CREST);
 
-      const radius = (DOT / 2) * (1 + swell * (PEAKS[i % PEAKS.length]! - 1));
+      const radius = (DOT / 2) * (1 + swell * (peaks[i % peaks.length]! - 1));
 
       ctx.globalAlpha = Math.min(1, 0.45 + 0.55 * swell);
       ctx.beginPath();

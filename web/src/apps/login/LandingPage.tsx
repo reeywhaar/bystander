@@ -113,7 +113,10 @@ export function LandingPage() {
 
         {/* Between the argument and the evidence for it. The train opens the page; this closes
             what the train opened, and the screenshots begin after it. */}
-        <Pulse className="mt-14" />
+        {/* Seed 39 rather than the first number to hand: it puts the waves close enough
+            together, now and then, that two are on the rule at once — which is the only time
+            the dots are lifted by both, and most seeds never do it at all. */}
+        <Pulse seed={39} className="mt-14" />
 
         <div className="mx-auto max-w-[1100px] px-6">
           <Reveal>
