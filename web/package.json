@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "rm -rf dist/assets && tsc --noEmit && vite build",
+    "build": "rm -rf dist/assets dist/landing && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "format": "prettier --write .",

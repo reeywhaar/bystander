@@ -28,8 +28,10 @@ export default defineConfig({
     // obvious connection to a frontend config.
     //
     // Nothing accumulates as a result: the HTML entries are overwritten by name, and
-    // `npm run build` removes dist/assets first, which is where the content-hashed files
-    // that would otherwise pile up live.
+    // `npm run build` removes dist/assets and dist/landing first — the two directories whose
+    // contents are named by something other than this config. assets is content-hashed;
+    // landing is whatever the screenshot capture last wrote, and it had three PNGs in it from
+    // back when the landing shots were PNGs, embedded into every binary built since.
     emptyOutDir: false,
     rollupOptions: {
       input: {

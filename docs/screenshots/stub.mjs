@@ -8,6 +8,13 @@
 // Node stdlib only, no dependencies. It serves three things:
 //
 //   /f/<slug>.xml   an RSS 2.0 feed
+//
+// A paper's `site` is the address it claims to live at, and deliberately not this server.
+// It is the channel's <link>, which becomes the subscription's site_url — the line the
+// feeds list prints under every name. Served from here it read as 127.0.0.1:8811 in the
+// screenshots. The item links stay on this origin, because a card still has to resolve to
+// something. `.example` is the TLD reserved for the purpose: a shot showing a domain
+// somebody owns points readers at a stranger.
 //   /<slug>/<id>    an article page, so a card's link resolves to something
 //   /img/<id>.svg   the picture on a card
 //
@@ -42,6 +49,7 @@ const ago = (ms) => new Date(startedAt - ms).toUTCString();
 const PAPERS = [
   {
     slug: "meridian",
+    site: "https://meridian.example",
     title: "The Meridian",
     description: "Foreign affairs, at the pace they actually move",
     items: [
@@ -81,6 +89,7 @@ const PAPERS = [
   },
   {
     slug: "ledger",
+    site: "https://ledgerandline.example",
     title: "Ledger & Line",
     description: "Markets, plainly",
     items: [
@@ -119,6 +128,7 @@ const PAPERS = [
   },
   {
     slug: "copperwire",
+    site: "https://copperwire.example",
     title: "Copper Wire",
     description: "How the machines actually work",
     items: [
@@ -157,6 +167,7 @@ const PAPERS = [
   },
   {
     slug: "fieldnotes",
+    site: "https://fieldnotes.example",
     title: "Field Notes",
     description: "Working science, from the people doing it",
     items: [
@@ -188,6 +199,7 @@ const PAPERS = [
   },
   {
     slug: "undercurrent",
+    site: "https://undercurrent.example",
     title: "The Undercurrent",
     description: "Arts, with the argument left in",
     items: [
@@ -220,6 +232,7 @@ const PAPERS = [
   },
   {
     slug: "harbour",
+    site: "https://harbourgazette.example",
     title: "Harbour Gazette",
     description: "This town, this week",
     items: [
@@ -248,6 +261,7 @@ const PAPERS = [
   },
   {
     slug: "wiredesk",
+    site: "https://wiredesk.example",
     title: "The Wire Desk",
     description: "Everything, as it lands",
     reach: 40,
@@ -258,6 +272,7 @@ const PAPERS = [
   },
   {
     slug: "slowcraft",
+    site: "https://slowcraft.example",
     title: "Slow Craft",
     description: "Once a month, if that",
     items: [
@@ -504,7 +519,7 @@ function feedXML(paper) {
 <rss version="2.0">
   <channel>
     <title>${escape(paper.title)}</title>
-    <link>${ORIGIN}/${paper.slug}/</link>
+    <link>${paper.site}/</link>
     <description>${escape(paper.description)}</description>
 ${entries}
   </channel>
