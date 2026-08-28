@@ -53,7 +53,7 @@ export function GuestMasthead({
               className="flex items-center gap-1.5 text-ink-muted hover:text-ink"
             >
               <GitHubIcon />
-              Source
+              GitHub
             </a>
           ) : null}
         </div>

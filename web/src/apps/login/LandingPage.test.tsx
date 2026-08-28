@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -78,7 +78,12 @@ describe("LandingPage", () => {
   it("offers the source as the action, not as a footnote", () => {
     open();
 
-    const cta = screen.getByRole("link", { name: "GitHub" });
+    // Found in the body rather than by its position among every GitHub link on the page —
+    // the masthead carries one too, and which of them comes first in the document is not
+    // what this test is about.
+    const cta = within(screen.getByRole("main")).getByRole("link", {
+      name: "GitHub",
+    });
     expect(cta).toHaveAttribute(
       "href",
       "https://github.com/reeywhaar/bystander",
@@ -95,12 +100,12 @@ describe("LandingPage", () => {
   });
 
   // In the top as well, where somebody convinced by the first screen goes looking for it.
+  // The same words as the one in the body, because it is the same errand.
   it("carries the source in the masthead", () => {
     open();
-    expect(screen.getByRole("link", { name: "Source" })).toHaveAttribute(
-      "href",
-      "https://github.com/reeywhaar/bystander",
-    );
+    expect(
+      within(screen.getByRole("banner")).getByRole("link", { name: "GitHub" }),
+    ).toHaveAttribute("href", "https://github.com/reeywhaar/bystander");
   });
 
   /*
