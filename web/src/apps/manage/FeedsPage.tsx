@@ -277,9 +277,9 @@ export function FeedsPage() {
 /**
  * A URL as somebody would say it out loud.
  *
- * The scheme and a bare trailing slash carry nothing — every site here is served over one of
- * two schemes and the difference is not this list's business — and dropping them is most of
- * what makes an address short enough to sit under a name without eliding.
+ * The scheme, a leading www and a bare trailing slash all carry nothing — every site here is
+ * served over one of two schemes and the difference is not this list's business — and dropping
+ * them is most of what makes an address short enough to sit under a name without eliding.
  *
  * Left alone if it will not parse. A feed whose site URL is malformed is a thing to show as
  * it is rather than a thing to guess at, and the browser will say so when it is clicked.
@@ -287,7 +287,8 @@ export function FeedsPage() {
 function plainly(raw: string) {
   try {
     const url = new URL(raw);
-    const shown = url.host + url.pathname + url.search;
+    const host = url.host.startsWith("www.") ? url.host.slice(4) : url.host;
+    const shown = host + url.pathname + url.search;
     return shown.endsWith("/") ? shown.slice(0, -1) : shown;
   } catch {
     return raw;
@@ -312,7 +313,7 @@ function FeedRow({
   const labels = feed.tag_ids.map((id) => tagLabel(tags, id)).filter(Boolean);
 
   return (
-    <div className="border-b border-rule py-3">
+    <div className="border-b border-rule py-4">
       {/* Side by side on a wide screen, stacked on a narrow one.
 
           The priority control is a fixed ~16rem — a label that must not resize plus a
@@ -322,7 +323,7 @@ function FeedRow({
           So on a narrow screen it is four lines: the name, where it is filed, whatever was
           written about it, and then the slider. `order` rather than a second copy of the markup, because the slider
           belongs beside the name on a wide screen and under everything on a narrow one. */}
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1.5">
         <div className="order-1 flex min-w-0 basis-full flex-col sm:flex-1 sm:basis-auto">
           {/* The name is the way into everything else about this feed. One affordance
               rather than a pencil for the title and a disclosure for the rest. */}
@@ -330,7 +331,8 @@ function FeedRow({
             type="button"
             onClick={() => onOpen(feed)}
             title={feed.title}
-            className="truncate text-left font-serif text-lg text-ink hover:text-accent"
+            className="truncate text-left font-serif text-lg leading-tight text-ink
+              hover:text-accent"
           >
             {feed.title}
           </button>
@@ -350,8 +352,9 @@ function FeedRow({
               target="_blank"
               rel="noopener noreferrer"
               title={feed.site_url}
-              className="min-w-0 truncate text-xs text-ink-faint underline decoration-dotted
-                underline-offset-2 hover:text-ink-muted"
+              className="mt-0.5 min-w-0 truncate text-xs text-ink-faint
+                hover:text-ink-muted hover:underline hover:decoration-dotted
+                hover:underline-offset-2"
             >
               {plainly(feed.site_url)}
             </a>
@@ -397,7 +400,10 @@ function FeedRow({
             beside it. Absent entirely when nothing was written, so a list of forty feeds with
             two notes in it shows two notes rather than thirty-eight blanks. */}
         {feed.note ? (
-          <p className="order-3 basis-full text-sm text-ink-muted sm:order-4">
+          <p
+            className="order-3 basis-full font-serif text-sm leading-snug text-ink-muted
+            sm:order-4"
+          >
             {feed.note}
           </p>
         ) : null}

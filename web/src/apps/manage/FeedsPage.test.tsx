@@ -117,6 +117,15 @@ describe("FeedsPage", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 
+  // Nor does a leading www, which is three characters of every address saying nothing about
+  // which address it is.
+  it("says an address the way somebody would", async () => {
+    render([subscription({ site_url: "https://www.example.com" })], []);
+
+    const link = await screen.findByRole("link", { name: "example.com" });
+    expect(link).toHaveAttribute("href", "https://www.example.com");
+  });
+
   // A publisher that names no site leaves nothing to link to, and a dead link would be
   // worse than none.
   it("says nothing about the site when the feed names none", async () => {
