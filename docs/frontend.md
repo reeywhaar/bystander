@@ -915,7 +915,19 @@ lines with Delete dangling under them. The name takes a line of its own; the oth
 in a wrapper that is `display: contents` from `sm` up — so on a screen they dissolve back into
 direct children of the row and keep their columns, and on a phone they are one group. Within
 it, `order` puts the menu and Delete on a line together with Delete pushed to the end, and the
-slider on the next: 268px of label and track is most of a phone's width and has to own its line.
+slider on the next.
+
+`display: contents` is doing more than regrouping. An element displaying its contents draws no
+box of its own — no border, no padding — so the slider's wrapper can be a *bordered field* on a
+phone and nothing at all on a screen, from one class and with one control in the tree. That
+matters because the phone row is read as a form rather than a table: the name field carries its
+border there too (`sm:border-transparent` gives it back the hover-only behaviour above), the
+menu already had one, and without the third the slider was two loose pieces of text and a rule
+sitting under two things that looked like fields.
+
+`Priority` widens both halves together below `sm` — `w-full sm:w-32` on each — and `Slider`'s
+inline row wraps, so the value takes a line and the track sits under it at full width. One
+layout, not two: a 128px track in the middle of a phone is a control you have to aim at.
 
 **Deleting a tag says what goes with it.** None of it is obvious: a tag nested under it is
 *promoted* rather than deleted (`parent_id` is `ON DELETE SET NULL`), the feeds filed there

@@ -91,7 +91,10 @@ export function Slider({
     // Inline, the value reads before the track rather than after: it is what the control
     // is *for*, and a number chasing along behind the thumb is harder to read than one
     // holding still in front of it.
-    <span className="flex items-center gap-3 text-xs text-ink-muted">
+    // Wrapping, so a caller that gives both halves a full width gets the value on one line
+    // and the track under it without a second layout mode to maintain. See Priority, which
+    // does exactly that on a phone.
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
       <span className="shrink-0 whitespace-nowrap tabular-nums">
         {format(local)}
       </span>

@@ -132,9 +132,16 @@ function TagRow({
             }
           }}
           aria-label={`Name of ${tag.name}`}
-          className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1
+          // Bordered on a phone, and only on hover above it.
+          //
+          // On a screen the border arrives when the pointer does, and a list of names set in
+          // serif reads as a list rather than as a form. A phone has no pointer, so that
+          // border never arrives — and a tag's name then looks exactly like a heading over
+          // the controls beneath it, which is the one thing on the row it is not. What is
+          // shown there is what hovering shows here.
+          className="w-full rounded-md border border-rule bg-transparent px-1.5 py-1
             font-serif text-lg text-ink hover:border-rule focus-visible:border-rule
-            focus-visible:outline-none"
+            focus-visible:outline-none sm:border-transparent"
         />
       </div>
 
@@ -164,18 +171,38 @@ function TagRow({
           ))}
         </Select>
 
-        <Priority
-          label={`How often ${tag.name} appears`}
-          value={tag.priority}
-          onChange={(priority) =>
-            update.mutate({ id: tag.id, changes: { priority } })
-          }
-        />
+        {/* A line of its own on a phone — the label and the track together are most of the
+            width, and sharing a line with the menu left too little for either. `sm:contents`
+            dissolves this wrapper on a screen, so the slider goes back to being a direct
+            child of the row and keeps its column. */}
+        <span
+          // A field like the two above it on a phone: the value on its own line, the track
+          // under it, both inside a box. Without the border it was two loose pieces of text
+          // and a rule floating under a name field and a menu that both had one, which is
+          // what made the row read as a heading with some furniture below rather than as
+          // three things you can change.
+          //
+          // `sm:contents` takes the box away entirely on a screen — border, padding and all,
+          // since an element displaying its contents draws none of its own — and the slider
+          // goes back to being the row's third column.
+          className="order-3 w-full rounded-md border border-rule px-3 py-2 sm:contents"
+        >
+          <Priority
+            label={`How often ${tag.name} appears`}
+            value={tag.priority}
+            onChange={(priority) =>
+              update.mutate({ id: tag.id, changes: { priority } })
+            }
+          />
+        </span>
 
         <button
           type="button"
           onClick={() => onDelete(tag)}
-          className="shrink-0 text-xs text-ink-faint hover:text-accent"
+          // Beside the menu on a phone and pushed to the far end of that line, rather than
+          // alone below everything. On a screen it is the row's last column again.
+          className="order-2 ml-auto shrink-0 text-xs text-ink-faint hover:text-accent
+            sm:order-none sm:ml-0"
         >
           Delete
         </button>

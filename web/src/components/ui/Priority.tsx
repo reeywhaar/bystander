@@ -45,12 +45,21 @@ export function Priority({
       step={5}
       onCommit={onChange}
       label={label}
-      className="w-32"
+      // Full width on a phone, where this owns its line and a 128px track in the middle of
+      // it is a control somebody has to aim at. Both halves widen together, so the value
+      // takes a line of its own and the track sits under it — see the wrapping row in Slider.
+      className="w-full sm:w-32"
       // Wide enough for the longest of these — "100 · more often" — so the label occupies
       // the same space at every value and nothing moves while the thumb does.
+      //
+      // And right-aligned inside that box at every width, so the words sit against the track
+      // they describe. It used to be left-aligned below `sm`, which put the box's slack
+      // *between* the two halves — a phone showed "50 · as usual", a gap, and then a slider,
+      // and the pair stopped reading as one control. Anchored to the track, the slack falls
+      // outside the whole thing, where the layout around it can decide which end it goes to.
       format={(priority) => (
         <span
-          className={`inline-flex w-32 items-center gap-2 text-left sm:justify-end ${
+          className={`inline-flex w-full items-center justify-end gap-2 sm:w-32 ${
             priority === 0 ? "text-accent" : ""
           }`}
         >
