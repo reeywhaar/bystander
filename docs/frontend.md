@@ -934,12 +934,17 @@ somewhere to spend extra width, since a longer track sets a finer value.
 **The range input is drawn rather than left to the browser.** `accent-color` gets a filled
 track for free and gives no say over the thumb, which platforms draw at fourteen to twenty
 pixels — heavier than the type beside it and than the track it rides on. `.slider` in
-`styles.css` draws it at eleven. **The band is unchanged**: what a finger can hit is the whole
-element, and pressing anywhere on it moves the thumb there, so the input keeps a 20px height
-and only the mark on it got smaller. The fill has to be drawn too, since a custom track loses
-the one `accent-color` gave — a hard-stopped gradient at `--slider-fill`, which `Slider` sets
-from the position under the finger so it follows the drag rather than catching up on release.
-Firefox has `::-moz-range-progress` and needs none of that.
+`styles.css` draws it at eleven. **The band is what a finger hits, not the thumb**: pressing
+anywhere on a range input moves the thumb there, so the element keeps a height of its own —
+16px around a 5px track — and only the mark on it got smaller.
+
+Two lines and a box around them cost vertical space, and the first attempt spent 56px on a
+control sitting beside a 38px field. Tightened — `leading-none` on the value, a half-step gap,
+one step of padding — it is 40px, which is the name field's height and does not set the row's.
+The fill has to be drawn too, since a custom track loses the one `accent-color` gave — a
+hard-stopped gradient at `--slider-fill`, which `Slider` sets from the position under the
+finger so it follows the drag rather than catching up on release. Firefox has
+`::-moz-range-progress` and needs none of that.
 
 **Deleting a tag says what goes with it.** None of it is obvious: a tag nested under it is
 *promoted* rather than deleted (`parent_id` is `ON DELETE SET NULL`), the feeds filed there

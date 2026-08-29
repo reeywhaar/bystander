@@ -332,7 +332,7 @@ body {
   .slider {
     -webkit-appearance: none;
     appearance: none;
-    height: 1.25rem;
+    height: 1rem;
     background: transparent;
     cursor: pointer;
   }

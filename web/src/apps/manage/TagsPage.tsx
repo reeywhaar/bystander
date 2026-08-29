@@ -197,7 +197,7 @@ function TagRow({
           // The whole width of the line on a phone, and a column of its own on a screen. It
           // is the one field here with somewhere to spend extra width: the track gets longer
           // and the value it sets gets finer, which is the opposite of the menu beside it.
-          className="order-3 w-full rounded-md border border-rule bg-paper-raised px-2 py-1.5
+          className="order-3 w-full rounded-md border border-rule bg-paper-raised px-2 py-1
             sm:order-none sm:w-64 sm:bg-transparent"
         >
           <Priority

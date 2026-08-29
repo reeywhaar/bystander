@@ -96,8 +96,8 @@ export function Slider({
 
   if (fill) {
     return (
-      <span className="flex w-full flex-col gap-1.5 text-xs text-ink-muted">
-        <span className="tabular-nums">{format(local)}</span>
+      <span className="flex w-full flex-col gap-0.5 text-xs text-ink-muted">
+        <span className="leading-none tabular-nums">{format(local)}</span>
         {track}
       </span>
     );
