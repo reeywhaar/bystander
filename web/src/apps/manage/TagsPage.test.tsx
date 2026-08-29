@@ -102,10 +102,73 @@ describe("TagsPage", () => {
     const parent = await screen.findByLabelText("Where Tech sits");
     expect(parent.className).toContain("w-36");
 
+    // And the last cell, which is the one that changes: one word normally, and while it is
+    // asking, nothing — the two buttons go on the line below rather than widening it.
+    const cell = screen
+      .getAllByRole("button", { name: "Delete" })[0]!
+      .closest("div")!;
+    expect(cell.className).toContain("w-12");
+
     // The indent is inside the name's box, so the box is the same width either way and
     // nothing after it moves.
     const row = screen.getByLabelText("Name of AI & GPT").closest("div")!;
     expect(row.className).toContain("pl-6");
     expect(row.parentElement?.className).not.toContain("pl-6");
+  });
+
+  /*
+   * Deleting a tag is not undoable and none of what goes with it is obvious — a tag nested
+   * under it is promoted rather than deleted, the feeds filed there keep everything but the
+   * filing, and any page with a rule about it quietly loses that rule. So it is said before
+   * rather than discovered after.
+   */
+  it("asks before deleting, and writes nothing until it is answered", async () => {
+    const { transport } = renderWith(<TagsPage />, {
+      "GET /api/tags": { body: [tech, nested] },
+    });
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: "Delete" }))[0]!,
+    );
+
+    expect(screen.getByText(/unfiles every feed under it/)).toBeInTheDocument();
+    expect(transport.calls.some((c) => c.method === "DELETE")).toBe(false);
+
+    await userEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.queryByText(/unfiles every feed under it/)).toBeNull();
+    expect(transport.calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  // Promotion is the surprising half: "delete" does not lead anybody to expect the children
+  // to survive, so the count is said out loud.
+  it("says what becomes of the tags nested under it", async () => {
+    renderWith(<TagsPage />, { "GET /api/tags": { body: [tech, nested] } });
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: "Delete" }))[0]!,
+    );
+    expect(
+      screen.getByText(/The tag nested under it becomes one of its own\./),
+    ).toBeInTheDocument();
+  });
+
+  it("deletes once it has been answered", async () => {
+    const { transport } = renderWith(<TagsPage />, {
+      "GET /api/tags": { body: [tech] },
+      "DELETE /api/tags/t_tech": { status: 204 },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Delete it" }));
+
+    await waitFor(() =>
+      expect(transport.calls).toContainEqual({
+        method: "DELETE",
+        path: "/api/tags/t_tech",
+        body: undefined,
+      }),
+    );
   });
 });

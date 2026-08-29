@@ -895,9 +895,25 @@ slider and the delete across by two dozen pixels, so five rows lined up and the 
 The indent belongs inside the name's own box, which is a fixed width either way — what a
 nested tag gets is a shorter field, which is what an indent looks like.
 
+The slack sits between the name and the menu — `mr-auto` on the name — so the controls group
+against the right edge rather than leaving the one destructive thing on the row stranded with a
+hand's width of nothing beside it.
+
+That makes every fixed width load-bearing in a third way: with the slack in front of them, a
+cell that grows drags the whole group left *on that row alone*. Deleting asks first, and the
+two buttons it needs are wider than the word they replace — so they go on the line below, and
+the row's last cell keeps a width of its own and holds one word. Adding them in place also
+pushed the four fixed widths past what the page has room for, and the cell wrapped.
+
 Measured in Chromium at the page's real width, all four columns now have exactly one position
-across every row. `TagsPage.test.tsx` asserts the two classes that decide it, since jsdom does
-no layout.
+across every row, including a row mid-confirmation. `TagsPage.test.tsx` asserts the three
+classes that decide it, since jsdom does no layout.
+
+**Deleting a tag says what goes with it.** None of it is obvious: a tag nested under it is
+*promoted* rather than deleted (`parent_id` is `ON DELETE SET NULL`), the feeds filed there
+keep everything but the filing, and any page with a rule about it quietly loses that rule
+(`page_tags` and the filter lists both cascade). The confirmation names all three, and counts
+the children.
 
 ## Passwords are asked for behind a button
 

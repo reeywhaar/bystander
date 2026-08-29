@@ -76,9 +76,16 @@ function TagRow({
   tags: Tag[];
   nested?: boolean;
 }) {
+  // Counted for the confirmation, which has to say what happens to them — they are promoted
+  // rather than deleted, and that is not what "delete" leads anybody to expect.
+  const children = tags.filter((other) => other.parent_id === tag.id).length;
   const update = useUpdateTag();
   const remove = useRemoveTag();
   const [name, setName] = useState(tag.name);
+  // Whether Delete has been pressed once and not yet answered. Inline on the row rather than
+  // a dialog: what is being deleted is named right there, and a box asking about a thing
+  // already on screen is a box that says nothing the row does not.
+  const [confirming, setConfirming] = useState(false);
 
   // Only tags that are not this one and are not already nested under something can be a
   // parent. The server refuses a cycle outright; this keeps the obvious ones off the menu.
@@ -94,7 +101,10 @@ function TagRow({
           slider sat two dozen pixels right of the ones above — a list of five that lined up
           and a sixth that did not. The box is the same width either way, so what a nested
           tag gets is a shorter field, which is what an indent looks like. */}
-      <div className={`w-44 shrink-0 ${nested ? "pl-6" : ""}`}>
+      {/* mr-auto, so the slack falls here and the controls sit together against the right
+          edge. It used to fall between the slider and Delete, which left the one destructive
+          thing on the row stranded on its own with a hand's width of nothing beside it. */}
+      <div className={`mr-auto w-44 shrink-0 ${nested ? "pl-6" : ""}`}>
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -142,17 +152,70 @@ function TagRow({
         }
       />
 
-      <button
-        type="button"
-        onClick={() => remove.mutate(tag.id)}
-        className="ml-auto text-xs text-ink-faint hover:text-accent"
-      >
-        Delete
-      </button>
+      {/* A box of its own width, holding one word. What the confirmation needs — two
+          buttons and a sentence — goes on the line below instead, because putting it here
+          made this cell the widest thing on the row: everything is pushed right, so the last
+          cell growing dragged the menu and the slider left on that row alone, and the four
+          fixed widths together no longer fitted the page at all. */}
+      <div className="flex w-12 shrink-0 justify-end text-xs">
+        {confirming ? null : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="text-ink-faint hover:text-accent"
+          >
+            Delete
+          </button>
+        )}
+      </div>
 
+      {/* What goes with it, said before rather than discovered after. None of it is obvious:
+          a tag nested under this one is promoted rather than deleted, the feeds filed here
+          keep everything but the filing, and any page that had a rule about this tag quietly
+          loses it. */}
+      {confirming ? (
+        <div className="flex w-full flex-wrap items-baseline justify-end gap-x-4 gap-y-2">
+          <p className="min-w-0 flex-1 text-xs text-ink-muted">
+            Deleting <span className="text-ink">{tag.name}</span> unfiles every
+            feed under it and drops it from any page that had a rule about it.
+            The feeds and the pages stay.
+            {children === 0
+              ? ""
+              : children === 1
+                ? " The tag nested under it becomes one of its own."
+                : ` The ${children} tags nested under it become tags of their own.`}
+          </p>
+          <span className="flex shrink-0 items-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="text-ink-faint hover:text-ink"
+            >
+              Keep
+            </button>
+            <button
+              type="button"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate(tag.id)}
+              className="text-accent disabled:opacity-50"
+            >
+              {remove.isPending ? "Deleting…" : "Delete it"}
+            </button>
+          </span>
+        </div>
+      ) : null}
+
+      {/* Both on their own line, because a refusal is about the row rather than about any
+          one control on it — renaming and deleting fail for different reasons and neither
+          has room beside the thing that caused it. */}
       {update.error ? (
         <div className="w-full">
           <Alert>{update.error.message}</Alert>
+        </div>
+      ) : null}
+      {remove.error ? (
+        <div className="w-full">
+          <Alert>{remove.error.message}</Alert>
         </div>
       ) : null}
     </div>
