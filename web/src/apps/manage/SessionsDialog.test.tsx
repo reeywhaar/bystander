@@ -55,6 +55,33 @@ describe("SessionsDialog", () => {
     ).toBeInTheDocument();
   });
 
+  /*
+   * Where these strings differ is the whole reason this is not truncated.
+   *
+   * Every one of them opens "Mozilla/5.0 (Macintosh; …) Gecko/…" — thirty years of browsers
+   * pretending to be each other — and the part naming the browser comes last. An ellipsis on
+   * the right cut the only word worth reading, and cut it identically on every row. Measured
+   * in Chromium at the dialog's real width: a Chrome agent is 735px in a 496px box, so 239px
+   * of it, ending in "Chrome/141.0.0.0", had nowhere to go.
+   *
+   * The classes rather than the geometry, because jsdom does no layout — there is no
+   * scrollWidth here to compare. What is asserted is that the line can scroll and does not
+   * clip, which is the pair that decides it.
+   */
+  it("lets the raw agent be scrolled to its end rather than clipping it", async () => {
+    open([session()]);
+
+    const agent = await screen.findByText(
+      "Mozilla/5.0 (Macintosh) Safari/605.1.15",
+    );
+    expect(agent.className).toContain("overflow-x-auto");
+    expect(agent.className).toContain("whitespace-nowrap");
+    expect(agent.className).not.toContain("truncate");
+    // The tooltip was standing in for text that could not be reached. It can be reached now,
+    // and a hundred and twenty characters was never a good tooltip.
+    expect(agent).not.toHaveAttribute("title");
+  });
+
   // A bare relative time in a row that already carries two other dates is one among three.
   it("labels the last access", async () => {
     open([session({ last_access: NOW - 2 * 3600 })]);

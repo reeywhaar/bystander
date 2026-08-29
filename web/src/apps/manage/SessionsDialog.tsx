@@ -116,11 +116,23 @@ export function SessionsDialog({
                 </p>
                 {/* Verbatim, under the summary rather than instead of it. The summary is a
                     guess at a string built out of thirty years of compatibility lies, and
-                    the only way to check a guess is to see what it was made from. */}
+                    the only way to check a guess is to see what it was made from.
+
+                    Scrolled sideways rather than truncated, because of *where* these strings
+                    differ. Every one of them opens "Mozilla/5.0 (Macintosh; Intel Mac OS X
+                    10.15; rv:…) Gecko/…" — thirty years of pretending to be each other — and
+                    the part that says which browser this actually is comes last. An ellipsis
+                    on the right therefore cut the only word worth reading, and did it to
+                    every row identically.
+
+                    No `title` any more: a tooltip was standing in for text that could not be
+                    reached, and it can be reached now. A hundred and twenty characters in a
+                    tooltip was never a good way to read them anyway. */}
                 {session.user_agent ? (
                   <p
-                    className="mt-0.5 truncate font-mono text-[0.6875rem] text-ink-faint"
-                    title={session.user_agent}
+                    className="mt-0.5 overflow-x-auto font-mono text-[0.6875rem]
+                      whitespace-nowrap text-ink-faint [scrollbar-width:thin]
+                      [overscroll-behavior-x:contain]"
                   >
                     {session.user_agent}
                   </p>
