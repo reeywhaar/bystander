@@ -111,6 +111,24 @@ attribute rather than as folders, because a feed here can carry several tags and
 a tree. The reader is more forgiving than the writer and takes folders too, since that is
 what everything else exports.
 
+### What counts as a feed
+
+**RSS, Atom and JSON Feed.** Which one it is never has to be said: pasting an address fetches
+it and tries to parse it, and the format is worked out from what came back rather than from
+what the address ends in — so a JSON feed served at `/feed`, or an Atom one at `/rss.xml`,
+is read as what it is.
+
+Pasting a *site* instead is the ordinary case. The page's own `<link rel="alternate">` tags
+are read, and `application/feed+json` is among the types accepted — plain `application/json`
+deliberately is not, because that is every API endpoint on the web and the picker would fill
+with junk. A site that declares nothing is guessed at over the handful of addresses convention
+settled on: `feed`, `.rss`, `rss`, `index.xml`, `atom.xml`, `feed.xml`, `rss.xml`,
+`feeds/all.atom.xml`, `feed.json`. Reddit's front page declares nothing and `reddit.com/.rss`
+is a perfectly good Atom feed, and the same is true of anything rendered in the browser.
+
+Where a site offers several — a WordPress blog offers posts and comments, and often a podcast
+— you are asked which, and you can read a feed's last ten articles before deciding.
+
 ## How a page is made
 
 Each feed carries a **priority** from 0 to 100, and it defaults to 50.

@@ -243,6 +243,10 @@ var wellKnownFeedPaths = []string{
 	"feed.xml",  //
 	"rss.xml",   //
 	"feeds/all.atom.xml",
+	// Last, and rare. JSON Feed is read wherever it is found — the format is worked out
+	// from the body — but a site that declares nothing *and* publishes only JSON is the one
+	// case guessing has to cover, and this is the address that convention settled on.
+	"feed.json",
 }
 
 // probeTimeout bounds the whole guessing phase, however many addresses it tries.

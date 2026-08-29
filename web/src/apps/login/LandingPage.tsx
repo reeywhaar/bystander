@@ -182,6 +182,10 @@ export function LandingPage() {
                   before deciding to follow it
                 </Feature>
                 <Feature>
+                  RSS, Atom and JSON Feed, told apart by reading them rather
+                  than by what the address ends in
+                </Feature>
+                <Feature>
                   A page for the news and another for the long reads — as many
                   as you keep, each drawing from what you tell it
                 </Feature>
