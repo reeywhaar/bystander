@@ -555,9 +555,20 @@ function FeedRow({
             onClick={() => setPreviewing(true)}
             aria-label={`Preview ${feed.title}`}
             title={`Preview ${feed.title}`}
-            className="ml-2 text-ink-faint hover:text-ink"
+            // Sized and aligned on the *button*, not on the mark inside it.
+            //
+            // The button is what sits in this sentence, and its baseline comes from its own
+            // content — so `vertical-align` on the icon moves the icon within the button and
+            // the button's baseline follows it, for no net change at all. Measured: the same
+            // three values on the icon gave three identical positions.
+            //
+            // A sixteenth of a pixel off the middle of the lowercase beside it, at `-0.3em`,
+            // measured against the x-height from the font's own metrics. And a size of its
+            // own rather than the line's twelve: at twelve it was punctuation, which is not
+            // what a thing you press should look like or be as easy to miss as.
+            className="ml-2 align-[-0.3em] text-base text-ink-faint hover:text-ink"
           >
-            <EyeIcon className="align-[-0.125em]" />
+            <EyeIcon />
           </button>
         </p>
 

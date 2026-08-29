@@ -939,6 +939,16 @@ carries a button. Separated by a space rather than a middot: the dots on that li
 *facts*, and an action punctuated as a fact both reads wrong and leaves a dangling separator
 in the text, which is how the existing assertions caught it.
 
+**Its size and its alignment are on the button, not on the mark inside it.** The button is
+what sits in the sentence, and its baseline comes from its own content — so `vertical-align`
+on the icon moves the icon within the button and the button's baseline follows, for no net
+change. Measured, three different values on the icon gave three identical positions. The same
+trap as the flex baseline in [Icons](#icons), one level up: whatever is the inline box is what
+has to be aligned. `-0.3em` on the button puts it within a sixteenth of a pixel of the middle
+of the lowercase beside it, against the x-height taken from the font's own metrics rather than
+guessed. And it takes a size of its own rather than the line's twelve — at twelve it read as
+punctuation, which is neither what a thing you press should look like nor as easy to miss as.
+
 Underneath, `Priority` takes `fill`,
 which puts the value on its own line above a track that fills the width — distinct from
 `Slider`'s existing `stacked`, which is the inverse (track first, value under its right-hand
