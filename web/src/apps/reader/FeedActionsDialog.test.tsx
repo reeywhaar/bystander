@@ -54,9 +54,9 @@ describe("FeedActionsDialog", () => {
   // to find out whether it did anything.
   it("says where the feed stands and where a press would put it", () => {
     open();
-    expect(screen.getByText("as usual")).toBeInTheDocument();
+    expect(screen.getByText("as usual (50)")).toBeInTheDocument();
     expect(
-      screen.getByText("Drawn more often from now on."),
+      screen.getByText("Drawn more often (70) from now on."),
     ).toBeInTheDocument();
   });
 
@@ -106,8 +106,12 @@ describe("FeedActionsDialog", () => {
     expect(transport.calls.some((call) => call.method === "PUT")).toBe(false);
   });
 
-  it("keeps a priority inside its bounds", async () => {
-    const { transport } = open(article(90));
+  /*
+   * Both ends are rungs rather than clamps, so pressing towards one arrives at it exactly
+   * rather than overshooting and being cut back.
+   */
+  it("lands on the end of the ladder rather than past it", async () => {
+    const { transport } = open(article(95));
 
     await userEvent.click(screen.getByRole("button", { name: /Show more/ }));
 
@@ -115,6 +119,58 @@ describe("FeedActionsDialog", () => {
       const sent = transport.calls.find((call) => call.method === "PATCH");
       expect(sent?.body).toEqual({ priority: 100 });
     });
+  });
+
+  /*
+   * The step shrinks with the distance from the middle, so a nearly-silent feed is quietened
+   * five at a time rather than twenty — at 15 the next rung down is a third of its presence,
+   * where at 50 the same twenty is two fifths.
+   */
+  it("steps finely near the quiet end", async () => {
+    const { transport } = open(article(15));
+
+    await userEvent.click(screen.getByRole("button", { name: /Show less/ }));
+
+    await waitFor(() => {
+      const sent = transport.calls.find((call) => call.method === "PATCH");
+      expect(sent?.body).toEqual({ priority: 5 });
+    });
+  });
+
+  /*
+   * The property a computed step cannot have.
+   *
+   * From 50 a step proportional to the value lands on 30, and stepping back up from there
+   * lands on 58. Pressing the wrong button and then the other one has to put a reader back
+   * where they were, and shared rungs are the only way to get that exactly.
+   */
+  it("puts a wrong press back exactly where it was", async () => {
+    for (const start of [0, 5, 15, 30, 50, 70, 85, 95, 100]) {
+      const { transport, unmount } = open(article(start));
+      const step = async (name: RegExp) => {
+        await userEvent.click(screen.getByRole("button", { name }));
+        await waitFor(() =>
+          expect(transport.calls.some((c) => c.method === "PATCH")).toBe(true),
+        );
+        const sent = transport.calls.find((c) => c.method === "PATCH");
+        return (sent?.body as { priority: number }).priority;
+      };
+      if (start < 100) {
+        const up = await step(/Show more/);
+        unmount();
+        const back = open(article(up));
+        await userEvent.click(
+          screen.getByRole("button", { name: /Show less/ }),
+        );
+        await waitFor(() => {
+          const sent = back.transport.calls.find((c) => c.method === "PATCH");
+          expect(sent?.body).toEqual({ priority: start });
+        });
+        back.unmount();
+      } else {
+        unmount();
+      }
+    }
   });
 
   // The one thing here that cannot be undone, so it is asked rather than done.

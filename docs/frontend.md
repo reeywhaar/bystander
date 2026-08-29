@@ -812,11 +812,31 @@ constantly, so on the card they would be three pieces of furniture under every s
 sake of a gesture made once a week — and the destructive one would sit under a headline waiting
 to be brushed. One dialog for the page, mounted only while open, rather than one per card.
 
-Each step moves the priority by `PRIORITY_STEP`, which is 20 rather than the slider's 5. That
-is the width of a band in `describePriority`, so a press changes the word as well as the
-number, and the dialog says where the feed stands now and where the press would put it —
-otherwise "show less" is a button you press and then wait a day to find out whether it did
-anything.
+The two buttons move along `PRIORITY_LADDER`:
+
+    0    5   15   30   50   70   85   95  100
+      5   10   15   20   20   15   10   5
+
+**The step shrinks with the distance from the middle.** Coarse where a feed is one of the
+crowd, fine where it is nearly silent or nearly everything — which is where five actually
+means something, because the number buys a *share*: at 5 the next rung doubles a feed's
+presence, at 50 the same twenty moves it by two fifths.
+
+**A ladder rather than a step computed from the value**, and that is the whole reason the
+rungs are written out. Any rule that reads the current priority and returns a step gives two
+functions that are not inverses — from 50 a proportional step lands on 30, and stepping back
+up from there lands on 58. Pressing the wrong button and then the other one has to return you
+to where you were, and shared rungs are the only way to get that exactly. `constants.test.ts`
+asserts it at every rung.
+
+Both ends are rungs rather than clamps, so zero is reachable by pressing and means never. Every
+value is a multiple of five, so nothing is off the slider's own steps — and where the slider
+has left a feed between rungs, a press moves to the neighbouring rung rather than adding to a
+number that is not on the ladder.
+
+The dialog says where the feed stands and where a press would put it, with the number beside
+the word: the ladder is finer than `describePriority` is, 5 and 15 are both "rarely", and a
+sentence that does not change between presses reads as a press that did nothing.
 
 **Show less also marks the article read.** "Less of this" is said about something you have
 finished with, so leaving it unread would be asking to be shown the very article that prompted

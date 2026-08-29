@@ -90,14 +90,34 @@ export const DEFAULT_PRIORITY = 50;
 export const DEFAULT_ARTICLE_WINDOW = 604800;
 
 /**
- * How far one "show more" or "show less" moves a feed's priority.
+ * The priorities "show more" and "show less" move between.
  *
- * Twenty rather than the slider's five, because these are two buttons and not a slider: a
- * press has to be worth pressing. Twenty is the width of a band in [describePriority], so
- * every press changes the word as well as the number — from "as usual" to "less often" to
- * "rarely" to "never" — and a reader can tell what happened without watching a figure move.
+ * The rule is that the step shrinks with the distance from the middle — twenty either side of
+ * "as usual", then fifteen, then ten, then five into each end. Coarse where a feed is one of
+ * the crowd and fine where it is nearly silent or nearly everything, which is where a change
+ * of five actually means something: a share is what this number buys, so at 5 the next rung
+ * doubles the feed's presence and at 50 it moves it by two fifths.
+ *
+ * A **ladder rather than a step computed from the value**, and that is the whole reason it is
+ * written out. Any rule that reads the current priority and returns a step gives two functions
+ * that are not inverses: from 50 a proportional step lands on 30, and stepping back up from
+ * there lands on 58. Pressing the wrong button and pressing the other one has to return you
+ * to where you were. Shared rungs are the only way to get that exactly.
+ *
+ * Every value is a multiple of five, so nothing here is off the slider's own steps, and both
+ * ends are rungs rather than clamps — zero is reachable by pressing, and it means never.
  */
-export const PRIORITY_STEP = 20;
+export const PRIORITY_LADDER = [0, 5, 15, 30, 50, 70, 85, 95, 100] as const;
+
+/** The next rung up, or 100. Snaps a value the slider left between rungs. */
+export function moreOften(priority: number): number {
+  return PRIORITY_LADDER.find((rung) => rung > priority) ?? 100;
+}
+
+/** The next rung down, or 0. Snaps a value the slider left between rungs. */
+export function lessOften(priority: number): number {
+  return [...PRIORITY_LADDER].reverse().find((rung) => rung < priority) ?? 0;
+}
 
 /** What a priority means, in words, for the places a number alone is unhelpful. */
 export function describePriority(priority: number): string {

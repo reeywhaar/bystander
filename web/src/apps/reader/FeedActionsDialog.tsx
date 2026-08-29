@@ -7,7 +7,7 @@ import { Modal } from "@app/components/ui/Modal";
 import { HandThumbsdownIcon } from "@app/components/icons/HandThumbsdownIcon";
 import { HandThumbsupIcon } from "@app/components/icons/HandThumbsupIcon";
 import { TrashIcon } from "@app/components/icons/TrashIcon";
-import { describePriority, PRIORITY_STEP } from "@app/lib/constants";
+import { describePriority, lessOften, moreOften } from "@app/lib/constants";
 import { useDropFeed, useSetRead, useUpdateFeed } from "@app/queries/hooks";
 
 /**
@@ -60,9 +60,8 @@ export function FeedActionsDialog({
   const following = feed.subscription_id !== "";
   const busy = update.isPending || drop.isPending;
 
-  const at = (priority: number) => Math.min(100, Math.max(0, priority));
-  const more = at(feed.priority + PRIORITY_STEP);
-  const less = at(feed.priority - PRIORITY_STEP);
+  const more = moreOften(feed.priority);
+  const less = lessOften(feed.priority);
 
   function shift(priority: number, alsoRead: boolean) {
     if (!article) return;
@@ -134,19 +133,25 @@ export function FeedActionsDialog({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {/* The number, in the words the rest of the product uses for it. A control that
-              says "show less" without saying less than what is asking somebody to press it
-              and watch, which on a page composed every few hours means finding out tomorrow. */}
+          {/* Where it stands, before either button is pressed. A control that says "show
+              less" without saying less than what is asking somebody to press it and watch,
+              which on a page composed every few hours means finding out tomorrow.
+
+              The number as well as the word, because the ladder is finer than the words are:
+              5 and 15 are both "rarely", and a sentence that does not change between presses
+              reads as a press that did nothing. */}
           <p className="text-sm text-ink-muted">
             Drawn{" "}
-            <span className="text-ink">{describePriority(feed.priority)}</span>{" "}
+            <span className="text-ink">
+              {describePriority(feed.priority)} ({feed.priority})
+            </span>{" "}
             at the moment.
           </p>
 
           <Action
             icon={<HandThumbsupIcon />}
             label="Show more"
-            detail={`Drawn ${describePriority(more)} from now on.`}
+            detail={`Drawn ${describePriority(more)} (${more}) from now on.`}
             disabled={busy || feed.priority >= 100}
             onClick={() => shift(more, false)}
           />
@@ -155,7 +160,7 @@ export function FeedActionsDialog({
           <Action
             icon={<HandThumbsdownIcon />}
             label="Show less"
-            detail={`Drawn ${describePriority(less)} from now on, and this article is marked read.`}
+            detail={`Drawn ${describePriority(less)} (${less}) from now on, and this article is marked read.`}
             disabled={busy || feed.priority <= 0}
             onClick={() => shift(less, true)}
           />
