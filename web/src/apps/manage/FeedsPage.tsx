@@ -22,7 +22,7 @@ import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
 import { PreviewDialog } from "@app/apps/manage/PreviewDialog";
 import { ShareDialog } from "@app/apps/manage/ShareDialog";
 import { EyeIcon } from "@app/components/icons/EyeIcon";
-import { Priority } from "@app/components/ui/Priority";
+import { PriorityField } from "@app/components/ui/PriorityField";
 import { Spinner } from "@app/components/ui/Spinner";
 import { tagLabel } from "@app/lib/tags";
 import { since } from "@app/lib/time";
@@ -548,7 +548,7 @@ function FeedRow({
 
         {/* The one setting that stays in the list: it is a dial somebody nudges while
             looking at the whole of it, not something they go and open a feed to change. */}
-        <div className="order-4 shrink-0 sm:order-2 sm:ml-auto">
+        <div className="order-4 w-full shrink-0 sm:order-2 sm:ml-auto sm:w-64">
           {/* What this feed is publishing today, without following it anywhere.
 
               The same dialog the picker uses before subscribing, which is the point: the
@@ -569,7 +569,7 @@ function FeedRow({
               the one to press. The name is on the button for anything not reading the
               picture, and the title is in it because a list of forty otherwise offers forty
               buttons that all say the same thing. */}
-          <Priority
+          <PriorityField
             label={`How often ${feed.title} appears`}
             value={feed.priority}
             onChange={(priority) =>

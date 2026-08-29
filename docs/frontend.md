@@ -923,7 +923,14 @@ that is `display: contents` from `sm` up, so on a screen they dissolve back into
 of the row and keep their columns. Within it, `order` puts the menu and Delete on a line
 together with Delete pushed to the end, and the slider on the next.
 
-**The slider is a field with a label, not a control with a caption.** `Priority` takes `fill`,
+**The slider is a field with a label, not a control with a caption.** `PriorityField` is that
+field — a box, a value line, and a track filling the width — and both lists use it: the tag
+list and the feed list ask the same question and should not have grown two answers. It takes
+its width from its caller, because that is the part the two disagree on and the only part;
+it is also the one field in either row with somewhere useful to spend extra width, since a
+longer track sets a finer value where a longer menu says nothing more.
+
+Underneath, `Priority` takes `fill`,
 which puts the value on its own line above a track that fills the width — distinct from
 `Slider`'s existing `stacked`, which is the inverse (track first, value under its right-hand
 end) and belongs to the page-size control. Inline, the box put a 128px track in the middle with

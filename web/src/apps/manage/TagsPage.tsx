@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
 import { Button } from "@app/components/ui/Button";
-import { Priority } from "@app/components/ui/Priority";
+import { PriorityField } from "@app/components/ui/PriorityField";
 import { Select } from "@app/components/ui/Select";
 import { Spinner } from "@app/components/ui/Spinner";
 import { DEFAULT_PRIORITY } from "@app/lib/constants";
@@ -180,35 +180,17 @@ function TagRow({
           ))}
         </Select>
 
-        <span
-          // A field, like the two beside it, at every width.
-          //
-          // Bare, it was two loose pieces of text and a rule sitting next to a name and a
-          // menu that both had a box — which read as a heading with some furniture under it
-          // rather than as three things you can change. One box everywhere rather than one
-          // that appears on a phone: the same control should not be two different objects
-          // depending on how wide the window is.
-          //
-          // Two lines inside it: the value, then a track filling the width. One line put a
-          // 128px track in the middle of the box with the value beside it, which reads as a
-          // caption next to a control rather than as a field with a label — and left the
-          // track the smallest thing to aim at on the row.
-          //
-          // The whole width of the line on a phone, and a column of its own on a screen. It
-          // is the one field here with somewhere to spend extra width: the track gets longer
-          // and the value it sets gets finer, which is the opposite of the menu beside it.
-          className="order-3 w-full rounded-md border border-rule bg-paper-raised px-2 py-1
-            sm:order-none sm:w-64 sm:bg-transparent"
-        >
-          <Priority
-            fill
-            label={`How often ${tag.name} appears`}
-            value={tag.priority}
-            onChange={(priority) =>
-              update.mutate({ id: tag.id, changes: { priority } })
-            }
-          />
-        </span>
+        {/* The same field the feed list uses — see PriorityField, which carries the
+            reasoning. The width is this row's to decide: the whole line on a phone, a column
+            of its own on a screen. */}
+        <PriorityField
+          className="order-3 w-full sm:order-none sm:w-64"
+          label={`How often ${tag.name} appears`}
+          value={tag.priority}
+          onChange={(priority) =>
+            update.mutate({ id: tag.id, changes: { priority } })
+          }
+        />
 
         <button
           type="button"
