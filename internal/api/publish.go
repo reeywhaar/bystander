@@ -237,6 +237,10 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Name and address only. The stub can carry the subscription behind a card, which is what
+	// lets a reader act on their own feeds from the page — and these are somebody else's, being
+	// handed to a stranger. There is nothing here for them to act on, so there is nothing to
+	// send: see feedStub.SubscriptionID.
 	titles := make(map[string]feedStub, len(subs))
 	for _, sub := range subs {
 		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}

@@ -22,7 +22,13 @@ function article(overrides: Partial<Article> = {}): Article {
     image_width: 0,
     image_height: 0,
     published_at: 1_787_000_000,
-    feed: { id: "f_1", title: "The Example", site_url: "https://example.com" },
+    feed: {
+      id: "f_1",
+      title: "The Example",
+      site_url: "https://example.com",
+      subscription_id: "s_1",
+      priority: 50,
+    },
     ...overrides,
   };
 }
@@ -549,7 +555,13 @@ describe("ArticleCard", () => {
     render(
       <ArticleCard
         article={article({
-          feed: { id: "f_1", title: "The Go Blog", site_url: "" },
+          feed: {
+            id: "f_1",
+            title: "The Go Blog",
+            site_url: "",
+            subscription_id: "s_1",
+            priority: 50,
+          },
         })}
         style={plain()}
         voice="didone"
@@ -574,5 +586,32 @@ describe("ArticleCard", () => {
     const link = screen.getByRole("link", { name: "A headline" });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  /*
+   * A mark and no word, because what it opens is about the feed rather than this article —
+   * and "more of this source, less of it, done with it" spelled out under every headline is
+   * a sentence the page would carry a hundred times for a gesture made once a week.
+   */
+  it("offers what can be done about the source, named for a screen reader", () => {
+    render(
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={() => {}}
+        onActions={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "More about The Example" }),
+    ).toBeInTheDocument();
+  });
+
+  // Nothing a stranger on a published page could do about somebody else's feeds, so the
+  // control is absent rather than present and refusing.
+  it("offers none of it where there is nothing to act on", () => {
+    render(<ArticleCard article={article()} style={plain()} voice="didone" />);
+    expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
   });
 });

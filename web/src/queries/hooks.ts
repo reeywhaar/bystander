@@ -428,6 +428,49 @@ export function useMarkFeedRead() {
   });
 }
 
+/**
+ * Being done with a feed: everything from it marked read, and then unfollowed.
+ *
+ * Two requests in one gesture, in that order. The cards it already put on the live page stay
+ * there — an edition is composed once and discarding a card would leave a hole in a layout
+ * decided at generation time — so without the marking, being done with a feed leaves its
+ * articles sitting on the page looking unread until the next page turn.
+ *
+ * The edition is deliberately **not** invalidated afterwards, and the marks are written into
+ * the cache here instead. Unfollowing forgets what was read on that feed, by design — the
+ * record exists to keep an article off future pages, and there are no future pages from a feed
+ * nobody follows — so a refetch would bring those cards back undimmed, having done exactly
+ * what was asked and then appearing not to.
+ */
+export function useDropFeed() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; feedID: string }) => {
+      // Everything, which is the empty span rather than a bound of zero.
+      await callApi(postFeedsByIdRead(id, ""));
+      await callApi(deleteFeedsById(id));
+    },
+    onSuccess: (_result, { feedID }) => {
+      const now = Math.floor(Date.now() / 1000);
+      client.setQueriesData<Edition>({ queryKey: qk.edition }, (current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((article: Article) =>
+                article.feed.id === feedID && article.read_at === null
+                  ? { ...article, read_at: now }
+                  : article,
+              ),
+            }
+          : current,
+      );
+      void client.invalidateQueries({ queryKey: qk.feeds });
+      void client.invalidateQueries({ queryKey: qk.read });
+    },
+  });
+}
+
 /** Forgets that anything from a feed was read. The inverse of {@link useMarkFeedRead}. */
 export function useUnmarkFeedRead() {
   const callApi = useApiCall();

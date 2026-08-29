@@ -89,6 +89,16 @@ export const DEFAULT_PRIORITY = 50;
  */
 export const DEFAULT_ARTICLE_WINDOW = 604800;
 
+/**
+ * How far one "show more" or "show less" moves a feed's priority.
+ *
+ * Twenty rather than the slider's five, because these are two buttons and not a slider: a
+ * press has to be worth pressing. Twenty is the width of a band in [describePriority], so
+ * every press changes the word as well as the number — from "as usual" to "less often" to
+ * "rarely" to "never" — and a reader can tell what happened without watching a figure move.
+ */
+export const PRIORITY_STEP = 20;
+
 /** What a priority means, in words, for the places a number alone is unhelpful. */
 export function describePriority(priority: number): string {
   if (priority === 0) return "never";

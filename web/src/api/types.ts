@@ -212,6 +212,16 @@ export interface FeedStub {
   id: string;
   title: string;
   site_url: string;
+  /**
+   * How to act on the feed behind a card — the subscription's id, not the feed's, because
+   * that is what every endpoint that changes a feed is keyed on.
+   *
+   * Empty where there is nothing to act on: an article whose subscription went while the page
+   * was live, and every article on somebody else's published page.
+   */
+  subscription_id: string;
+  /** How often this feed is drawn, so showing more or less of it can be said in words. */
+  priority: number;
 }
 
 export interface Article {

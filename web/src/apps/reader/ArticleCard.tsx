@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 
 import type { Article } from "@app/api/types";
+import { InfoCircleIcon } from "@app/components/icons/InfoCircleIcon";
 import { exact, since } from "@app/lib/time";
 import { columnsFor, type Style, type Voice } from "@app/lib/voice";
 
@@ -41,6 +42,7 @@ export function ArticleCard({
   style,
   voice,
   onRead,
+  onActions,
 }: {
   article: Article;
   /** Everything about how this card looks, drawn from the edition and the article. */
@@ -55,6 +57,14 @@ export function ArticleCard({
    * The card is otherwise identical, because what is being shown is the same page.
    */
   onRead?: (id: string, read: boolean) => void;
+  /**
+   * Open what can be done about the feed this came from.
+   *
+   * Absent alongside `onRead`, and for the same reason: on a published page there is nothing
+   * a stranger could do about somebody else's feeds, and a control that refuses is still a
+   * control advertising what an account would let you do.
+   */
+  onActions?: () => void;
 }) {
   const read = article.read_at !== null;
   // Null for most of them: a box is punctuation, and the padding belongs to the box rather
@@ -255,7 +265,7 @@ export function ArticleCard({
           below it read as belonging to neither. Six is unambiguous: it is nearer to the
           article it marks than that article is to anything else. */}
         {onRead ? (
-          <div className="pt-1.5">
+          <div className="flex items-center gap-3 pt-1.5">
             <button
               type="button"
               onClick={() => onRead(article.id, !read)}
@@ -268,6 +278,25 @@ export function ArticleCard({
             >
               {read ? "Mark unread" : "Mark read"}
             </button>
+
+            {/* A mark and no word, at the same weight as the words beside it.
+            
+                What it opens is three things about the *feed*, not about this article, and
+                the row under a story is not where that wants naming — "More of this source,
+                less of it, done with it" under every headline is a sentence the page has to
+                carry a hundred times for a gesture made once a week. The circled i is the
+                one mark that means "there is more here" without claiming to be a setting. */}
+            {onActions ? (
+              <button
+                type="button"
+                onClick={onActions}
+                title={`More about ${article.feed.title || "this source"}`}
+                aria-label={`More about ${article.feed.title || "this source"}`}
+                className="text-xs text-ink-faint opacity-50"
+              >
+                <InfoCircleIcon />
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

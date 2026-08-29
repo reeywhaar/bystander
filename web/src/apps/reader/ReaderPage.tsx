@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 
 import { ApiError } from "@app/api/error";
-import type { Me, Page } from "@app/api/types";
+import type { Article, Me, Page } from "@app/api/types";
 import { Colophon } from "@app/components/Colophon";
 import { Masthead } from "@app/components/Masthead";
 import { Alert } from "@app/components/ui/Alert";
@@ -18,6 +18,7 @@ import {
   useSetRead,
 } from "@app/queries/hooks";
 
+import { FeedActionsDialog } from "@app/apps/reader/FeedActionsDialog";
 import { PageGrid } from "@app/apps/reader/PageGrid";
 import { PageTabs } from "@app/apps/reader/PageTabs";
 
@@ -50,6 +51,13 @@ export function ReaderPage({ me }: { me: Me }) {
   // Only to tell the two empty states apart: somebody with no feeds needs a different
   // sentence from somebody whose feeds have not been fetched yet.
   const feeds = useFeeds();
+
+  // Which card's source is being acted on, or null. One dialog for the page rather than one
+  // per card: a hundred cards would otherwise each carry a modal they will never open.
+  //
+  // The article and not its id, because what the dialog needs is the feed stub on it — and an
+  // id would have to be looked up again in a list this component does not otherwise hold.
+  const [actingOn, setActingOn] = useState<Article | null>(null);
 
   // Above the early returns, because hooks cannot be called conditionally. It does nothing
   // until the grid is on the page.
@@ -102,6 +110,7 @@ export function ReaderPage({ me }: { me: Me }) {
             editionID={page.id}
             items={page.items}
             onRead={(id, read) => setRead.mutate({ id, read })}
+            onActions={setActingOn}
             gridRef={grid}
           />
         ) : (
@@ -170,6 +179,15 @@ export function ReaderPage({ me }: { me: Me }) {
             within a few lines reads as a mistake. */}
         <Colophon className="mt-10" />
       </main>
+
+      {/* Mounted only while it is open, so the page is not carrying a dialog behind a
+          hundred cards that nobody has pressed. */}
+      {actingOn ? (
+        <FeedActionsDialog
+          article={actingOn}
+          onClose={() => setActingOn(null)}
+        />
+      ) : null}
     </>
   );
 }

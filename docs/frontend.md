@@ -800,6 +800,48 @@ only arithmetic — 16 for the box plus the row's 8 of gap — if the width is o
 decided. Left to the browser it was three pixels out, which is the kind of misalignment
 everybody sees and nobody can name.
 
+## Acting on a feed from the page it is on
+
+Under every card, beside Mark read, a circled i opens the three things a reader thinks while
+reading: **show more**, **show less**, **remove feed**. Nothing else — renaming it, filing it,
+how far back it reaches are settings, they live in the feed list, and putting them here would
+turn a reaction into an errand.
+
+A dialog rather than three controls on the card. They are pressed rarely and the card is read
+constantly, so on the card they would be three pieces of furniture under every story for the
+sake of a gesture made once a week — and the destructive one would sit under a headline waiting
+to be brushed. One dialog for the page, mounted only while open, rather than one per card.
+
+Each step moves the priority by `PRIORITY_STEP`, which is 20 rather than the slider's 5. That
+is the width of a band in `describePriority`, so a press changes the word as well as the
+number, and the dialog says where the feed stands now and where the press would put it —
+otherwise "show less" is a button you press and then wait a day to find out whether it did
+anything.
+
+**Show less also marks the article read.** "Less of this" is said about something you have
+finished with, so leaving it unread would be asking to be shown the very article that prompted
+it. Show more does not: wanting more of a source says nothing about having finished with this
+one.
+
+**Remove marks everything from the feed read and then unfollows**, in that order, behind a
+confirmation. The order matters: an edition is composed once and its cards keep their place
+even after the subscription goes, so without the marking, being done with a feed leaves its
+articles sitting on the page looking unread until the next page turn.
+
+That mutation deliberately does **not** invalidate the edition, and writes the marks into the
+cache itself instead. Unfollowing forgets what was read on that feed by design — the record
+exists to keep an article off future pages, and there are no future pages from a feed nobody
+follows — so a refetch would bring those cards back undimmed, having done exactly what was
+asked and then appearing not to.
+
+What makes any of it possible is `feedStub.subscription_id` on the article: the *subscription's*
+id, because a feed is one row for the whole instance and what somebody can change is their own
+following of it. `publish.go` builds its stubs from the **owner's** subscriptions, so it fills
+neither that nor the priority — there is nothing on somebody else's page for a stranger to act
+on, and handing over an id belonging to another account would be giving away the one thing that
+is not theirs to have. An article whose subscription went while the page was live gets the same
+empty value, and the dialog says so rather than offering controls that would refuse.
+
 ## A tag is three decisions, asked once
 
 `NewTagDialog` takes the name, where it sits, and how often it appears. The field-and-a-button

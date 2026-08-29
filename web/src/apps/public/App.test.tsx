@@ -30,7 +30,13 @@ function article(id: string): Article {
     image_width: 0,
     image_height: 0,
     published_at: 1_787_000_000,
-    feed: { id: "f_1", title: "The Example", site_url: "https://example.com" },
+    feed: {
+      id: "f_1",
+      title: "The Example",
+      site_url: "https://example.com",
+      subscription_id: "s_1",
+      priority: 50,
+    },
   };
 }
 

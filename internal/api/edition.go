@@ -44,6 +44,22 @@ type feedStub struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
 	SiteURL string `json:"site_url"`
+
+	// SubscriptionID is how the reader acts on the feed behind a card — showing more or less
+	// of it, or being done with it — without going to the feed list to find it.
+	//
+	// The subscription's id and not the feed's, because that is what every endpoint that
+	// changes a feed is keyed on: a feed is one row for the whole instance, and what somebody
+	// can change is their own following of it.
+	//
+	// Empty where there is nothing to act on: an article whose subscription went while the
+	// page was live, and every article on somebody else's published page — see publish.go,
+	// which builds its stubs from the owner's subscriptions and must not hand their ids to
+	// a stranger.
+	SubscriptionID string `json:"subscription_id"`
+	// Priority is how often this feed is drawn, so the reader can say what showing more or
+	// less of it would mean rather than moving a number nobody can see.
+	Priority int `json:"priority"`
 }
 
 func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +98,13 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 	}
 	titles := make(map[string]feedStub, len(subs))
 	for _, sub := range subs {
-		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}
+		titles[sub.FeedID] = feedStub{
+			ID:             sub.FeedID,
+			Title:          sub.Title(),
+			SiteURL:        sub.Feed.SiteURL,
+			SubscriptionID: sub.ID,
+			Priority:       sub.Priority,
+		}
 	}
 
 	body := editionBody{
@@ -171,7 +193,13 @@ func (s *Server) readArticles(w http.ResponseWriter, r *http.Request) {
 	}
 	titles := make(map[string]feedStub, len(subs))
 	for _, sub := range subs {
-		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}
+		titles[sub.FeedID] = feedStub{
+			ID:             sub.FeedID,
+			Title:          sub.Title(),
+			SiteURL:        sub.Feed.SiteURL,
+			SubscriptionID: sub.ID,
+			Priority:       sub.Priority,
+		}
 	}
 
 	out := make([]readArticleBody, 0, len(articles))

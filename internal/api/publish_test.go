@@ -249,6 +249,43 @@ func TestAVisitorSeesTheirOwnReadingAndNotTheOwners(t *testing.T) {
 	}
 }
 
+// The reader can act on the feed behind a card — show more of it, less of it, be done with it
+// — and the stub on the article is what carries the subscription that makes it possible.
+//
+// A published page builds those stubs from the *owner's* subscriptions, because their own
+// names for their feeds are what appear on their page. So this asserts the half that must not
+// come with it: an id belonging to somebody else's account, handed to whoever opens a link.
+func TestAPublishedPageCarriesNoSubscriptionOfTheOwners(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 4)
+
+	h.signIn(store.RoleUser, "alice")
+	h.allowPublishing(t, false)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}), http.StatusCreated, nil)
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPut, "/api/account/public-name", map[string]string{"name": "misha"}), http.StatusOK, nil)
+	h.expect(h.do(http.MethodPut, "/api/pages/"+h.mainPage()+"/publish",
+		map[string]any{"slug": "front"}), http.StatusOK, nil)
+
+	// Her own page carries it, which is what the reader acts through.
+	var hers editionBody
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &hers)
+	if len(hers.Items) == 0 {
+		t.Fatal("no articles on the owner's page")
+	}
+	if hers.Items[0].Feed.SubscriptionID == "" {
+		t.Error("the owner's own page carries no subscription to act on")
+	}
+
+	var seen publicPageBody
+	h.expect(h.do(http.MethodGet, "/api/public/misha/front", nil), http.StatusOK, &seen)
+	for _, item := range seen.Items {
+		if item.Feed.SubscriptionID != "" {
+			t.Fatalf("%q hands out the owner's subscription %q", item.Title, item.Feed.SubscriptionID)
+		}
+	}
+}
+
 // A stranger cannot mark anything: reading is a fact about a person, and a stranger is nobody.
 func TestOnlySomebodyWithAnAccountMarksAnythingRead(t *testing.T) {
 	h := newHarness(t)

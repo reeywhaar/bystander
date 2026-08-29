@@ -22,6 +22,7 @@ export function PageGrid({
   editionID,
   items,
   onRead,
+  onActions,
   gridRef,
 }: {
   editionID: string;
@@ -32,6 +33,8 @@ export function PageGrid({
    * an account would let you do.
    */
   onRead?: (id: string, read: boolean) => void;
+  /** Open what can be done about the feed one of them came from. */
+  onActions?: (article: Article) => void;
   gridRef?: RefObject<HTMLDivElement | null>;
 }) {
   // One seeded stream per card, keyed on the edition and the article together — so the page is
@@ -59,6 +62,7 @@ export function PageGrid({
             style={styles[i]!}
             voice={voices[i]!}
             onRead={onRead}
+            onActions={onActions ? () => onActions(article) : undefined}
           />
         );
         // A rule above the cards that drew one, so the page reads as bands rather than as one
