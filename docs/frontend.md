@@ -930,6 +930,15 @@ its width from its caller, because that is the part the two disagree on and the 
 it is also the one field in either row with somewhere useful to spend extra width, since a
 longer track sets a finer value where a longer menu says nothing more.
 
+The feed list's **preview** used to ride inside that control's label, because the label was a
+fixed-width box right-aligned against a short track and an icon alone at its far edge did not
+read as a button at all. That constraint is gone, and a box meaning "how often" was the wrong
+place to keep a button meaning "show me what this publishes". It sits at the end of the quiet
+line now — the line you read when the name has stopped being enough, and the line that already
+carries a button. Separated by a space rather than a middot: the dots on that line separate
+*facts*, and an action punctuated as a fact both reads wrong and leaves a dangling separator
+in the text, which is how the existing assertions caught it.
+
 Underneath, `Priority` takes `fill`,
 which puts the value on its own line above a track that fills the width — distinct from
 `Slider`'s existing `stacked`, which is the inverse (track first, value under its right-hand

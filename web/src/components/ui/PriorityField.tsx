@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 import { Priority } from "@app/components/ui/Priority";
 
 /**
@@ -25,14 +23,11 @@ export function PriorityField({
   value,
   onChange,
   label,
-  leading,
   className = "",
 }: {
   value: number;
   onChange: (value: number) => void;
   label: string;
-  /** Something to sit before the value, inside the label line — see [Priority]. */
-  leading?: ReactNode;
   /** Where it sits and how wide it is, which only the layout around it knows. */
   className?: string;
 }) {
@@ -41,13 +36,7 @@ export function PriorityField({
       className={`block rounded-md border border-rule bg-paper-raised px-2 py-1
         sm:bg-transparent ${className}`}
     >
-      <Priority
-        fill
-        label={label}
-        value={value}
-        onChange={onChange}
-        leading={leading}
-      />
+      <Priority fill label={label} value={value} onChange={onChange} />
     </span>
   );
 }

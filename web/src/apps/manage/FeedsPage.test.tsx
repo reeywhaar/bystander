@@ -107,6 +107,25 @@ describe("FeedsPage", () => {
    * A name is often not enough to place a feed a year later — "Notes", "Blog", somebody's
    * name — and the site itself answers in one click what no amount of metadata would.
    */
+  /*
+   * At the end of the quiet line, which is what you read when the name has stopped being
+   * enough — where the feed is filed, how far back it reaches, whether it is still answering.
+   * Looking at what it published is the last question in that sequence.
+   *
+   * Set apart by a space rather than a middot: the dots separate facts about the feed, and
+   * this is a thing to press. Punctuated as a fact it also left a dangling separator at the
+   * end of the line, which the assertions above would have caught and did.
+   */
+  it("offers a look at what a feed is publishing, from the quiet line", async () => {
+    render([subscription()], []);
+
+    const eye = await screen.findByRole("button", {
+      name: "Preview The Example",
+    });
+    expect(eye.closest("p")).toHaveTextContent("fetched");
+    expect(eye.textContent).toBe("");
+  });
+
   it("offers the way back to the site a feed comes from", async () => {
     render([subscription({ site_url: "https://example.com/blog/" })], []);
 

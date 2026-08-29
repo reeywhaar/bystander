@@ -529,6 +529,36 @@ function FeedRow({
           ) : (
             <> · not fetched yet</>
           )}
+          {/* What this feed is publishing today, without following it anywhere.
+
+              The same dialog the picker uses before subscribing, which is the point: the
+              question "is this still worth having" is the question "was this worth taking",
+              asked later, and it deserves the same answer rather than a different screen.
+
+              At the end of this line rather than beside the weight. The line is already what
+              you read when the name has stopped being enough — where the feed is filed, how
+              far back it reaches, whether it is still answering — and looking at what it
+              published is the last question in that sequence rather than a setting. It is
+              also the line that already carries a button, for the same reason.
+
+              An eye rather than the word: this line is a run of small text and a second run
+              of it would be one more thing to parse before finding the one to press. The name
+              is on the button for anything not reading the picture, and the feed's title is in
+              it because a list of forty would otherwise offer forty buttons that all say the
+              same thing. */}
+          {/* Set apart by a space, not by a middot. Everything before it on this line is a
+              fact about the feed and the dots are what separate one from the next; this is a
+              thing to press, and punctuating it as though it were another fact both reads
+              wrong and leaves a dangling separator in the line's text. */}
+          <button
+            type="button"
+            onClick={() => setPreviewing(true)}
+            aria-label={`Preview ${feed.title}`}
+            title={`Preview ${feed.title}`}
+            className="ml-2 text-ink-faint hover:text-ink"
+          >
+            <EyeIcon className="align-[-0.125em]" />
+          </button>
         </p>
 
         {/* Why this feed is here, when somebody has said.
@@ -549,42 +579,11 @@ function FeedRow({
         {/* The one setting that stays in the list: it is a dial somebody nudges while
             looking at the whole of it, not something they go and open a feed to change. */}
         <div className="order-4 w-full shrink-0 sm:order-2 sm:ml-auto sm:w-64">
-          {/* What this feed is publishing today, without following it anywhere.
-
-              The same dialog the picker uses before subscribing, which is the point: the
-              question "is this still worth having" is the question "was this worth taking",
-              asked later, and it deserves the same answer rather than a different screen.
-
-              With the weight rather than under the name. Both are things done *to* a feed
-              while looking at the list of them, and a control that sat beside the title read
-              as part of the title — a word growing out of the name rather than a thing to
-              press. Together they are the row's controls, in one place, at one weight.
-
-              Inside the weight's own label rather than beside it, because beside it means at
-              the far edge of a fixed-width box that is right-aligned against the track, and
-              an icon alone in seventy pixels of white does not read as a button at all.
-
-              An eye rather than the word, because next to a label that already reads "50 ·
-              as usual" a second run of small text is one more thing to parse before finding
-              the one to press. The name is on the button for anything not reading the
-              picture, and the title is in it because a list of forty otherwise offers forty
-              buttons that all say the same thing. */}
           <PriorityField
             label={`How often ${feed.title} appears`}
             value={feed.priority}
             onChange={(priority) =>
               update.mutate({ id: feed.id, changes: { priority } })
-            }
-            leading={
-              <button
-                type="button"
-                onClick={() => setPreviewing(true)}
-                aria-label={`Preview ${feed.title}`}
-                title={`Preview ${feed.title}`}
-                className="shrink-0 text-ink-faint hover:text-ink"
-              >
-                <EyeIcon className="text-base" />
-              </button>
             }
           />
         </div>
