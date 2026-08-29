@@ -53,8 +53,10 @@ export function FeedActionsDialog({
 
   const feed = article.feed;
   const name = feed.title || "this feed";
-  // Empty for an article whose subscription went while the page was live. The card keeps its
-  // place — an edition is composed once — but there is nothing left to act on.
+  // Empty in two places: somebody else's published page, and an article whose subscription
+  // went while its page was live. The card offers no way in for either — see ArticleCard —
+  // so this is the answer if something ever opens the dialog anyway, rather than a state a
+  // reader is expected to arrive in.
   const following = feed.subscription_id !== "";
   const busy = update.isPending || drop.isPending;
 
@@ -109,8 +111,10 @@ export function FeedActionsDialog({
     >
       {!following ? (
         <p className="text-sm text-ink-muted">
-          You no longer follow this one. Its articles keep their place on a page
-          that was already composed, and will not be on the next.
+          There is nothing here to change. Either this is somebody else&rsquo;s
+          page, or you have stopped following this source — in which case its
+          articles keep their place on a page already composed, and will not be
+          on the next.
         </p>
       ) : confirming ? (
         <div className="flex flex-col gap-3">

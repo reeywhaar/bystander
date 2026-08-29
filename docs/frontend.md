@@ -839,8 +839,15 @@ id, because a feed is one row for the whole instance and what somebody can chang
 following of it. `publish.go` builds its stubs from the **owner's** subscriptions, so it fills
 neither that nor the priority — there is nothing on somebody else's page for a stranger to act
 on, and handing over an id belonging to another account would be giving away the one thing that
-is not theirs to have. An article whose subscription went while the page was live gets the same
-empty value, and the dialog says so rather than offering controls that would refuse.
+is not theirs to have.
+
+**The card decides whether to offer the control, not its caller.** It draws it only when
+`onActions` is given *and* the stub carries a subscription. The public island already passes no
+`onActions`, so that is two independent things keeping it off a published page — and the
+duplication is the point: the first is a caller remembering, and the second cannot be forgotten.
+A caller that slipped would otherwise be offering a visitor the machinery for acting on feeds
+that are not theirs. The same test covers the harmless case, an article whose feed was
+unfollowed while its page was live, where the control would open a dialog with nothing to press.
 
 ## A tag is three decisions, asked once
 

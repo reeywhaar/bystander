@@ -150,12 +150,15 @@ describe("FeedActionsDialog", () => {
     expect(transport.calls[0]?.body).toEqual({ older_than: "" });
   });
 
-  // An article whose subscription went while the page was live. The card keeps its place,
-  // and there is nothing left to act on.
-  it("offers nothing for a feed no longer followed", () => {
+  /*
+   * No subscription behind the card: somebody else's published page, or a feed unfollowed
+   * while this page was live. The card offers no way in for either, so this is the answer if
+   * something opens the dialog anyway rather than a state a reader is expected to reach.
+   */
+  it("offers nothing where there is nothing to act on", () => {
     open(article(50, ""));
 
-    expect(screen.getByText(/no longer follow this one/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing here to change/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove feed/ })).toBeNull();
   });

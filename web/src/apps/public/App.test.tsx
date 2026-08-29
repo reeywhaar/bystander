@@ -45,13 +45,29 @@ function article(id: string): Article {
 // matching on twelve is not.
 const ITEMS = Array.from({ length: 12 }, (_, i) => article(`a_${i}`));
 
+/*
+ * The same articles, as a published page really carries them.
+ *
+ * A published page's feed stubs are built from the *owner's* subscriptions, so the server
+ * sends the name and the address and neither the subscription nor the priority — there is
+ * nothing on somebody else's page for a visitor to act on, and an id belonging to another
+ * account is the one thing that is not theirs to have. See publish.go.
+ *
+ * Nothing that decides how a card *looks* differs, which is what keeps the seeding test below
+ * comparing like with like.
+ */
+const PUBLISHED_ITEMS = ITEMS.map((item) => ({
+  ...item,
+  feed: { ...item.feed, subscription_id: "", priority: 0 },
+}));
+
 const published: PublicPage = {
   id: EDITION,
   name: "Comics",
   generated_at: 1_787_000_000,
   signed_in: false,
   indexable: false,
-  items: ITEMS,
+  items: PUBLISHED_ITEMS,
 };
 
 const edition: Edition = {
@@ -119,5 +135,36 @@ describe("a published page", () => {
     await waitFor(() => expect(looks()).toHaveLength(ITEMS.length));
 
     expect(looks()).toEqual(owner);
+  });
+
+  /*
+   * Acting on a feed is acting on somebody's subscription, and on a published page every
+   * subscription belongs to the owner.
+   *
+   * Two things keep it off this page, and both are deliberate. The island passes no
+   * `onActions`; and the server sends no `subscription_id` on a published page's stubs, so
+   * the card would refuse to draw the control even if it were handed one — see publish.go,
+   * which builds those stubs from the owner's own subscriptions and must not hand their ids
+   * to whoever opens a link.
+   */
+  it("offers a visitor no way to act on the owner's feeds", async () => {
+    window.history.pushState({}, "", "/p/misha/comics");
+    renderWith(<App />, {
+      // Signed in, so the visitor gets Mark read — which records against *them*. That is the
+      // one thing a published page does offer an account, and it is not this.
+      "GET /api/public/misha/comics": {
+        body: { ...published, signed_in: true },
+      },
+      "GET /api/me": { body: me },
+      "PUT /api/edition/items/a_0/read": { status: 204 },
+    });
+
+    await screen.findByRole("heading", { name: "Comics" });
+    await waitFor(() => expect(looks()).toHaveLength(ITEMS.length));
+
+    expect(
+      screen.getAllByRole("button", { name: "Mark read" }),
+    ).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
   });
 });

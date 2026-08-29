@@ -614,4 +614,37 @@ describe("ArticleCard", () => {
     render(<ArticleCard article={article()} style={plain()} voice="didone" />);
     expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
   });
+
+  /*
+   * The card decides this, not whoever renders it.
+   *
+   * An empty subscription means somebody else's published page, or a feed unfollowed while
+   * this page was live. In both there is nothing to press, and on the first the control would
+   * be offering a stranger the machinery for acting on feeds that are not theirs. A caller
+   * that forgot to leave `onActions` out must not be able to cause that.
+   */
+  it("offers nothing to act on when there is no subscription behind the card", () => {
+    render(
+      <ArticleCard
+        article={article({
+          feed: {
+            id: "f_1",
+            title: "The Example",
+            site_url: "https://example.com",
+            subscription_id: "",
+            priority: 50,
+          },
+        })}
+        style={plain()}
+        voice="didone"
+        onRead={() => {}}
+        onActions={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
+    // The rest of the card is untouched: what is being shown is the same page.
+    expect(
+      screen.getByRole("button", { name: "Mark read" }),
+    ).toBeInTheDocument();
+  });
 });

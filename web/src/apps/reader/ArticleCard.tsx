@@ -60,9 +60,8 @@ export function ArticleCard({
   /**
    * Open what can be done about the feed this came from.
    *
-   * Absent alongside `onRead`, and for the same reason: on a published page there is nothing
-   * a stranger could do about somebody else's feeds, and a control that refuses is still a
-   * control advertising what an account would let you do.
+   * Offered only where there is something to act on, which is decided here rather than
+   * trusted to the caller — see the control itself.
    */
   onActions?: () => void;
 }) {
@@ -285,8 +284,16 @@ export function ArticleCard({
                 the row under a story is not where that wants naming — "More of this source,
                 less of it, done with it" under every headline is a sentence the page has to
                 carry a hundred times for a gesture made once a week. The circled i is the
-                one mark that means "there is more here" without claiming to be a setting. */}
-            {onActions ? (
+                one mark that means "there is more here" without claiming to be a setting.
+
+                Present only when there is a subscription behind the card, and that test is
+                made here rather than left to whoever renders the card. The stub is empty in
+                two places — somebody else's published page, and an article whose feed was
+                unfollowed while the page was live — and in both the control would open a
+                dialog with nothing in it to press. A caller that forgot to leave `onActions`
+                out would be offering a stranger the machinery for acting on feeds that are
+                not theirs, so the card does not take that on trust. */}
+            {onActions && article.feed.subscription_id !== "" ? (
               <button
                 type="button"
                 onClick={onActions}
