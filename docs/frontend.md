@@ -878,6 +878,25 @@ A caller that slipped would otherwise be offering a visitor the machinery for ac
 that are not theirs. The same test covers the harmless case, an article whose feed was
 unfollowed while its page was live, where the control would open a dialog with nothing to press.
 
+## Passwords are asked for behind a button
+
+Changing a password is a dialog, not three fields open on the account page. Everything else on
+that page is something to *read* — your name, where your pages are published, the address you
+could be recovered through — and three empty password boxes in the middle of it are the only
+part that looks like work outstanding. They are also three password boxes on screen for as
+long as the page is, which is a thing to leave a shared machine showing.
+
+The current password is still required, which is the whole point of the form: being signed in
+is not the same as knowing it, and that difference is what stops a borrowed session becoming a
+taken account. Behind a button it is the same check, made in a box that is shut most of the
+time.
+
+Two things follow from the dialog closing on success. The fields are emptied **when it opens**
+rather than when it closes, so what was typed and abandoned is not on screen for as long as it
+takes to shut. And "Changed. Anywhere else you were signed in has been signed out." is raised
+by the *page*, not the dialog — a confirmation inside a box that closes on the same press is a
+confirmation nobody reads.
+
 ## A tag is three decisions, asked once
 
 `NewTagDialog` takes the name, where it sits, and how often it appears. The field-and-a-button

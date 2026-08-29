@@ -40,85 +40,24 @@ const render = (data: Account) =>
   });
 
 describe("AccountPage", () => {
-  it("will not change a password until both new ones agree", async () => {
+  /*
+   * Behind a button, not open on the page.
+   *
+   * Everything else here is something to read — your name, where your pages are published,
+   * the address you could be recovered through. Three empty password boxes in the middle of
+   * that are the only part that looks like work outstanding, and they are three password
+   * boxes on screen for as long as the page is. What the dialog itself does is its own test.
+   */
+  it("keeps the password fields behind a button", async () => {
     render(account());
 
-    const button = await screen.findByRole("button", { name: "Change it" });
-    expect(button).toBeDisabled();
+    await screen.findByRole("button", { name: "Change password" });
+    expect(screen.queryByLabelText("Current password")).toBeNull();
 
-    await userEvent.type(
-      screen.getByLabelText("Current password"),
-      "correct-horse",
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change password" }),
     );
-    await userEvent.type(
-      screen.getByLabelText("New password"),
-      "a-brand-new-one",
-    );
-    expect(button).toBeDisabled();
-
-    await userEvent.type(
-      screen.getByLabelText("New password again"),
-      "a-brand-new-typo",
-    );
-    // The server receives one new password and cannot know it was typed twice, so this is
-    // the only place the difference can be caught.
-    expect(
-      await screen.findByText("These two do not match."),
-    ).toBeInTheDocument();
-    expect(button).toBeDisabled();
-
-    await userEvent.clear(screen.getByLabelText("New password again"));
-    await userEvent.type(
-      screen.getByLabelText("New password again"),
-      "a-brand-new-one",
-    );
-    expect(button).toBeEnabled();
-  });
-
-  it("refuses a new password shorter than the server would take", async () => {
-    render(account());
-
-    await userEvent.type(
-      await screen.findByLabelText("Current password"),
-      "correct-horse",
-    );
-    await userEvent.type(screen.getByLabelText("New password"), "short");
-    await userEvent.type(screen.getByLabelText("New password again"), "short");
-
-    expect(screen.getByRole("button", { name: "Change it" })).toBeDisabled();
-  });
-
-  it("empties the password fields once it has changed one", async () => {
-    const { transport } = render(account());
-
-    await userEvent.type(
-      await screen.findByLabelText("Current password"),
-      "correct-horse",
-    );
-    await userEvent.type(
-      screen.getByLabelText("New password"),
-      "a-brand-new-one",
-    );
-    await userEvent.type(
-      screen.getByLabelText("New password again"),
-      "a-brand-new-one",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Change it" }));
-
-    await waitFor(() =>
-      expect(
-        transport.calls.find((c) => c.path === "/api/account/password")?.body,
-      ).toEqual({
-        current_password: "correct-horse",
-        new_password: "a-brand-new-one",
-      }),
-    );
-    // Three password boxes left full are three passwords to read over a shoulder.
-    await waitFor(() =>
-      expect(screen.getByLabelText("Current password")).toHaveValue(""),
-    );
-    expect(screen.getByLabelText("New password")).toHaveValue("");
-    expect(screen.getByLabelText("New password again")).toHaveValue("");
+    expect(screen.getByLabelText("Current password")).toBeInTheDocument();
   });
 
   it("offers no way to add an address when nothing could be sent to it", async () => {

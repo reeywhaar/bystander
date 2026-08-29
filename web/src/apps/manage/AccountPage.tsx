@@ -4,23 +4,19 @@ import { postLogout } from "@app/api/actions/auth";
 import { useApiCall } from "@app/api/provider";
 import { Alert } from "@app/components/ui/Alert";
 import { Button, buttonClasses } from "@app/components/ui/Button";
-import { Field } from "@app/components/ui/Field";
 import { Spinner } from "@app/components/ui/Spinner";
 import { absolute } from "@app/lib/time";
 import {
   useAccount,
-  useChangePassword,
   useForgetRecovery,
   useSetPublicName,
 } from "@app/queries/hooks";
 
+import { PasswordDialog } from "@app/apps/manage/PasswordDialog";
 import { PublicNameDialog } from "@app/apps/manage/PublicNameDialog";
 import { DeleteAccountDialog } from "@app/apps/manage/DeleteAccountDialog";
 import { RecoveryDialog } from "@app/apps/manage/RecoveryDialog";
 import { SessionsDialog } from "@app/apps/manage/SessionsDialog";
-
-/** What the server will refuse anything shorter than. Mirrors `store.MinPasswordLen`. */
-const MIN_PASSWORD = 8;
 
 /**
  * The account itself: who you are, how you get back in, and the way out.
@@ -31,7 +27,6 @@ const MIN_PASSWORD = 8;
  */
 export function AccountPage() {
   const account = useAccount();
-  const change = useChangePassword();
   const forget = useForgetRecovery();
   const name = useSetPublicName();
   // Whether the naming dialog is up. The same dialog publishing will open when somebody
@@ -39,10 +34,12 @@ export function AccountPage() {
   const [naming, setNaming] = useState(false);
   const callApi = useApiCall();
 
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [again, setAgain] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  // Whether the password dialog is up, and whether it changed anything last time. The second
+  // outlives the dialog on purpose: the confirmation belongs on the page somebody is left
+  // looking at, not in a box that closes on the same press.
+  const [changing, setChanging] = useState(false);
+  const [changed, setChanged] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [proving, setProving] = useState(false);
@@ -66,15 +63,6 @@ export function AccountPage() {
       window.location.href = "/";
     }
   }
-
-  // Caught here rather than by the server, because the server cannot: it receives one new
-  // password and has no way to know it was typed twice.
-  const mismatch = again !== "" && next !== again;
-  const canChange =
-    current !== "" &&
-    next.length >= MIN_PASSWORD &&
-    next === again &&
-    !change.isPending;
 
   return (
     <div className="flex flex-col gap-10">
@@ -101,68 +89,24 @@ export function AccountPage() {
       ) : null}
 
       <section className="flex flex-col gap-3 border-t border-rule pt-8">
-        <h2 className="font-serif text-xl text-ink">Change your password</h2>
+        <h2 className="font-serif text-xl text-ink">Password</h2>
         <p className="max-w-prose text-sm text-ink-muted">
-          Your current one is required — being signed in here is not the same as
-          knowing it, and the difference is what stops a borrowed session
-          becoming a taken account. Your other devices are signed out; this one
-          stays.
+          Changing it signs out every other device and leaves this one signed
+          in. Your current password is required — being signed in here is not
+          the same as knowing it.
         </p>
 
-        <div className="grid max-w-sm gap-4">
-          <Field
-            label="Current password"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(event) => setCurrent(event.target.value)}
-          />
-          <Field
-            label="New password"
-            type="password"
-            autoComplete="new-password"
-            hint={`At least ${MIN_PASSWORD} characters.`}
-            value={next}
-            onChange={(event) => setNext(event.target.value)}
-          />
-          <Field
-            label="New password again"
-            type="password"
-            autoComplete="new-password"
-            error={mismatch ? "These two do not match." : undefined}
-            value={again}
-            onChange={(event) => setAgain(event.target.value)}
-          />
-        </div>
-
-        {change.error ? <Alert>{change.error.message}</Alert> : null}
-        {change.isSuccess ? (
+        {/* Said on the page rather than in the dialog, which has closed by now. A
+            confirmation that goes with the box that produced it is a confirmation nobody
+            reads. */}
+        {changed ? (
           <Alert tone="note">
             Changed. Anywhere else you were signed in has been signed out.
           </Alert>
         ) : null}
 
         <div>
-          <Button
-            variant="primary"
-            disabled={!canChange}
-            onClick={() =>
-              change.mutate(
-                { current_password: current, new_password: next },
-                {
-                  // Nothing is kept afterwards. These are three password fields, and
-                  // leaving them filled leaves them to be read over a shoulder.
-                  onSuccess: () => {
-                    setCurrent("");
-                    setNext("");
-                    setAgain("");
-                  },
-                },
-              )
-            }
-          >
-            {change.isPending ? "Changing…" : "Change it"}
-          </Button>
+          <Button onClick={() => setChanging(true)}>Change password</Button>
         </div>
       </section>
 
@@ -371,6 +315,14 @@ export function AccountPage() {
       {proving ? (
         <RecoveryDialog account={me} onClose={() => setProving(false)} />
       ) : null}
+
+      <PasswordDialog
+        open={changing}
+        onClose={(saved) => {
+          setChanging(false);
+          if (saved) setChanged(true);
+        }}
+      />
 
       <SessionsDialog open={reviewing} onClose={() => setReviewing(false)} />
 
