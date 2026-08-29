@@ -54,7 +54,9 @@ export function TagsPage() {
         onClose={() => setDeleting(null)}
       />
 
-      <section className="flex flex-col">
+      {/* Cards on a phone, a ruled table on a screen — see the row itself. The gap is what
+          separates them there, so it goes when the rules come back. */}
+      <section className="flex flex-col gap-2 sm:gap-0">
         {tags.data.length === 0 ? (
           <p className="py-10 text-center text-sm text-ink-muted">
             No tags yet. Feeds without one share a bucket at {DEFAULT_PRIORITY},
@@ -63,7 +65,7 @@ export function TagsPage() {
           </p>
         ) : (
           roots.map((tag) => (
-            <div key={tag.id}>
+            <div key={tag.id} className="flex flex-col gap-2 sm:gap-0">
               <TagRow tag={tag} tags={tags.data} onDelete={setDeleting} />
               {childrenOf(tag.id).map((child) => (
                 <TagRow
@@ -108,9 +110,16 @@ function TagRow({
     // line of its own and the full width of it there; the three controls travel together
     // underneath. Wide enough, the wrapper below becomes `display: contents` and every one
     // of them rejoins this row as a direct child, which is what puts them back in column.
+    //
+    // And a block on its own ground rather than a hairline underneath it. A rule can only
+    // separate rows that are single lines: stacked, every field in the row already draws a
+    // border of its own, and one more hairline among five is not a boundary — the rows run
+    // together and the eye has nothing to group by. A card says where one tag ends. On a
+    // screen the rows are single lines again, so the rule does the job and costs nothing.
     <div
-      className="flex flex-col gap-2 border-b border-rule py-3
-        sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+      className="flex flex-col gap-2 rounded-md bg-paper-sunken p-3
+        sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:rounded-none
+        sm:border-b sm:border-rule sm:bg-transparent sm:px-0 sm:py-3"
     >
       {/* The indent is inside the name's box, not on the row.
       
@@ -139,9 +148,9 @@ function TagRow({
           // border never arrives — and a tag's name then looks exactly like a heading over
           // the controls beneath it, which is the one thing on the row it is not. What is
           // shown there is what hovering shows here.
-          className="w-full rounded-md border border-rule bg-transparent px-1.5 py-1
+          className="w-full rounded-md border border-rule bg-paper-raised px-1.5 py-1
             font-serif text-lg text-ink hover:border-rule focus-visible:border-rule
-            focus-visible:outline-none sm:border-transparent"
+            focus-visible:outline-none sm:border-transparent sm:bg-transparent"
         />
       </div>
 
@@ -171,23 +180,28 @@ function TagRow({
           ))}
         </Select>
 
-        {/* A line of its own on a phone — the label and the track together are most of the
-            width, and sharing a line with the menu left too little for either. `sm:contents`
-            dissolves this wrapper on a screen, so the slider goes back to being a direct
-            child of the row and keeps its column. */}
         <span
-          // A field like the two above it on a phone: the value on its own line, the track
-          // under it, both inside a box. Without the border it was two loose pieces of text
-          // and a rule floating under a name field and a menu that both had one, which is
-          // what made the row read as a heading with some furniture below rather than as
-          // three things you can change.
+          // A field, like the two beside it, at every width.
           //
-          // `sm:contents` takes the box away entirely on a screen — border, padding and all,
-          // since an element displaying its contents draws none of its own — and the slider
-          // goes back to being the row's third column.
-          className="order-3 w-full rounded-md border border-rule px-3 py-2 sm:contents"
+          // Bare, it was two loose pieces of text and a rule sitting next to a name and a
+          // menu that both had a box — which read as a heading with some furniture under it
+          // rather than as three things you can change. One box everywhere rather than one
+          // that appears on a phone: the same control should not be two different objects
+          // depending on how wide the window is.
+          //
+          // Two lines inside it: the value, then a track filling the width. One line put a
+          // 128px track in the middle of the box with the value beside it, which reads as a
+          // caption next to a control rather than as a field with a label — and left the
+          // track the smallest thing to aim at on the row.
+          //
+          // The whole width of the line on a phone, and a column of its own on a screen. It
+          // is the one field here with somewhere to spend extra width: the track gets longer
+          // and the value it sets gets finer, which is the opposite of the menu beside it.
+          className="order-3 w-full rounded-md border border-rule bg-paper-raised px-2 py-1.5
+            sm:order-none sm:w-64 sm:bg-transparent"
         >
           <Priority
+            fill
             label={`How often ${tag.name} appears`}
             value={tag.priority}
             onChange={(priority) =>

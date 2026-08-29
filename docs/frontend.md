@@ -910,24 +910,36 @@ Measured in Chromium at the page's real width, all four columns have exactly one
 across every row. `TagsPage.test.tsx` asserts the classes that decide it, since jsdom does no
 layout.
 
-**Below `sm` it is not a table at all**, and pretending otherwise gave four stacked left-aligned
-lines with Delete dangling under them. The name takes a line of its own; the other three travel
-in a wrapper that is `display: contents` from `sm` up — so on a screen they dissolve back into
-direct children of the row and keep their columns, and on a phone they are one group. Within
-it, `order` puts the menu and Delete on a line together with Delete pushed to the end, and the
-slider on the next.
+**Below `sm` it is not a table at all**, and pretending otherwise gave four stacked
+left-aligned lines with Delete dangling under them. Two things replace the table there.
 
-`display: contents` is doing more than regrouping. An element displaying its contents draws no
-box of its own — no border, no padding — so the slider's wrapper can be a *bordered field* on a
-phone and nothing at all on a screen, from one class and with one control in the tree. That
-matters because the phone row is read as a form rather than a table: the name field carries its
-border there too (`sm:border-transparent` gives it back the hover-only behaviour above), the
-menu already had one, and without the third the slider was two loose pieces of text and a rule
-sitting under two things that looked like fields.
+*Cards, not rules.* A hairline can only separate rows that are single lines: stacked, every
+field in a row already draws a border of its own, and one more hairline among five is not a
+boundary — the rows run together with nothing to group them by. Below `sm` a row is a block on
+`paper-sunken` with its fields raised on it; above, the rules come back and the background goes.
 
-`Priority` widens both halves together below `sm` — `w-full sm:w-32` on each — and `Slider`'s
-inline row wraps, so the value takes a line and the track sits under it at full width. One
-layout, not two: a 128px track in the middle of a phone is a control you have to aim at.
+*One group, reordered.* The name takes a line of its own; the other three travel in a wrapper
+that is `display: contents` from `sm` up, so on a screen they dissolve back into direct children
+of the row and keep their columns. Within it, `order` puts the menu and Delete on a line
+together with Delete pushed to the end, and the slider on the next.
+
+**The slider is a field with a label, not a control with a caption.** `Priority` takes `fill`,
+which puts the value on its own line above a track that fills the width — distinct from
+`Slider`'s existing `stacked`, which is the inverse (track first, value under its right-hand
+end) and belongs to the page-size control. Inline, the box put a 128px track in the middle with
+the value beside it, and the track was the smallest thing on the row to aim at. Its box takes
+the whole line on a phone and a column of its own on a screen: it is the one field here with
+somewhere to spend extra width, since a longer track sets a finer value.
+
+**The range input is drawn rather than left to the browser.** `accent-color` gets a filled
+track for free and gives no say over the thumb, which platforms draw at fourteen to twenty
+pixels — heavier than the type beside it and than the track it rides on. `.slider` in
+`styles.css` draws it at eleven. **The band is unchanged**: what a finger can hit is the whole
+element, and pressing anywhere on it moves the thumb there, so the input keeps a 20px height
+and only the mark on it got smaller. The fill has to be drawn too, since a custom track loses
+the one `accent-color` gave — a hard-stopped gradient at `--slider-fill`, which `Slider` sets
+from the position under the finger so it follows the drag rather than catching up on release.
+Firefox has `::-moz-range-progress` and needs none of that.
 
 **Deleting a tag says what goes with it.** None of it is obvious: a tag nested under it is
 *promoted* rather than deleted (`parent_id` is `ON DELETE SET NULL`), the feeds filed there

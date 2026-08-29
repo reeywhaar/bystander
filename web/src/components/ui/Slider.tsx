@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 /**
  * A range input that follows the cursor and saves when you let go.
@@ -26,6 +26,7 @@ export function Slider({
   format,
   className = "w-64",
   stacked = false,
+  fill = false,
 }: {
   value: number;
   min: number;
@@ -45,6 +46,15 @@ export function Slider({
    * describes.
    */
   stacked?: boolean;
+  /**
+   * Value on its own line, and a track filling the width beneath it.
+   *
+   * The inverse of [stacked], which puts the track first and the value under its right-hand
+   * end. Both exist because they answer different questions: stacked is a control at the end
+   * of a form, where the number is a result; this one is a *field*, sitting in a box beside
+   * other fields, where the number reads as its label.
+   */
+  fill?: boolean;
 }) {
   const [local, setLocal] = useState(value);
 
@@ -72,9 +82,26 @@ export function Slider({
       // moves — "as usual" becomes "less often" — and a flex item will not shrink below
       // its own content, so the growing label was squeezing the track under the finger
       // that was dragging it.
-      className={`${stacked ? "w-full" : className} shrink-0 accent-[var(--accent)]`}
+      className={`slider ${stacked || fill ? "w-full" : className} shrink-0`}
+      // How much of the track is behind the thumb, for the gradient that draws the fill —
+      // see `.slider` in styles.css. From the position under the finger rather than from the
+      // stored value, so the fill follows the drag instead of catching up on release.
+      style={
+        {
+          "--slider-fill": `${((local - min) / (max - min)) * 100}%`,
+        } as CSSProperties
+      }
     />
   );
+
+  if (fill) {
+    return (
+      <span className="flex w-full flex-col gap-1.5 text-xs text-ink-muted">
+        <span className="tabular-nums">{format(local)}</span>
+        {track}
+      </span>
+    );
+  }
 
   if (stacked) {
     return (
@@ -91,10 +118,7 @@ export function Slider({
     // Inline, the value reads before the track rather than after: it is what the control
     // is *for*, and a number chasing along behind the thumb is harder to read than one
     // holding still in front of it.
-    // Wrapping, so a caller that gives both halves a full width gets the value on one line
-    // and the track under it without a second layout mode to maintain. See Priority, which
-    // does exactly that on a phone.
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+    <span className="flex items-center gap-3 text-xs text-ink-muted">
       <span className="shrink-0 whitespace-nowrap tabular-nums">
         {format(local)}
       </span>

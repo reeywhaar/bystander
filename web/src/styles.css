@@ -313,6 +313,76 @@ body {
    * across the page that is not a rule and is not a tab. What replaces it as the affordance is
    * the fade below, which only appears when there is in fact more strip.
    */
+  /*
+   * The range input, drawn rather than left to the browser.
+   *
+   * `accent-color` gets a filled track for free and gives no say over the thumb, which every
+   * platform draws at somewhere between fourteen and twenty pixels — a knob heavier than the
+   * type beside it and heavier than the track it rides on. Drawn here it is eleven.
+   *
+   * **The band stays big.** Shrinking the thumb must not shrink what a finger can hit, and it
+   * does not: the tappable area of a range input is the whole element, and pressing anywhere
+   * on it moves the thumb there. So the element keeps a 20px height — a five-pixel track with
+   * room either side — and only the mark on it got smaller.
+   *
+   * The fill has to be drawn too, since a custom track loses the one `accent-color` gave. In
+   * WebKit that is a hard-stopped gradient at `--slider-fill`, which Slider sets from the
+   * position under the finger; Firefox has `::-moz-range-progress` and needs no such thing.
+   */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 1.25rem;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 999px;
+  }
+
+  .slider::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--accent) var(--slider-fill, 50%),
+      var(--rule) var(--slider-fill, 50%)
+    );
+  }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    background: var(--accent);
+    /* Centred on a five-pixel track: (5 - 11) / 2. */
+    margin-top: -3px;
+  }
+
+  .slider::-moz-range-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--rule);
+  }
+
+  .slider::-moz-range-progress {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  .slider::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
   .tab-strip {
     scrollbar-width: none;
   }

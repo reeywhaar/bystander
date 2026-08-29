@@ -15,6 +15,7 @@ export function Priority({
   onChange,
   label,
   leading,
+  fill = false,
 }: {
   value: number;
   onChange: (value: number) => void;
@@ -36,6 +37,15 @@ export function Priority({
    * box is the same width whatever is in it, which is the whole reason it has one.
    */
   leading?: ReactNode;
+  /**
+   * Two lines: the value, then a track filling the width under it.
+   *
+   * For the places this sits in a box of its own beside other fields, where it has a width
+   * given to it and should use all of it — a 128px track in the middle of a wider box is a
+   * control somebody has to aim at, and the value floating beside it reads as a caption
+   * rather than as the field's own label.
+   */
+  fill?: boolean;
 }) {
   return (
     <Slider
@@ -45,10 +55,8 @@ export function Priority({
       step={5}
       onCommit={onChange}
       label={label}
-      // Full width on a phone, where this owns its line and a 128px track in the middle of
-      // it is a control somebody has to aim at. Both halves widen together, so the value
-      // takes a line of its own and the track sits under it — see the wrapping row in Slider.
-      className="w-full sm:w-32"
+      fill={fill}
+      className="w-32"
       // Wide enough for the longest of these — "100 · more often" — so the label occupies
       // the same space at every value and nothing moves while the thumb does.
       //
@@ -59,9 +67,9 @@ export function Priority({
       // outside the whole thing, where the layout around it can decide which end it goes to.
       format={(priority) => (
         <span
-          className={`inline-flex w-full items-center justify-end gap-2 sm:w-32 ${
-            priority === 0 ? "text-accent" : ""
-          }`}
+          className={`inline-flex items-center gap-2 ${
+            fill ? "w-full" : "w-32 justify-end"
+          } ${priority === 0 ? "text-accent" : ""}`}
         >
           {leading}
           <span>
