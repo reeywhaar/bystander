@@ -757,6 +757,15 @@ The pictures there are shown whole, not cropped — `max-h-80`, `object-contain`
 to a drawn shape because a page is a composition; this is a sample, and a comic with its
 punchline cut off answers the question wrongly.
 
+**An address you already follow is answered, not refused.** Discovery drops what is already
+yours before counting, so pasting a feed you have leaves nothing to choose between — and that
+used to open the picker anyway: "Which of these?" over a single row already crossed out, with
+nothing to take and an Add that could only say 0. Nothing went wrong there, so it is not
+dressed as a failure: a small dialog says you have it, names which of *your* feeds it turned
+out to be — the address is not always what somebody thought they were pasting — and offers to
+open it, which is what somebody who pasted it twice most likely wanted. A site offering no feed
+at all never reaches this, because that is a refusal from the server.
+
 **It is also where the feed gets filed**, in the one case where Add actually subscribes —
 a single feed found from an address. Ten articles is the moment somebody knows where a feed
 belongs, and adding it untagged meant finding it again in the list afterwards to say what they

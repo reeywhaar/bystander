@@ -50,6 +50,10 @@ export function FeedsPage() {
   // of text under the field, because this is the end of the attempt and not a hint about
   // it — the address needs changing, or the site has no feed at all.
   const [problem, setProblem] = useState<string | null>(null);
+  // What the address turned out to be, when all of it is already followed. Its own state and
+  // not `problem`, because nothing went wrong: the answer is "you have that", which is a
+  // different sentence from "that did not work" and wants the names rather than an apology.
+  const [known, setKnown] = useState<PlannedFeed[] | null>(null);
   const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
   // The id, not the feed. Holding the object would hold a snapshot taken when the dialog
@@ -141,7 +145,14 @@ export function FeedsPage() {
         // Counted after dropping what is already followed, so a site whose other feed you
         // took last week still goes straight in rather than opening a picker with one row.
         const fresh = offered(candidates);
-        if (fresh.length === 1 && fresh[0]) {
+        if (fresh.length === 0) {
+          // Nothing to choose between, so nothing to choose from. This used to open the
+          // picker anyway — "Which of these?" over a single row already crossed out, with
+          // nothing to take and an Add that could only say 0. The address resolved and the
+          // answer is that you have it; a site offering no feed at all never reaches here,
+          // because that is a refusal from the server.
+          setKnown(candidates);
+        } else if (fresh.length === 1 && fresh[0]) {
           // Shown rather than subscribed. An address is not a description, and this is the
           // moment somebody can still say no cheaply — after it is a subscription, saying no
           // means unfollowing and losing the read marks with it.
@@ -308,6 +319,65 @@ export function FeedsPage() {
           }}
         />
       ) : null}
+
+      {/* Not a failure, and it should not be dressed as one. The address resolved, the feed
+          is real, and it is already yours — so this says so and offers the thing somebody
+          who pasted it twice most likely wanted: to look at what they have. */}
+      <Modal
+        open={known !== null}
+        onClose={() => setKnown(null)}
+        title="Good news"
+        footer={
+          <Button variant="primary" onClick={() => setKnown(null)}>
+            Close
+          </Button>
+        }
+      >
+        <p className="text-sm text-ink-muted">
+          {known && known.length === 1
+            ? "You already follow that one. It is in your list below."
+            : "You already follow all of those. They are in your list below."}
+        </p>
+
+        {/* Named, because the address is not always what somebody thought they were pasting
+            — a site's feed can be titled nothing like the site. Seeing which of your feeds
+            it turned out to be is most of the answer. */}
+        <ul className="flex flex-col gap-2">
+          {(known ?? []).map((feed) => {
+            // Both sides canonicalise, so this is the same string the server matched on to
+            // call it already followed — see following() in internal/api/opml.go.
+            const mine = feeds.data.find((sub) => sub.url === feed.feed_url);
+            return (
+              <li
+                key={feed.feed_url}
+                className="flex items-baseline justify-between gap-3 border-b border-rule
+                  pb-2 last:border-b-0 last:pb-0"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-ink">
+                    {mine?.title ?? feed.title}
+                  </span>
+                  <span className="block truncate text-xs text-ink-faint">
+                    {plainly(feed.feed_url)}
+                  </span>
+                </span>
+                {mine ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKnown(null);
+                      setEditingID(mine.id);
+                    }}
+                    className="shrink-0 text-xs text-ink-faint hover:text-ink"
+                  >
+                    Edit
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </Modal>
 
       <Modal
         open={problem !== null}

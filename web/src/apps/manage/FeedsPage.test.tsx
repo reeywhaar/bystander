@@ -752,4 +752,65 @@ describe("FeedsPage, before following anything", () => {
       transport.calls.some((call) => call.path === "/api/feeds/import"),
     ).toBe(false);
   });
+
+  /*
+   * Pasting the address of something you already follow.
+   *
+   * This used to open the picker: "Which of these?" over a single row already crossed out,
+   * with nothing to take and an Add that could only say 0. Nothing went wrong — the address
+   * resolved and the feed is real — so it says so, names which of your feeds it turned out to
+   * be, and offers the thing somebody who pasted it twice most likely wanted.
+   */
+  it("says you have it already rather than opening a picker", async () => {
+    renderWith(<FeedsPage />, {
+      "GET /api/feeds": {
+        body: [
+          {
+            id: "s_9",
+            feed_id: "f_9",
+            url: "https://example.com/rss",
+            site_url: "https://example.com",
+            title: "The Example",
+            feed_title: "The Example",
+            title_override: "",
+            note: "",
+            priority: 50,
+            tag_ids: [],
+            article_window: 604800,
+            created_at: now,
+            last_success_at: now,
+            last_status: 0,
+            last_error: "",
+            last_error_body: "",
+            failure_count: 0,
+          },
+        ],
+      },
+      "GET /api/tags": { body: [] },
+      "POST /api/feeds/discover": {
+        body: {
+          candidates: [
+            {
+              ...candidate("The Example", "https://example.com/rss"),
+              already_subscribed: true,
+            },
+          ],
+        },
+      },
+    });
+
+    await type("example.com");
+
+    expect(await screen.findByText("Good news")).toBeInTheDocument();
+    expect(screen.queryByText("Which of these?")).toBeNull();
+
+    // Named from the subscription, so it is the name in your list rather than the
+    // publisher's — those differ the moment somebody renames one.
+    const dialog = within(screen.getByText("Good news").closest("dialog")!);
+    expect(dialog.getByText("The Example")).toBeInTheDocument();
+
+    // And straight to it, which is what somebody who pasted it twice was probably after.
+    await userEvent.click(dialog.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByLabelText("What to call it")).toBeInTheDocument();
+  });
 });
