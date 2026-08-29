@@ -878,6 +878,27 @@ A caller that slipped would otherwise be offering a visitor the machinery for ac
 that are not theirs. The same test covers the harmless case, an article whose feed was
 unfollowed while its page was live, where the control would open a dialog with nothing to press.
 
+## A row of controls is a column, or it is nothing
+
+The tags list had two faults that both read as "slightly wonky" and neither of which anyone
+could name.
+
+**A select takes its width from its widest option.** Each row's menu lists every root tag
+*except its own*, so the row whose menu lacked the longest name came out three pixels narrower
+— and everything to the right of it, slider included, sat out of column. Fixed by giving the
+select a width of its own rather than one inherited from whichever options it happens to
+carry. The same trap as the session checkbox: a control sized by its contents cannot be part
+of a grid.
+
+**A nested row carried its indent on the row.** `pl-6` on the container pushed the menu, the
+slider and the delete across by two dozen pixels, so five rows lined up and the sixth did not.
+The indent belongs inside the name's own box, which is a fixed width either way — what a
+nested tag gets is a shorter field, which is what an indent looks like.
+
+Measured in Chromium at the page's real width, all four columns now have exactly one position
+across every row. `TagsPage.test.tsx` asserts the two classes that decide it, since jsdom does
+no layout.
+
 ## Passwords are asked for behind a button
 
 Changing a password is a dialog, not three fields open on the account page. Everything else on

@@ -87,24 +87,36 @@ function TagRow({
   );
 
   return (
-    <div
-      className={`flex flex-wrap items-center gap-3 border-b border-rule py-3 ${nested ? "pl-6" : ""}`}
-    >
-      <input
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        onBlur={() => {
-          if (name.trim() !== "" && name !== tag.name) {
-            update.mutate({ id: tag.id, changes: { name } });
-          }
-        }}
-        aria-label={`Name of ${tag.name}`}
-        className="w-44 rounded-md border border-transparent bg-transparent px-1.5 py-1 font-serif
-          text-lg text-ink hover:border-rule focus-visible:border-rule focus-visible:outline-none"
-      />
+    <div className="flex flex-wrap items-center gap-3 border-b border-rule py-3">
+      {/* The indent is inside the name's box, not on the row.
+      
+          On the row it pushed every control after it across, so a nested tag's menu and
+          slider sat two dozen pixels right of the ones above — a list of five that lined up
+          and a sixth that did not. The box is the same width either way, so what a nested
+          tag gets is a shorter field, which is what an indent looks like. */}
+      <div className={`w-44 shrink-0 ${nested ? "pl-6" : ""}`}>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => {
+            if (name.trim() !== "" && name !== tag.name) {
+              update.mutate({ id: tag.id, changes: { name } });
+            }
+          }}
+          aria-label={`Name of ${tag.name}`}
+          className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1
+            font-serif text-lg text-ink hover:border-rule focus-visible:border-rule
+            focus-visible:outline-none"
+        />
+      </div>
 
+      {/* Sized here rather than left to the browser, which takes a select's width from its
+          widest option — and each of these lists every root tag *except its own*, so the
+          widest option differed per row and no two menus were the same width. Three pixels
+          on one row, and everything to the right of it out of column. */}
       <Select
         small
+        className="w-36 shrink-0"
         value={tag.parent_id ?? ""}
         onChange={(event) =>
           update.mutate({
