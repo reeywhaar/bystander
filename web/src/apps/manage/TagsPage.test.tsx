@@ -102,13 +102,6 @@ describe("TagsPage", () => {
     const parent = await screen.findByLabelText("Where Tech sits");
     expect(parent.className).toContain("w-36");
 
-    // And the last cell, which is the one that changes: one word normally, and while it is
-    // asking, nothing — the two buttons go on the line below rather than widening it.
-    const cell = screen
-      .getAllByRole("button", { name: "Delete" })[0]!
-      .closest("div")!;
-    expect(cell.className).toContain("w-12");
-
     // The indent is inside the name's box, so the box is the same width either way and
     // nothing after it moves.
     const row = screen.getByLabelText("Name of AI & GPT").closest("div")!;
@@ -131,11 +124,11 @@ describe("TagsPage", () => {
       (await screen.findAllByRole("button", { name: "Delete" }))[0]!,
     );
 
-    expect(screen.getByText(/unfiles every feed under it/)).toBeInTheDocument();
+    expect(screen.getByText("Delete Tech?")).toBeInTheDocument();
     expect(transport.calls.some((c) => c.method === "DELETE")).toBe(false);
 
-    await userEvent.click(screen.getByRole("button", { name: "Keep" }));
-    expect(screen.queryByText(/unfiles every feed under it/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(screen.queryByText("Delete Tech?")).toBeNull();
     expect(transport.calls.some((c) => c.method === "DELETE")).toBe(false);
   });
 
@@ -147,9 +140,7 @@ describe("TagsPage", () => {
     await userEvent.click(
       (await screen.findAllByRole("button", { name: "Delete" }))[0]!,
     );
-    expect(
-      screen.getByText(/The tag nested under it becomes one of its own\./),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/it becomes a tag of its own/)).toBeInTheDocument();
   });
 
   it("deletes once it has been answered", async () => {

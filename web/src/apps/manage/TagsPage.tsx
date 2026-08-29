@@ -7,13 +7,16 @@ import { Priority } from "@app/components/ui/Priority";
 import { Select } from "@app/components/ui/Select";
 import { Spinner } from "@app/components/ui/Spinner";
 import { DEFAULT_PRIORITY } from "@app/lib/constants";
-import { useRemoveTag, useTags, useUpdateTag } from "@app/queries/hooks";
+import { useTags, useUpdateTag } from "@app/queries/hooks";
 
+import { DeleteTagDialog } from "@app/apps/manage/DeleteTagDialog";
 import { NewTagDialog } from "@app/apps/manage/NewTagDialog";
 
 export function TagsPage() {
   const tags = useTags();
   const [making, setMaking] = useState(false);
+  // Which tag is being deleted, or null. One dialog for the list rather than one per row.
+  const [deleting, setDeleting] = useState<Tag | null>(null);
 
   if (tags.isPending) return <Spinner />;
   if (tags.error) throw tags.error;
@@ -45,6 +48,12 @@ export function TagsPage() {
         onClose={() => setMaking(false)}
       />
 
+      <DeleteTagDialog
+        tag={deleting}
+        tags={tags.data}
+        onClose={() => setDeleting(null)}
+      />
+
       <section className="flex flex-col">
         {tags.data.length === 0 ? (
           <p className="py-10 text-center text-sm text-ink-muted">
@@ -55,9 +64,15 @@ export function TagsPage() {
         ) : (
           roots.map((tag) => (
             <div key={tag.id}>
-              <TagRow tag={tag} tags={tags.data} />
+              <TagRow tag={tag} tags={tags.data} onDelete={setDeleting} />
               {childrenOf(tag.id).map((child) => (
-                <TagRow key={child.id} tag={child} tags={tags.data} nested />
+                <TagRow
+                  key={child.id}
+                  tag={child}
+                  tags={tags.data}
+                  nested
+                  onDelete={setDeleting}
+                />
               ))}
             </div>
           ))
@@ -71,21 +86,16 @@ function TagRow({
   tag,
   tags,
   nested = false,
+  onDelete,
 }: {
   tag: Tag;
   tags: Tag[];
   nested?: boolean;
+  /** Raised to the page, which owns the one dialog for the whole list. */
+  onDelete: (tag: Tag) => void;
 }) {
-  // Counted for the confirmation, which has to say what happens to them — they are promoted
-  // rather than deleted, and that is not what "delete" leads anybody to expect.
-  const children = tags.filter((other) => other.parent_id === tag.id).length;
   const update = useUpdateTag();
-  const remove = useRemoveTag();
   const [name, setName] = useState(tag.name);
-  // Whether Delete has been pressed once and not yet answered. Inline on the row rather than
-  // a dialog: what is being deleted is named right there, and a box asking about a thing
-  // already on screen is a box that says nothing the row does not.
-  const [confirming, setConfirming] = useState(false);
 
   // Only tags that are not this one and are not already nested under something can be a
   // parent. The server refuses a cycle outright; this keeps the obvious ones off the menu.
@@ -94,17 +104,25 @@ function TagRow({
   );
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-rule py-3">
+    // Two lines on a phone, one on a screen. The name is what a row is *for*, so it gets a
+    // line of its own and the full width of it there; the three controls travel together
+    // underneath. Wide enough, the wrapper below becomes `display: contents` and every one
+    // of them rejoins this row as a direct child, which is what puts them back in column.
+    <div
+      className="flex flex-col gap-2 border-b border-rule py-3
+        sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+    >
       {/* The indent is inside the name's box, not on the row.
       
           On the row it pushed every control after it across, so a nested tag's menu and
           slider sat two dozen pixels right of the ones above — a list of five that lined up
           and a sixth that did not. The box is the same width either way, so what a nested
-          tag gets is a shorter field, which is what an indent looks like. */}
-      {/* mr-auto, so the slack falls here and the controls sit together against the right
-          edge. It used to fall between the slider and Delete, which left the one destructive
-          thing on the row stranded on its own with a hand's width of nothing beside it. */}
-      <div className={`mr-auto w-44 shrink-0 ${nested ? "pl-6" : ""}`}>
+          tag gets is a shorter field, which is what an indent looks like.
+
+          `mr-auto` from `sm` up, so the slack falls here and the controls sit together
+          against the right edge rather than leaving the one destructive thing on the row
+          stranded with a hand's width of nothing beside it. */}
+      <div className={`shrink-0 sm:mr-auto sm:w-44 ${nested ? "pl-6" : ""}`}>
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -120,102 +138,54 @@ function TagRow({
         />
       </div>
 
-      {/* Sized here rather than left to the browser, which takes a select's width from its
+      {/* One group on a phone, four columns on a screen — see the row above. */}
+      <div className="flex flex-wrap items-center gap-3 sm:contents">
+        {/* Sized here rather than left to the browser, which takes a select's width from its
           widest option — and each of these lists every root tag *except its own*, so the
           widest option differed per row and no two menus were the same width. Three pixels
           on one row, and everything to the right of it out of column. */}
-      <Select
-        small
-        className="w-36 shrink-0"
-        value={tag.parent_id ?? ""}
-        onChange={(event) =>
-          update.mutate({
-            id: tag.id,
-            changes: { parent_id: event.target.value },
-          })
-        }
-        aria-label={`Where ${tag.name} sits`}
-      >
-        <option value="">on its own</option>
-        {candidates.map((candidate) => (
-          <option key={candidate.id} value={candidate.id}>
-            under {candidate.name}
-          </option>
-        ))}
-      </Select>
+        <Select
+          small
+          className="order-1 w-36 shrink-0 sm:order-none"
+          value={tag.parent_id ?? ""}
+          onChange={(event) =>
+            update.mutate({
+              id: tag.id,
+              changes: { parent_id: event.target.value },
+            })
+          }
+          aria-label={`Where ${tag.name} sits`}
+        >
+          <option value="">on its own</option>
+          {candidates.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              under {candidate.name}
+            </option>
+          ))}
+        </Select>
 
-      <Priority
-        label={`How often ${tag.name} appears`}
-        value={tag.priority}
-        onChange={(priority) =>
-          update.mutate({ id: tag.id, changes: { priority } })
-        }
-      />
+        <Priority
+          label={`How often ${tag.name} appears`}
+          value={tag.priority}
+          onChange={(priority) =>
+            update.mutate({ id: tag.id, changes: { priority } })
+          }
+        />
 
-      {/* A box of its own width, holding one word. What the confirmation needs — two
-          buttons and a sentence — goes on the line below instead, because putting it here
-          made this cell the widest thing on the row: everything is pushed right, so the last
-          cell growing dragged the menu and the slider left on that row alone, and the four
-          fixed widths together no longer fitted the page at all. */}
-      <div className="flex w-12 shrink-0 justify-end text-xs">
-        {confirming ? null : (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className="text-ink-faint hover:text-accent"
-          >
-            Delete
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => onDelete(tag)}
+          className="shrink-0 text-xs text-ink-faint hover:text-accent"
+        >
+          Delete
+        </button>
       </div>
 
-      {/* What goes with it, said before rather than discovered after. None of it is obvious:
-          a tag nested under this one is promoted rather than deleted, the feeds filed here
-          keep everything but the filing, and any page that had a rule about this tag quietly
-          loses it. */}
-      {confirming ? (
-        <div className="flex w-full flex-wrap items-baseline justify-end gap-x-4 gap-y-2">
-          <p className="min-w-0 flex-1 text-xs text-ink-muted">
-            Deleting <span className="text-ink">{tag.name}</span> unfiles every
-            feed under it and drops it from any page that had a rule about it.
-            The feeds and the pages stay.
-            {children === 0
-              ? ""
-              : children === 1
-                ? " The tag nested under it becomes one of its own."
-                : ` The ${children} tags nested under it become tags of their own.`}
-          </p>
-          <span className="flex shrink-0 items-center gap-3 text-xs">
-            <button
-              type="button"
-              onClick={() => setConfirming(false)}
-              className="text-ink-faint hover:text-ink"
-            >
-              Keep
-            </button>
-            <button
-              type="button"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(tag.id)}
-              className="text-accent disabled:opacity-50"
-            >
-              {remove.isPending ? "Deleting…" : "Delete it"}
-            </button>
-          </span>
-        </div>
-      ) : null}
-
-      {/* Both on their own line, because a refusal is about the row rather than about any
-          one control on it — renaming and deleting fail for different reasons and neither
-          has room beside the thing that caused it. */}
+      {/* On its own line: a refusal is about the row rather than about the field that
+          caused it, and there is no room for it beside one. */}
       {update.error ? (
         <div className="w-full">
           <Alert>{update.error.message}</Alert>
-        </div>
-      ) : null}
-      {remove.error ? (
-        <div className="w-full">
-          <Alert>{remove.error.message}</Alert>
         </div>
       ) : null}
     </div>

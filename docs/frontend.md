@@ -900,20 +900,28 @@ against the right edge rather than leaving the one destructive thing on the row 
 hand's width of nothing beside it.
 
 That makes every fixed width load-bearing in a third way: with the slack in front of them, a
-cell that grows drags the whole group left *on that row alone*. Deleting asks first, and the
-two buttons it needs are wider than the word they replace — so they go on the line below, and
-the row's last cell keeps a width of its own and holds one word. Adding them in place also
-pushed the four fixed widths past what the page has room for, and the cell wrapped.
+cell that grows drags the whole group left *on that row alone*. **This is the argument for
+`DeleteTagDialog`**, which was first tried as an inline confirmation on the row — two buttons
+and a sentence where one word had been. It split the columns immediately, and the four fixed
+widths together no longer fitted the page, so the cell wrapped. A dialog costs the row nothing,
+and the rest of this island already asks that way.
 
-Measured in Chromium at the page's real width, all four columns now have exactly one position
-across every row, including a row mid-confirmation. `TagsPage.test.tsx` asserts the three
-classes that decide it, since jsdom does no layout.
+Measured in Chromium at the page's real width, all four columns have exactly one position
+across every row. `TagsPage.test.tsx` asserts the classes that decide it, since jsdom does no
+layout.
+
+**Below `sm` it is not a table at all**, and pretending otherwise gave four stacked left-aligned
+lines with Delete dangling under them. The name takes a line of its own; the other three travel
+in a wrapper that is `display: contents` from `sm` up — so on a screen they dissolve back into
+direct children of the row and keep their columns, and on a phone they are one group. Within
+it, `order` puts the menu and Delete on a line together with Delete pushed to the end, and the
+slider on the next: 268px of label and track is most of a phone's width and has to own its line.
 
 **Deleting a tag says what goes with it.** None of it is obvious: a tag nested under it is
 *promoted* rather than deleted (`parent_id` is `ON DELETE SET NULL`), the feeds filed there
 keep everything but the filing, and any page with a rule about it quietly loses that rule
-(`page_tags` and the filter lists both cascade). The confirmation names all three, and counts
-the children.
+(`page_tags` and the filter lists both cascade). The dialog names all three, and counts the
+children.
 
 ## Passwords are asked for behind a button
 
