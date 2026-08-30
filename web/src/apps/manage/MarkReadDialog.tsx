@@ -49,11 +49,15 @@ const SPANS: { value: Choice; label: string; what: string }[] = [
  * Marks a feed's articles read, as far back as somebody chooses.
  *
  * The thing worth knowing before pressing it is that this reaches further than the page in
- * front of you. A page never offers an article this person has already read, so marking a
- * feed's backlog read means those articles are never drawn at all — which is exactly what
- * somebody wants after following a publisher again, or after reading it somewhere else for a
- * month, and exactly what they do not want if they thought it only greyed what was on screen.
- * So the dialog says so rather than leaving it to be discovered.
+ * front of you: it covers the backlog no page has shown yet, so following a publisher again
+ * starts from now rather than from its archive. That is exactly what somebody wants after
+ * coming back to a feed, and exactly what they do not want if they thought it only greyed what
+ * was on screen. So the dialog says so rather than leaving it to be discovered.
+ *
+ * "Drops behind" rather than "never drawn again", which is the honest version. Read articles
+ * are the sampler's last band — see internal/edition/select.go — so they are drawn only when
+ * everything unread has run out. On a page with other feeds that is never; on a page with
+ * nothing else left it is the difference between a shuffled page and a blank one.
  *
  * A dialog rather than a confirmation on a button: the question is not "are you sure" but "how
  * much", and a dialog that asks the real question does not need the other one.
@@ -112,7 +116,8 @@ export function MarkReadDialog({
         <div className="flex flex-col gap-4">
           <p className="text-sm text-ink-muted">
             This covers articles no page has shown you yet, not only the ones on
-            screen — so what is marked here will not turn up on a later page.
+            screen — so what is marked here drops behind everything else and
+            stops competing for a place on later pages.
           </p>
 
           <div className="flex flex-col gap-1">

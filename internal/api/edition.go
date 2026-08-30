@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -107,6 +108,9 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// And for anything on the page whose feed this person no longer follows.
+	s.nameStrays(r.Context(), titles, items)
+
 	body := editionBody{
 		ID:            ed.ID,
 		GeneratedAt:   ed.GeneratedAt.Unix(),
@@ -134,9 +138,10 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 			article.ReadAt = &at
 		}
 		if article.Feed.ID == "" {
-			// The subscription went while the page was live. The article is still on it —
-			// discarding a card because its source was unfollowed would leave a hole in a
-			// layout that was decided at generation time.
+			// Neither a subscription nor a feed row: the feed itself has been collected,
+			// which the sweep only does once nothing on a live page draws from it. The
+			// article stays — discarding a card because its source was unfollowed would
+			// leave a hole in a layout decided at generation time.
 			article.Feed = feedStub{ID: entry.Item.FeedID}
 		}
 		body.Items = append(body.Items, article)
@@ -236,4 +241,37 @@ func (s *Server) setRead(w http.ResponseWriter, r *http.Request, read bool) {
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// nameStrays fills in the feeds an article came from that the reader does not follow.
+//
+// A page is composed once and read afterwards, so unfollowing a feed leaves its articles on
+// the page in front of you until it next composes. Those cards used to lose their source
+// entirely and the reader drew them as coming from nowhere. Named from the feed's own row
+// instead — there is no subscription to carry a personal name, and the publisher's is the
+// right answer.
+//
+// No SubscriptionID and no Priority, deliberately: there is no subscription, so the interface
+// gets nothing to hang a control off and cannot offer to change a setting that does not exist.
+func (s *Server) nameStrays(ctx context.Context, titles map[string]feedStub, items []*store.EditionItem) {
+	var missing []string
+	for _, entry := range items {
+		if _, known := titles[entry.Item.FeedID]; !known {
+			missing = append(missing, entry.Item.FeedID)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	feeds, err := s.store.FeedsByIDs(ctx, missing)
+	if err != nil {
+		// Not fatal. The page is what somebody asked for; a card falling back to no name
+		// is worse than it was and better than a 500.
+		s.log.Warn("could not name the feeds a page draws from", "err", err)
+		return
+	}
+	for id, feed := range feeds {
+		titles[id] = feedStub{ID: id, Title: feed.Title, SiteURL: feed.SiteURL}
+	}
 }

@@ -27,24 +27,6 @@ func NewGenerator(st *store.Store, log *slog.Logger) *Generator {
 	return &Generator{store: st, log: log}
 }
 
-// composeMode is what to do when there is nothing fresh left to draw.
-//
-// The two callers want opposite things and only differ here, which is why this exists rather
-// than a second copy of the function.
-type composeMode int
-
-const (
-	// fillWithRepeats is a scheduled turn. The page is due, so it gets composed out of
-	// whatever there is: a page of things already seen keeps the shape of a front page,
-	// and a quarter of a page does not.
-	fillWithRepeats composeMode = iota
-
-	// freshOnly is the re-roll button. Handing back the same articles greyed is not a
-	// different page, and saying "everything here has been read" is more use than
-	// pretending otherwise — so nothing is written at all.
-	freshOnly
-)
-
 // Generate composes and commits one page, filling it out with repeats if it has to.
 //
 // Returns the new edition, or nil when there was nothing to draw from. A page with no feeds —
@@ -56,11 +38,11 @@ const (
 // rather than treating as a bug: a page filtered to a tag nobody has used is empty for exactly
 // the same reason a new account's is, and telling those two apart is the interface's job.
 func (g *Generator) Generate(ctx context.Context, pageID string) (*store.Edition, error) {
-	return g.compose(ctx, pageID, fillWithRepeats)
+	return g.compose(ctx, pageID)
 }
 
 // compose does the work behind Generate and Regenerate.
-func (g *Generator) compose(ctx context.Context, pageID string, mode composeMode) (*store.Edition, error) {
+func (g *Generator) compose(ctx context.Context, pageID string) (*store.Edition, error) {
 	page, err := g.store.PageByID(ctx, pageID)
 	if err != nil {
 		return nil, err
@@ -104,13 +86,6 @@ func (g *Generator) compose(ctx context.Context, pageID string, mode composeMode
 		return nil, err
 	}
 	sources := plan(subs, queues)
-
-	// Checked before anything is written, and that ordering is the whole of it. Composing a
-	// page of pure repeats and *then* reporting failure would replace what somebody is
-	// looking at and tell them nothing happened.
-	if mode == freshOnly && !anyFresh(sources) {
-		return nil, nil
-	}
 
 	// One seed, drawn once and stored with the edition. Drawing it twice would leave the
 	// recorded seed unable to reproduce the page it is recorded against, which is the
@@ -213,19 +188,6 @@ func plan(subs []*store.Subscription, queues map[string]*store.Queue) map[string
 	return sources
 }
 
-// anyFresh reports whether anything on offer has never been shown here and never been read.
-//
-// The re-roll button turns on it: a page composed entirely of repeats is not a different
-// page, and saying so beats handing back the same articles greyed.
-func anyFresh(sources map[string]*Source) bool {
-	for _, src := range sources {
-		if src.Priority > 0 && len(src.Fresh) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // seed draws a seed for one generation. Random rather than derived from the clock, so two
 // people generated in the same second do not get correlated pages.
 func seed() int64 {
@@ -267,9 +229,13 @@ func (g *Generator) Regenerate(ctx context.Context, pageID string, now time.Time
 		return nil, err
 	}
 
-	// freshOnly, so this button never answers by handing back the page it was pressed on
-	// with every card greyed. A scheduled turn takes the repeats; a re-roll says so instead.
-	ed, err := g.compose(ctx, pageID, freshOnly)
+	// Composed out of whatever there is, exactly like a scheduled turn. It used to refuse
+	// when nothing was fresh, on the reasoning that handing back the same articles greyed is
+	// not a different page — but a page is an arrangement as much as a set. A new seed draws
+	// a different subset, in a different order, into different slots, and that is what the
+	// button is for. Refusing left somebody who had read everything with no way to do
+	// anything at all until a publisher posted.
+	ed, err := g.compose(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
@@ -278,18 +244,9 @@ func (g *Generator) Regenerate(ctx context.Context, pageID string, now time.Time
 			"page", pageID, "released", released)
 	}
 	if ed == nil {
-		// Two different answers, and they deserve different words. Somebody with a page on
-		// screen being told there is nothing to put on one would reasonably conclude
-		// something is broken; what has actually happened is that their feeds have
-		// published nothing since the page they are looking at.
-		// Everything on the page has been read and the feeds have published nothing
-		// since. Unread articles were already returned to the pool above, so there is
-		// genuinely nothing left to arrange.
-		// No viewer: this only asks whether a page has an edition at all, and whether
-		// anybody has read what is on it does not bear on that.
-		if _, _, err := g.store.CurrentEdition(ctx, pageID, ""); err == nil {
-			return nil, store.Conflict("everything here has been read, and nothing new has been published yet")
-		}
+		// The only way here now: no feed this page can draw from has produced a single
+		// article it can reach. Not "everything is read" — read articles are drawn like
+		// anything else, just last.
 		return nil, store.NotFound("there is nothing to put on a page yet — add a feed, and give it a moment to fetch")
 	}
 	if err := g.store.ScheduleNextEdition(ctx, pageID, now.Add(page.EditionInterval)); err != nil {

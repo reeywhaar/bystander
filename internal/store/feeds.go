@@ -267,13 +267,52 @@ func (s *Store) RecordFailure(ctx context.Context, feedID string, status int, me
 
 // DeleteOrphanFeeds removes feeds nobody follows any more, and reports how many went.
 // Their items are collected separately, in the other database.
-func (s *Store) DeleteOrphanFeeds(ctx context.Context) (int64, error) {
-	res, err := s.main.ExecContext(ctx,
-		`DELETE FROM feeds WHERE id NOT IN (SELECT feed_id FROM subscriptions)`)
+func (s *Store) DeleteOrphanFeeds(ctx context.Context, spare []string) (int64, error) {
+	query := `DELETE FROM feeds WHERE id NOT IN (SELECT feed_id FROM subscriptions)`
+	var args []any
+	if len(spare) > 0 {
+		var marks string
+		args, marks = inList(spare)
+		query += ` AND id NOT IN (` + marks + `)`
+	}
+	res, err := s.main.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// FeedsByIDs looks up feeds by id, for the articles on a page whose reader does not follow
+// them.
+//
+// That is not a strange state. A page is composed once and read afterwards, so unfollowing a
+// feed leaves its articles on the page in front of you until the page next composes — and a
+// card whose source has no name reads as a fault rather than as a feed you dropped. Names come
+// from the subscription where there is one, because that carries a person's own name for a
+// feed; this is the fallback to the publisher's own.
+//
+// Missing ids are simply absent from the result.
+func (s *Store) FeedsByIDs(ctx context.Context, ids []string) (map[string]*Feed, error) {
+	if len(ids) == 0 {
+		return map[string]*Feed{}, nil
+	}
+	args, marks := inList(ids)
+	rows, err := s.main.QueryContext(ctx,
+		`SELECT `+feedColumns+` FROM feeds WHERE id IN (`+marks+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("feeds by id: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]*Feed, len(ids))
+	for rows.Next() {
+		feed, err := scanFeed(rows)
+		if err != nil {
+			return nil, fmt.Errorf("feeds by id: %w", err)
+		}
+		out[feed.ID] = feed
+	}
+	return out, rows.Err()
 }
 
 // FeedIDs returns every feed id, for the sweep that collects items belonging to feeds that
@@ -598,9 +637,11 @@ func (s *Store) DeleteSubscription(ctx context.Context, principalID, id string) 
 		return err
 	}
 
-	// And what they read there, which has nothing left to do: its job is to keep an article
-	// somebody has finished with off their pages, and a feed they no longer follow puts
-	// nothing on one.
+	// And what they read there, except on the page they are looking at. Its job is to keep
+	// an article somebody has finished with off their pages, and a feed they no longer
+	// follow puts nothing on one — but the page composed before they unfollowed is still on
+	// screen, and its articles are still theirs. Forgetting those read marks turned a page
+	// somebody had worked through back into a page of unread cards.
 	//
 	// A second statement rather than part of the transaction above, because the two live in
 	// different databases and this program never spans them — see entities.md. So the order

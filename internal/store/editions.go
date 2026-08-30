@@ -340,8 +340,13 @@ func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (in
 // Called when they unfollow it. The record's job is to keep an article they have finished with
 // off their pages, and a feed they no longer follow has no pages to be kept off.
 func (s *Store) ForgetReadArticles(ctx context.Context, principalID, feedID string) (int64, error) {
-	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM read_articles WHERE principal_id = ? AND feed_id = ?`, principalID, feedID)
+	res, err := s.derived.ExecContext(ctx, currentEditions+`
+		DELETE FROM read_articles
+		 WHERE principal_id = ? AND feed_id = ?
+		   AND item_id NOT IN (
+		         SELECT ei.item_id FROM edition_items ei
+		           JOIN current c ON c.id = ei.edition_id
+		          WHERE c.principal_id = ?)`, principalID, feedID, principalID)
 	if err != nil {
 		return 0, err
 	}
@@ -482,6 +487,36 @@ func (s *Store) DeleteEditionsExcept(ctx context.Context, livePageIDs, livePrinc
 		return removed, err
 	}
 	return removed, nil
+}
+
+// FeedIDsOnLivePages is every feed an article on somebody's current page came from.
+//
+// For the sweep, which must not collect a feed whose articles are still on screen. The feeds
+// are in main.db and the editions in derived.db with no constraint between them, so the answer
+// is read here and handed over rather than joined.
+//
+// Anybody's page, not one person's. A feed is one row shared by everyone who follows it, so it
+// survives for as long as any page still shows something from it.
+func (s *Store) FeedIDsOnLivePages(ctx context.Context) ([]string, error) {
+	rows, err := s.derived.QueryContext(ctx, currentEditions+`
+		SELECT DISTINCT i.feed_id
+		  FROM current c
+		  JOIN edition_items ei ON ei.edition_id = c.id
+		  JOIN items i ON i.id = ei.item_id`)
+	if err != nil {
+		return nil, fmt.Errorf("feeds on live pages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("feeds on live pages: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // PruneOldEditions removes every edition a page has moved on from.

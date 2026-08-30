@@ -314,8 +314,17 @@ serve. The move is `20260823103614_main_article_window_per_feed`, which carries 
 person's old setting onto every feed they follow, so nobody's pages changed the day it
 landed.
 
-A feed with no subscriptions left is deleted by the poller's sweep, and its items go with
-it.
+A feed with no subscriptions left is deleted by the sweep — but not while its articles are
+still on somebody's current page. A page is composed once and read afterwards, so unfollowing
+the last subscription to a feed leaves its articles on the page in front of you until that page
+next composes. The articles always survived, because everything on a live edition does; the
+feed row did not, and the cards lost their source. `FeedIDsOnLivePages` is what the sweep spares,
+and the feed goes on the pass after the page has moved on.
+
+Names on a page come from the subscription, so a reader's own name for a feed is what they see.
+Where there is no subscription any more the publisher's own name is used instead — with no
+subscription id and no priority, so the interface has nothing to hang a control off for a
+setting that does not exist.
 
 ### `subscription_tags`
 

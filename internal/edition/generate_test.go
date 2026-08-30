@@ -218,9 +218,11 @@ func TestRegenerateSurvivesRepeatedPresses(t *testing.T) {
 	}
 }
 
-// Everything read and nothing new is a real answer, and it has to be distinguishable from
-// a failure.
-func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
+// Everything read is not a reason to refuse. A page is an arrangement as much as a set, and a
+// new seed draws a different subset in a different order into different slots — which is what
+// the button is for. Refusing left somebody who had worked through their page with nothing to
+// press until a publisher posted.
+func TestRegenerateShufflesWhenEverythingIsRead(t *testing.T) {
 	in := newInstance(t, 5)
 	in.size(t, 10)
 	ctx := context.Background()
@@ -238,12 +240,31 @@ func TestRegenerateRefusesWhenEverythingIsRead(t *testing.T) {
 		}
 	}
 
-	_, err = in.gen.Regenerate(ctx, in.pageID(), now)
-	if err == nil {
-		t.Fatal("Regenerate() composed a page out of nothing")
+	ed, err := in.gen.Regenerate(ctx, in.pageID(), now)
+	if err != nil {
+		t.Fatalf("Regenerate() with everything read: %v", err)
 	}
-	if !isConflict(err) {
-		t.Errorf("Regenerate() = %v, want a conflict", err)
+	if ed == nil {
+		t.Fatal("Regenerate() composed nothing though there were articles to arrange")
+	}
+
+	_, after, err := in.store.CurrentEdition(ctx, in.pageID(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(items) {
+		t.Errorf("the new page has %d articles, want %d", len(after), len(items))
+	}
+	// The same articles, and that is fine — it is the arrangement that is new. What must not
+	// happen is a blank page or a refusal.
+	was := map[string]bool{}
+	for _, entry := range items {
+		was[entry.Item.ID] = true
+	}
+	for _, entry := range after {
+		if !was[entry.Item.ID] {
+			t.Errorf("drew %q, which was not among the read articles", entry.Item.Title)
+		}
 	}
 }
 

@@ -127,8 +127,20 @@ func (s *Scheduler) sweep(ctx context.Context) {
 	}
 
 	// Feeds nobody follows go first, so the item sweep below sees the shorter list and
-	// collects their articles in the same pass.
-	if n, err := s.store.DeleteOrphanFeeds(ctx); err != nil {
+	// collects their articles in the same pass — except any whose articles are still on
+	// somebody's current page.
+	//
+	// Unfollowing a feed you were the last follower of used to delete it here while its
+	// articles were still on the page you were looking at. The articles survived, because
+	// everything on a live edition does; the feed row did not, so the cards lost their
+	// source and the reader showed them as coming from nowhere. The feed waits for the page
+	// to move on instead, and then goes on the pass after.
+	onPages, err := s.store.FeedIDsOnLivePages(ctx)
+	if err != nil {
+		s.log.Error("could not list the feeds still on somebody's page", "error", err)
+		return
+	}
+	if n, err := s.store.DeleteOrphanFeeds(ctx, onPages); err != nil {
 		s.log.Error("could not collect unfollowed feeds", "error", err)
 	} else if n > 0 {
 		s.log.Info("collected feeds nobody follows", "count", n)

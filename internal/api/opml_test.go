@@ -460,19 +460,30 @@ func TestASharedListBringsItsReachesWithIt(t *testing.T) {
 
 // Marking a feed read reaches further than the page in front of you, and that is the point.
 //
-// A page never offers an article somebody has already read, so marking a feed's backlog read
-// means those articles are never drawn at all. That is what makes following a publisher again
-// after a while start from now rather than from its archive — and it is the part a dialog has
-// to say out loud, because it cannot be seen on screen.
+// It covers the backlog no page has shown yet, so the articles drop to the sampler's last band
+// and stop competing for a place. That is what makes following a publisher again after a while
+// start from now rather than from its archive — and it is the part a dialog has to say out
+// loud, because it cannot be seen on screen.
+//
+// "Drops behind", not "never drawn": read is a band, not a filter. With another feed holding
+// anything unread the backlog does not appear at all, which is what this asserts. With nothing
+// else on the instance it is drawn, because a shuffled page of things you have read is a
+// better answer than a blank one — see TestRegenerateShufflesWhenEverythingIsRead.
 func TestMarkingAFeedReadKeepsItsBacklogOffLaterPages(t *testing.T) {
 	h := newHarness(t)
 	feed := newFeedServer(t, 12)
+	// A second feed, unread, so the page has somewhere else to draw from. Without one the
+	// backlog is the only thing on the instance and a page composed of it is the right
+	// answer rather than the wrong one.
+	other := newFeedServer(t, 12)
 
 	h.signIn(store.RoleUser, "alice")
 
 	var sub subscriptionBody
 	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}),
 		http.StatusCreated, &sub)
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": other.URL}),
+		http.StatusCreated, nil)
 
 	// Nothing has been composed, so nothing has been shown — the whole feed is backlog.
 	var before editionBody
@@ -490,16 +501,18 @@ func TestMarkingAFeedReadKeepsItsBacklogOffLaterPages(t *testing.T) {
 		t.Fatal("marked nothing, though the feed's articles had never been shown")
 	}
 
-	// And now a page composed from it has nothing to draw.
-	res := h.do(http.MethodPost, "/api/edition/regenerate", nil)
-	if res.StatusCode < 400 {
-		var after editionBody
-		h.expect(res, http.StatusOK, &after)
-		if len(after.Items) != 0 {
-			t.Errorf("composed %d articles from a feed marked read", len(after.Items))
+	// And now a page draws from the other feed instead: the backlog is behind everything
+	// unread, and there is enough unread to fill the page without reaching it.
+	var after editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &after)
+	if len(after.Items) == 0 {
+		t.Fatal("composed nothing, though a whole unread feed was available")
+	}
+	for _, item := range after.Items {
+		if item.Feed.ID == sub.FeedID {
+			t.Errorf("drew %q from the feed marked read, with unread articles going spare",
+				item.Title)
 		}
-	} else {
-		res.Body.Close()
 	}
 
 	// It is in Recently read, which is the other half of what "read" means.
