@@ -35,6 +35,20 @@ export function ReaderPage({ me }: { me: Me }) {
   // completely different reason from an account with no feeds.
   const pages = usePages();
 
+  // Whether the page just composed is made entirely of things already read.
+  //
+  // Read from the page that came back rather than reported by the server, because the server
+  // has nothing to add: every card carries when it was read, and "all of them" is the whole
+  // of the question. Composing used to refuse in this case, which meant somebody who had
+  // worked through their page had nothing to press at all — a shuffled page of what is there
+  // is a better answer, and saying so beats letting them wonder why the re-roll changed
+  // nothing new.
+  const rerolled = regenerate.data;
+  const nothingNew =
+    rerolled != null &&
+    rerolled.items.length > 0 &&
+    rerolled.items.every((item) => item.read_at != null);
+
   // Moving to another tab is arriving at a different front page, and nothing about the last
   // one should survive it.
   //
@@ -101,6 +115,14 @@ export function ReaderPage({ me }: { me: Me }) {
               }
             >
               {regenerate.error.message}
+            </Alert>
+          </div>
+        ) : nothingNew ? (
+          <div className="mb-6">
+            {/* A note beside a page that did compose, not a refusal instead of one. */}
+            <Alert tone="note">
+              You have read everything here. This is the same articles in a new
+              arrangement — there will be more when your feeds publish.
             </Alert>
           </div>
         ) : null}

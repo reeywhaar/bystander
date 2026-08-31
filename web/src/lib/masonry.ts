@@ -40,9 +40,19 @@ const ROW = 8;
  * different set of line breaks, so it was always going to be a different page; the reader is
  * the one doing it and is watching it happen.
  *
- * It re-measures on resize and when the headline faces finish loading, because both change how
- * tall a card is. Images do not need it: every one of them carries an explicit aspect ratio, so
- * its height is known before a byte of it arrives.
+ * It re-measures whenever a card's height changes, rather than at the two moments a card's
+ * height was expected to change. That was the bug: it re-packed on resize and on
+ * `document.fonts.ready`, and anything that made a card taller afterwards left its span too
+ * small — a card is not clipped, so it simply drew over the one below it. Safari was where this
+ * showed, and blaming Safari would have been the wrong lesson: `fonts.ready` resolves when the
+ * fonts *pending at that moment* have loaded, and this page picks one of six display faces per
+ * article, so a face nothing had used yet could start loading after it resolved. Any browser
+ * can do that. Watching the cards costs one observer and needs no list of the things that might
+ * move them.
+ *
+ * Watching them is only safe because `.page-grid` sets `align-items: start`: a card hugs its
+ * content, so writing its span cannot change its height, so packing cannot trigger the observer
+ * that triggered the packing.
  */
 export function useMasonry(
   grid: RefObject<HTMLElement | null>,
@@ -98,40 +108,48 @@ export function useMasonry(
 
     pack();
 
-    // A card's height depends on its width, so every resize is a new set of measurements.
-    //
-    // On width alone, though. Packing changes the grid's *height*, which would call this
-    // observer straight back — it settles after a round or two, since the second pass
-    // measures the same heights and writes the same spans, but a loop that relies on
-    // converging is a loop, and the browser says so in the console. A card's height does not
-    // depend on the grid's, so there is nothing to recompute when only that changed.
-    //
     // Guarded, because jsdom has no ResizeObserver and a test rendering this page should see
     // the page rather than a crash. Packing has already run by this point, so what a test
-    // loses is only the response to a resize — and nothing resizes in jsdom.
-    let width = node.getBoundingClientRect().width;
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            const now = node.getBoundingClientRect().width;
-            if (now === width) return;
-            width = now;
-            pack();
-          });
-    observer?.observe(node);
+    // loses is only the response to something moving — and nothing moves in jsdom.
+    if (typeof ResizeObserver === "undefined") return;
 
-    // The headline faces are downloaded, and a headline set in the fallback is a different
-    // number of lines from the same headline set in Oswald.
-    let live = true;
-    void document.fonts?.ready.then(() => {
-      if (live) pack();
+    // The grid, for its width: a card's height depends on how wide it is, so a new width is a
+    // new set of measurements. Its *height* is ignored, because packing is what changes that
+    // and answering it would be answering ourselves.
+    let width = node.getBoundingClientRect().width;
+
+    // And every card, for its height. This is what catches a face arriving late, a picture
+    // whose real shape was not known at first paint, or anything else that makes a card taller
+    // after it was measured. Compared against the last height rather than trusted, because the
+    // observer fires once on observe and would otherwise pack a second time for nothing.
+    const heights = new WeakMap<Element, number>();
+
+    const observer = new ResizeObserver((entries) => {
+      let stale = false;
+      for (const entry of entries) {
+        if (entry.target === node) {
+          const now = entry.contentRect.width;
+          if (now !== width) {
+            width = now;
+            stale = true;
+          }
+          continue;
+        }
+        const now = entry.contentRect.height;
+        if (heights.get(entry.target) !== now) {
+          heights.set(entry.target, now);
+          stale = true;
+        }
+      }
+      if (stale) pack();
     });
 
-    return () => {
-      live = false;
-      observer?.disconnect();
-    };
+    observer.observe(node);
+    for (const child of Array.from(node.children)) {
+      observer.observe(child);
+    }
+
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }

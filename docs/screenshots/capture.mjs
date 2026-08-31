@@ -173,7 +173,16 @@ if (!publishing) {
 
 // --- the reader -------------------------------------------------------------------------
 
-const env = { ...process.env, BYSTANDER_PUBLIC_URL: BASE, BYSTANDER_DATA_DIR: join(work, "data") };
+// BYSTANDER_WEB_DIR because the bundle stopped being embedded in the binary and became a
+// directory read at startup — see config.DefaultWebDir. The binary is run from a temporary
+// working directory, so the checkout fallback that finds web/dist from the repository root
+// does not apply, and without this the reader comes up serving the placeholder.
+const env = {
+  ...process.env,
+  BYSTANDER_PUBLIC_URL: BASE,
+  BYSTANDER_DATA_DIR: join(work, "data"),
+  BYSTANDER_WEB_DIR: join(root, "web", "dist"),
+};
 
 // Minted before `serve` starts, deliberately. There is no default account at any point: the
 // only way in is an invitation, and bootstrap mints one on an empty database — so doing it here

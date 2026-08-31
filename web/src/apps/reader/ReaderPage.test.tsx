@@ -252,9 +252,10 @@ describe("ReaderPage", () => {
     );
   });
 
-  // A refusal that says "nothing new" is a note about the world, not a fault, and the page
-  // it declined to replace has to still be there.
-  it("keeps the page when there is nothing new to replace it with", async () => {
+  // Composing no longer refuses when everything has been read — it shuffles instead — but a
+  // refusal from anywhere else is still a note about the world rather than a fault, and the
+  // page it declined to replace has to still be there.
+  it("keeps the page when composing is refused", async () => {
     renderWith(
       <MemoryRouter>
         <ReaderPage me={me} />
@@ -283,5 +284,58 @@ describe("ReaderPage", () => {
     // A refusal must not scroll: nothing was replaced.
     expect(window.scrollY).toBe(0);
     expect(screen.getByRole("link", { name: "Story a_1" })).toBeInTheDocument();
+  });
+
+  // Composing used to refuse when everything had been read, which left somebody who had
+  // worked through their page with nothing to press at all. It shuffles now, and says so —
+  // otherwise the button appears to have done nothing.
+  it("says so when the new page is entirely things already read", async () => {
+    const read = { ...article("a_1"), read_at: 1756000000 };
+    renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "POST /api/edition/regenerate": { body: edition([read]) },
+      },
+    );
+
+    await screen.findByRole("link", { name: "Story a_1" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Make a different page" }),
+    );
+
+    expect(
+      await screen.findByText(/You have read everything here/),
+    ).toBeInTheDocument();
+  });
+
+  // And not when there is anything unread on it, or the note would be on every page.
+  it("says nothing when the new page has something unread on it", async () => {
+    renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "POST /api/edition/regenerate": {
+          body: edition([
+            { ...article("a_1"), read_at: 1756000000 },
+            article("a_2"),
+          ]),
+        },
+      },
+    );
+
+    await screen.findByRole("link", { name: "Story a_1" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Make a different page" }),
+    );
+    await screen.findByRole("link", { name: "Story a_2" });
+
+    expect(
+      screen.queryByText(/You have read everything here/),
+    ).not.toBeInTheDocument();
   });
 });
