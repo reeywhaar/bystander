@@ -10,11 +10,16 @@ import (
 	"bystander/internal/store"
 )
 
-// candidateDepth is how many unshown articles are read per feed before sampling.
+// candidateDepth is how many articles are read per feed, per band, before sampling.
 //
-// The cap means no feed can contribute more than a fifth of a page, so reading much
-// deeper than that would be loading rows to throw away. Four times the cap leaves room for
-// the sampler to skip articles already drawn through another tag.
+// A ceiling on the query rather than on the page: nothing stops one feed filling most of an
+// edition if it is the only feed with anything, and this only decides how deep the composer
+// can reach when it is. Sixty is more than the largest page this program will compose out of
+// a single feed in any ordinary week, and reading further would be loading rows to throw away.
+//
+// The comment that used to sit here said the sampler capped a feed at a fifth of a page. There
+// has never been such a cap, and on a live front page one feed took 24 of 90 places — see
+// [edition.Select] for what was actually deciding that.
 const candidateDepth = 60
 
 // Generator composes pages.

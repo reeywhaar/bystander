@@ -17,6 +17,22 @@ import (
 	"bystander/internal/store"
 )
 
+// maxFruitlessRounds is how many rounds in a row may place nothing before a band gives up.
+//
+// A backstop, not an exit condition. The real one is a round in which no feed had anything
+// left to be asked for — see [Select] — and this exists because that one terminates with
+// probability one rather than in bounded time. Every feed still in the running has a priority
+// of at least 1, so it advances with at least a one-in-a-hundred chance per round and the loop
+// cannot deadlock; nothing in the arithmetic says when.
+//
+// Ten thousand, which is not a tuning knob and is not meant to be reached. Because the odds are
+// lifted so the live feeds always sum to at least [priorityScale] — see [lift] — a round comes
+// up empty with probability at most 1/e, whatever anybody has set. A page that genuinely still
+// had something to draw would have to lose that bet ten thousand times running, which is
+// e^-10000. Against that, a fruitless round costs one pass over the feed list, so the worst
+// this can spend before giving up is a few milliseconds.
+const maxFruitlessRounds = 10_000
+
 // Source is one feed as the sampler sees it: a weight, and its articles in the order this
 // page wants them. See store.Queue for what puts them in that order.
 type Source struct {
@@ -29,67 +45,108 @@ type Source struct {
 
 // Select composes a page of up to size articles.
 //
-// # A feed's share of the page is its share of the priorities, and nothing else
+// # Priority is the odds a feed is asked, and it is asked exactly as often as every other
 //
-// Each feed is given a quota — `size × priority / Σ priorities` — and the page is filled from
-// the front of each feed's queue. Two properties fall out of that, and both are the product.
+// One pass over the feeds is a round: each feed in turn is asked for its next article, and
+// hands one over with odds set by its priority. Rounds run until the page is full or nothing
+// is left. That is the whole model, and the properties that matter fall straight out of it.
 //
-// **Volume buys nothing.** A quota is a number of articles, so a publisher posting two
-// hundred times a day is allotted exactly what one posting twice is, at the same priority.
-// The alternative — any scheme that picks articles rather than feeds — hands the page to
-// whoever writes most: on a real subscription list, shuffling gave two feeds set to 25 and 10
-// forty-one places out of ninety, because between them they had a third of the articles.
+// The odds are the feed's priority against [priorityScale], lifted when the feeds still in the
+// running sum to less than that — see [lift], which is a change to how long composing takes and
+// not to what it produces.
+//
+// **Volume buys nothing.** A feed is visited once per round whether it has four articles
+// waiting or four hundred, so a publisher posting two hundred times a day is asked exactly as
+// often as one posting twice. Any scheme that picks *articles* rather than feeds hands the
+// page to whoever writes most.
+//
+// **The slider is linear.** A feed at 100 contributes ten times what a feed at 10 does, and
+// five times what one at 20 does, because its odds per round are ten and five times theirs.
+// Nothing has to be normalised against anything, which is what makes that true no matter how
+// many feeds there are or what else is on the page.
 //
 // **Tags take no part.** A tag decides whether a feed is on this page at all, which is
 // edition.eligible and the page's own filter lists. It does not weigh anything: a tag
 // priority meant a feed carrying three tags was drawn from three buckets and took a quarter
 // of the page at the same slider setting as a feed carrying one.
 //
-// # Quotas rather than draws
+// # Why not quotas
 //
-// A weighted draw repeated until the page is full has the same expectation and much more
-// variance: five feeds at equal priority filling thirty places came out 11, 6, 5, 4, 4 —
-// lopsided for no reason a reader could name. Quotas give 7, 6, 6, 6, 5. Priority is still a
-// share rather than an order, but it is the share it says it is on every page rather than on
-// average over a month.
+// This used to allot each feed `size × priority / Σ priorities` and hand out the places left
+// over — there are always some, since the shares almost never come out whole — by a weighted
+// draw on the fractional parts. On paper that has exactly the right expectation. On a real
+// subscription list it did not survive contact with the queues.
 //
-// The randomness that is left is in *which* articles fill a quota and in the leftover places
-// — see apportion, where it is load-bearing rather than decorative.
+// A page of ninety drawn from fourteen feeds with anything fresh: the whole parts accounted
+// for twenty-seven places and *sixty-three* went to the leftover draw, because ten of those
+// feeds had one to three articles each and everything their share could not use fell through.
+// The leftover draw weighted a feed by the fractional part of its share, which is a sawtooth
+// of priority rather than priority — `frac(90×10/500)` is 0.8 and `frac(90×25/500)` is 0.5,
+// so the feed at 10 drew at 23.5% a place against 14.7% for the feed at 25, and the feed at 5
+// drew best of all at 26.5%. Every feed at 50 computed 90×50/500 = 9.00 exactly, a fractional
+// part of zero, and was floored to the 0.01 minimum that existed to stop feeds being silenced
+// by arithmetic. It silenced the whole priority-50 cohort instead.
 //
-// # When a feed cannot fill its quota
+// What that looked like: the Guardian, at priority 10, took 24 of 90 places on a live front
+// page — a mean of 26.7 over 400 seeds, against 20.4 for Hacker News at 25. Under the round
+// robin the same queues give 13.5 and 34.3, a ratio of 2.54 where the sliders say 2.5.
 //
-// Its places go back and are apportioned again over the feeds that still have something, and
-// again until the page is full or every queue is dry. Without that a page is short whenever
-// any feed is thin, which is most pages.
+// There is no arithmetic here to get wrong. A feed is asked, or it is not.
+//
+// # When a feed runs out
+//
+// Nothing is redistributed. Its neighbours keep being asked at their own rate and the page
+// takes more rounds to fill, which is the same page arrived at more slowly. Under quotas the
+// places a thin feed could not use were handed back and re-apportioned over whoever still had
+// something — and whoever still has something is always the firehose, so priority stopped
+// governing the moment the quiet feeds ran dry, which on a real list is within two rounds.
+//
+// A page still comes up short when every queue is dry, and that is the honest answer rather
+// than something to pad.
+//
+// # How a band ends
+//
+// Two conditions, and a backstop. A band stops when the page is full, or when a round finds
+// that no feed has anything left *that could go on the page* — which is not the same as a
+// round that placed nothing. A round can legitimately come up empty about a third of the time,
+// and a page composed of quiet feeds would be empty if that ended it.
+//
+// Every feed still in the running has odds above zero and cursors only ever move forward, so
+// there is no state the loop can sit in with nothing left to happen. That makes it terminate
+// with probability one, which is not the same as terminating — ten feeds at 10% leave a round
+// empty about a third of the time, and nothing stops empty rounds recurring — so
+// [maxFruitlessRounds] bounds a run of them.
+//
+// [lift] does not change that. It shortens how long the loop is expected to run and leaves the
+// question of whether it stops exactly where it was.
 //
 // # A band at a time, across every feed
 //
-// Three passes over the same queues, one per band, and the whole page is apportioned afresh
-// in each. Everything new from every feed is placed before anything already seen from any
-// feed; every unread repeat before any read one. A pass per band rather than a queue read
-// straight through, because otherwise a feed with a large quota and nothing new contributes
-// something already read while another feed still has unread articles waiting.
+// Three passes over the same queues, one per band, and the round robin runs afresh in each.
+// Everything new from every feed is placed before anything already seen from any feed; every
+// unread repeat before any read one. A pass per band rather than a queue read straight
+// through, because otherwise a feed that rolls well and has nothing new contributes something
+// already read while another feed still has unread articles waiting.
 //
 // A page with room left over and nothing new to put in it looks broken rather than honest,
 // which is what the later passes are for. Nothing is invented: a repeat that was read arrives
-// with its read mark, so it is greyed rather than pretending to be new. When all three bands
-// are dry the page really is short, which is still the honest answer.
+// with its read mark, so it is greyed rather than pretending to be new.
 func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 	if size <= 0 {
 		return nil
 	}
 
 	// Zero means never — a real setting, and how somebody keeps a feed subscribed but out of
-	// rotation. Dropped here rather than allotted nothing, so it cannot take a place through
-	// a rounding remainder.
+	// rotation. Dropped here rather than left in at odds of zero, so the rounds below do not
+	// spend their lives asking a feed that has already answered.
 	feeds := make([]string, 0, len(sources))
 	for id, src := range sources {
 		if src != nil && src.Priority > 0 {
 			feeds = append(feeds, id)
 		}
 	}
-	// Sorted, because a map's order is not stable and a page that cannot be replayed from
-	// its seed is the one thing the seed is for.
+	// Sorted before anything is drawn, because a map's order is not stable and a page that
+	// cannot be replayed from its seed is the one thing the seed is for.
 	slices.Sort(feeds)
 
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>32|1))
@@ -97,6 +154,8 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 	var picks []store.Pick
 	taken := make(map[string]bool, size)
 	cursor := make(map[string]int, len(feeds))
+	// dropped is the feeds found to have nothing left, so a band stops walking them.
+	dropped := make(map[string]bool, len(feeds))
 
 	for _, band := range []func(*Source) []*store.Item{
 		func(s *Source) []*store.Item { return s.Fresh },
@@ -104,67 +163,104 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 		func(s *Source) []*store.Item { return s.Read },
 	} {
 		clear(cursor)
-		from := len(picks)
+		clear(dropped)
+		fruitless := 0
+
+		// total is what the odds are out of: the priorities of every feed that still has
+		// something to offer. Kept as the round goes rather than recounted before each one,
+		// because recounting means a second pass over every feed for every round of every
+		// page — measured at twice the cost of composing on a real subscription list, to
+		// learn something the previous round already knew.
+		//
+		// A feed that empties is subtracted the moment it is found empty, which is one round
+		// after it actually emptied. The odds are that round's share too low, by the share of
+		// a feed with nothing left to give. It costs nothing and corrects itself.
+		total := 0
+		for _, id := range feeds {
+			total += sources[id].Priority
+		}
 
 		for len(picks) < size {
-			left := make(map[string]int, len(feeds))
+			if total <= 0 {
+				break
+			}
+			// Redrawn every round rather than once, so no feed is permanently the one that
+			// gets first refusal on a link two feeds both carry. Ploum.net's only fresh
+			// article was the same URL Hacker News and Lobsters had both picked up; under a
+			// fixed order it lost that race on every seed and the feed never appeared at
+			// all.
+			rng.Shuffle(len(feeds), func(i, j int) { feeds[i], feeds[j] = feeds[j], feeds[i] })
+
+			// live is what ends the loop, and it is deliberately not "did this round place
+			// anything". A round can legitimately place nothing — that is what odds are —
+			// and stopping there would end the page early for no reason. What ends it is a
+			// round in which no feed had anything left to be asked for.
+			live := false
+			placed := 0
+			odds := lift(total)
 			for _, id := range feeds {
-				if n := len(band(sources[id])) - cursor[id]; n > 0 {
-					left[id] = n
+				if dropped[id] {
+					continue
+				}
+				items := band(sources[id])
+
+				// Step over anything already on the page before rolling, so a roll is
+				// always spent on an article that could actually be placed.
+				//
+				// This does not change the page. Rolling first and stepping after gives
+				// identical counts — measured over 400 seeds at four priorities against a
+				// feed mirroring thirty of another's articles, to the last article — because
+				// a successful roll steps over the whole run at once either way. What it
+				// saves is a feed whose remaining queue is nothing but pieces another feed
+				// already carried waiting on a successful roll to discover there is nothing
+				// behind them.
+				//
+				// What makes two rows the same article is the link, not the id. A
+				// publication carried in two feeds is two rows — the same piece at
+				// dataengineeringweekly.com/feed and at its Substack mirror has two ids,
+				// because an item belongs to the feed it arrived in and feeds are shared
+				// between everybody following them. Deduping on the id let both onto the
+				// page, one above the other, and on live data 46 links were held by more
+				// than one feed.
+				//
+				// The link exactly, never the title. The one pair of same-titled articles on
+				// that instance was three different publications' "Coming soon" placeholder,
+				// and merging those would lose two real articles to save nobody from a
+				// duplicate.
+				for cursor[id] < len(items) && taken[identify(items[cursor[id]])] {
+					cursor[id]++
+				}
+				if cursor[id] >= len(items) {
+					dropped[id] = true
+					total -= sources[id].Priority
+					continue
+				}
+				live = true
+
+				if rng.Float64()*priorityScale >= float64(sources[id].Priority)*odds {
+					continue
+				}
+				item := items[cursor[id]]
+				cursor[id]++
+				taken[identify(item)] = true
+				picks = append(picks, store.Pick{Item: item})
+				placed++
+				if len(picks) >= size {
+					break
 				}
 			}
-			if len(left) == 0 {
+			if !live {
 				break
 			}
 
-			placed := 0
-			// Over `feeds`, which is sorted, rather than over the map apportion hands
-			// back. Ranging a map takes its entries in whatever order Go randomises them
-			// into on the day, and the whole point of a seed is that the same one composes
-			// the same page twice — this was drawing the feeds in a different order every
-			// run and the page only looked stable because the shuffle below hid it.
-			quotas := apportion(rng, size-len(picks), feeds, left, sources)
-			for _, id := range feeds {
-				quota := quotas[id]
-				items := band(sources[id])
-				for ; quota > 0 && cursor[id] < len(items); cursor[id]++ {
-					item := items[cursor[id]]
-					// An article already on the page is stepped over rather than placed
-					// twice — and what makes two rows the same article is the link, not
-					// the id.
-					//
-					// A publication carried in two feeds is two rows: the same piece at
-					// dataengineeringweekly.com/feed and at its Substack mirror has two
-					// ids, because an item belongs to the feed it arrived in and feeds are
-					// shared between everybody following them. Deduping on the id let both
-					// onto the page, one above the other, and on live data 46 links were
-					// held by more than one feed.
-					//
-					// The link exactly, never the title. The one pair of same-titled
-					// articles on that instance was three different publications' "Coming
-					// soon" placeholder, and merging those would lose two real articles to
-					// save nobody from a duplicate.
-					if taken[identify(item)] {
-						continue
-					}
-					taken[identify(item)] = true
-					picks = append(picks, store.Pick{Item: item})
-					quota--
-					placed++
-				}
+			if placed > 0 {
+				fruitless = 0
+				continue
 			}
-			// Every remaining queue held nothing but articles already placed. Apportioning
-			// again would allot the same places to the same empty queues, forever.
-			if placed == 0 {
+			if fruitless++; fruitless >= maxFruitlessRounds {
 				break
 			}
 		}
-
-		// Interleave the feeds. Each one's quota was taken in a run, so without this a page
-		// is one publisher after another in blocks — and since the slots are assigned by
-		// position, the lead and both features would come from whichever feed sorted first.
-		rest := picks[from:]
-		rng.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] })
 	}
 
 	for i := range picks {
@@ -174,24 +270,6 @@ func Select(sources map[string]*Source, size int, seed int64) []store.Pick {
 	return picks
 }
 
-// apportion divides room places among the feeds that still have something, in proportion to
-// their priorities.
-//
-// Each feed gets the whole part of its share outright. The places left over — there are
-// always some, since the shares almost never come out whole — are handed out one at a time by
-// a weighted draw on the fractional parts.
-//
-// **Drawn rather than given to the largest fractions**, and that is the whole reason this is
-// not three lines. Largest-remainder is the textbook answer and it silences: a feed whose
-// share is 0.4 of a place has the same fractional part on every page, loses every time, and
-// never appears at all. Priority is a probability of being drawn, not a sort order — zero
-// means never and nothing else does, and a feed at 10 has to turn up occasionally or the
-// slider has a dead zone nobody documented. Drawing on the fractions keeps the expectation
-// exactly right and lets the small ones through at their own rate.
-//
-// A feed is never allotted more than it has left. Its unused places are not redistributed
-// here; the caller apportions again over what remains, which is the same thing and
-// terminates.
 // identify is what makes two rows the same article for the purposes of one page.
 //
 // The link, which is the publisher's own name for the piece and is the same wherever it is
@@ -202,70 +280,6 @@ func identify(item *store.Item) string {
 		return item.Link
 	}
 	return "id:" + item.ID
-}
-
-func apportion(rng *rand.Rand, room int, order []string, left map[string]int, sources map[string]*Source) map[string]int {
-	total := 0
-	for id := range left {
-		total += sources[id].Priority
-	}
-	if total == 0 || room <= 0 {
-		return nil
-	}
-
-	quota := make(map[string]int, len(left))
-	spent := 0
-
-	// Built in `order`, not in map order: the draw below consumes randomness in sequence, so
-	// an unstable order is a page that cannot be replayed from its seed.
-	ids := make([]string, 0, len(left))
-	fraction := make([]float64, 0, len(left))
-	for _, id := range order {
-		if left[id] == 0 {
-			continue
-		}
-		exact := float64(room) * float64(sources[id].Priority) / float64(total)
-		whole := min(int(exact), left[id])
-		quota[id] = whole
-		spent += whole
-		ids = append(ids, id)
-		fraction = append(fraction, exact-float64(int(exact)))
-	}
-
-	for spent < room {
-		// Only feeds that could still take one. Weights are the fractional parts, except
-		// that a feed which was allotted nothing at all is given a floor — otherwise a feed
-		// whose share is a whole number of places can never pick up a remainder, and a feed
-		// whose share rounds to exactly zero has weight zero and is silenced by arithmetic
-		// rather than by anybody's decision.
-		sum := 0.0
-		for i, id := range ids {
-			if quota[id] < left[id] {
-				sum += max(fraction[i], 0.01)
-			}
-		}
-		if sum == 0 {
-			break
-		}
-		roll := rng.Float64() * sum
-		picked := ""
-		for i, id := range ids {
-			if quota[id] >= left[id] {
-				continue
-			}
-			roll -= max(fraction[i], 0.01)
-			if roll < 0 {
-				picked = id
-				break
-			}
-		}
-		if picked == "" {
-			break
-		}
-		quota[picked]++
-		spent++
-	}
-	return quota
 }
 
 // wideSlots are the widths worth more than one column, widest first.
@@ -507,4 +521,44 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 			picks[i].Slot = store.SlotFeature
 		}
 	}
+}
+
+// priorityScale is what a priority is out of. A feed at 100 hands something over on every
+// round it is asked, one at 25 on a quarter of them.
+//
+// It is also the floor the live priorities are lifted to, which is [lift].
+const priorityScale = 100
+
+// lift is how much the odds of every live feed are scaled up this round.
+//
+// One when the live priorities already sum to [priorityScale] or more, and otherwise however
+// much it takes to get them there. Ten feeds at 1 are asked as ten feeds at 10.
+//
+// # It does not change the page
+//
+// Every live feed is scaled by the same constant, so every ratio between them is untouched,
+// and the ratios are the whole of what the sliders mean. Measured against the unlifted sampler
+// over 400 seeds on a real front page and seven synthetic ones, the two agree on every feed to
+// within the noise of the draw.
+//
+// # What it changes is how long
+//
+// Lifted, the live priorities sum to at least priorityScale, so a round places one article in
+// expectation and a page of n articles takes about n rounds. Unlifted, a page whose feeds are
+// all set to 1 needs about a hundred rounds per article: the same page, arrived at a hundred
+// times more slowly. Composing one from a single feed at priority 1 went from 418µs to 9µs,
+// ten feeds at 1 from 631µs to 72µs, and an ordinary subscription list is a shade quicker too.
+//
+// It is **not** a termination guarantee, and it is worth saying so because the arithmetic looks
+// like one. A round still comes up empty often — ten feeds at 10% leave one empty 0.9^10 of the
+// time, about a third — and nothing here stops empty rounds recurring. What the lift bounds is
+// the *rate*: the chance of an empty round is the product of (1 - each feed's odds), which under
+// a sum of at least one is largest when the odds are spread thinnest — n feeds at 1/n, giving
+// (1-1/n)^n, which climbs towards 1/e and never reaches it. Under 37%, whatever anybody sets.
+// Whether the loop stops is still [maxFruitlessRounds]' job, exactly as it was before.
+func lift(total int) float64 {
+	if total >= priorityScale {
+		return 1
+	}
+	return float64(priorityScale) / float64(total)
 }

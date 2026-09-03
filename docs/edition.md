@@ -52,8 +52,8 @@ support burden with no matching demand, and four options fit in a segmented cont
 
 ### In plain terms
 
-Every feed gets a **share of the page proportional to its priority**, and takes its newest
-articles up to that share. That is the whole algorithm; everything below is the detail.
+Every feed is **asked, in turn, whether it wants to contribute** — and says yes with a
+probability that is its priority. That is the whole algorithm; everything below is the detail.
 
 ```
 1. Work out which feeds may appear on this page at all.
@@ -64,25 +64,33 @@ articles up to that share. That is the whole algorithm; everything below is the 
       unread   shown here before, never read
       read     dealt with
 
-3. Give every feed a quota:  size x priority / (sum of priorities)
+3. Fill the page a band at a time — all the new, then all the unread, then the read.
 
-4. Fill the page a band at a time — all the new, then all the unread, then the read —
-   taking each feed's quota from the front of its queue.
-   A feed that cannot fill its quota gives the places back, and they are shared out
-   again among the feeds that still have something. Repeat until the page is full
-   or every queue is dry.
+4. Within a band, a round is one pass over the feeds in a shuffled order.
+   Each feed is offered a turn and takes it with odds set by its priority,
+   handing over the article at the front of its queue.
 
-5. Shuffle within each band, so the page is not one publisher after another.
+5. If the feeds still holding something sum to less than 100, every one of them
+   is scaled up until they do — so a round is expected to place an article.
+
+6. Rounds repeat until the page is full, or until a round finds that no feed
+   has anything left to be asked for.
 ```
 
 Seeded from a number stored with the edition, so the same page can be composed again.
 
-**Priority is a share, not an order.** A feed at 90 gets nine times the places of one at 10;
-neither is ever silenced, and zero means never. What priority is *not* is a ranking — nothing
-here sorts feeds and takes the top.
+**Priority is odds, not an order.** A feed at 90 is asked as often as one at 10 and says yes
+nine times as often, so it gets about nine times the places; neither is ever silenced, and
+zero means never. What priority is *not* is a ranking — nothing here sorts feeds and takes
+the top.
 
-**Volume buys nothing.** A quota is a number of articles, so a publisher posting two hundred
-times a day is allotted exactly what one posting twice is at the same priority. This is
+**The slider is linear, and does not depend on the company it keeps.** Two feeds at 50 and 25
+sit at two to one whether the page holds those two or thirty others besides. Nothing is
+normalised against a total, so there is no total to shift under them.
+
+**Volume buys nothing.** A feed is asked once per round whether it has four articles waiting
+or four hundred, so a publisher posting two hundred times a day is asked exactly as often as
+one posting twice. This is
 load-bearing rather than incidental: on a real subscription list, picking articles instead of
 feeds gave two feeds set to 25 and 10 forty-one places out of ninety, purely because between
 them they had a third of the articles.
@@ -109,36 +117,93 @@ How long articles are kept follows the longest window set on any feed, floored a
 days and capped at a year. Without that the longer windows would be a lie: a feed set to
 reach back a year, with a month of articles kept, has nothing to reach into.
 
-### Quotas rather than draws
+### Why not quotas
 
-The obvious implementation is a weighted draw repeated until the page is full. It has the
-same expectation and far more variance: five feeds at equal priority filling thirty places
-came out 11, 6, 5, 4, 4 — lopsided for no reason a reader could name. Quotas give 7, 6, 6, 6,
-5. A share that is the share it claims on *every* page beats one that is right on average
-over a month.
+This used to allot each feed a quota — `size x priority / sum of priorities` — and fill the
+page from the front of each queue. On paper that has exactly the right expectation, and a
+share that is the share it claims on *every* page beats one that is right on average over a
+month. It did not survive contact with real queues.
 
-The randomness that remains is in which places the leftovers go to, and that part is
-load-bearing. Shares almost never come out whole, so some places are always left over after
-the whole parts are handed out. Giving them to the largest fractions — the textbook answer —
-**silences**: a feed whose share is 0.4 of a place has the same fraction on every page, loses
-every time, and never appears at all. So the leftovers are drawn, weighted by the fractions,
-with a floor under feeds that were allotted nothing. Expectation unchanged, no dead zone in
-the slider.
+Shares almost never come out whole, so places are always left over. Giving them to the
+largest fractions — the textbook answer — **silences**: a feed whose share is 0.4 of a place
+has the same fraction on every page, loses every time, and never appears. So the leftovers
+were drawn, weighted by those fractions, with a floor under anything allotted nothing.
 
-### When a feed cannot fill its quota
+The trouble is how many places ended up in that draw. A live front page of ninety, drawn from
+fourteen feeds with anything new: the whole parts accounted for **twenty-seven** places and
+**sixty-three** went to the leftover draw — because ten of those feeds had one to three
+articles each, and every place their share could not use fell through to it. Seventy per cent
+of the page was dealt by the tie-breaker.
 
-Its places go back and are shared out again over the feeds that still have something, and
-again, until the page is full or everything is dry. Without that a page is short whenever any
-feed is thin, which is most pages.
+And the tie-breaker is not priority. It is the *fractional part* of a share, which is a
+sawtooth: `frac(90x10/500)` is 0.8 while `frac(90x25/500)` is 0.5, so the feed at 10 drew at
+23.5% a place against 14.7% for the feed at 25, and the feed at **5** drew best of all at
+26.5%. Every feed at 50 worked out to exactly 9.00 places, a fraction of zero, and was floored
+to the 0.01 minimum meant to stop feeds being silenced by arithmetic — which silenced the
+entire priority-50 cohort instead.
+
+What that looked like from the outside: the Guardian, at priority **10**, took 24 of 90 places
+on a real front page, a mean of 26.7 over 400 seeds, against 20.4 for Hacker News at **25**.
+Under the round robin the same queues give 13.5 and 34.3 — a ratio of 2.54 where the sliders
+say 2.5.
+
+There is no arithmetic in the round robin to get wrong. A feed is asked, or it is not.
+
+### Lifting the odds
+
+If every feed on a page is set to 1, a round places an article one time in a hundred and a page
+of ninety takes about nine thousand rounds. It is the same page — the odds are relative, and
+scaling all of them by one constant cancels out of every ratio between them — arrived at a
+hundred times more slowly.
+
+So when the feeds still holding something sum to less than 100, they are all scaled up until
+they do. Ten feeds at 1 are asked as ten feeds at 10. Never scaled down: where the sliders
+already promise a full round, they are used as they are.
+
+Measured against the unscaled version over 400 seeds on a real front page and seven synthetic
+ones, the two agree on every feed to within the noise of the draw, and composing that front page
+went from 215µs to 76µs. One feed alone at priority 1 went from 418µs to 9µs.
+
+**It is not a termination guarantee**, and the arithmetic looks enough like one to be worth
+saying so. Ten feeds at 10% leave a round empty about a third of the time, and nothing stops
+empty rounds recurring. What the lift bounds is the *rate*: the chance of an empty round is
+largest when the odds are spread thinnest — n feeds at 1/n, or (1-1/n)^n — which climbs towards
+1/e and never reaches it. Under 37%, whatever anybody sets. Whether the loop stops is still the
+backstop's job.
+
+### When a feed runs out
+
+Nothing is redistributed. Its neighbours go on being asked at their own rate, and the page
+takes more rounds to fill — the same page, arrived at more slowly.
+
+Quotas had to redistribute, because a feed that could not fill its share would otherwise leave
+the page short. But the places always came back to whoever still had something, and whoever
+still has something is the firehose — so priority stopped governing the moment the quiet feeds
+ran dry, which on a real subscription list is within two rounds.
+
+A page still comes up short when every queue is dry. That is the honest answer rather than
+something to pad.
 
 ### Guards
 
-- **Zero means never.** A feed at zero is dropped before quotas are worked out, rather than
-  allotted nothing — otherwise it could still pick up a leftover place.
-- **One article, one place.** A feed's three bands are one queue and an article placed in an
-  earlier pass is stepped over in a later one. The page cannot show the same article twice.
-- **Termination.** Every round either places an article or stops. A round that places nothing
-  — every remaining queue holding only articles already on the page — ends the pass.
+- **Zero means never.** A feed at zero is dropped before the rounds begin, rather than left in
+  at odds of zero — there is then nothing to ask, and no way for it to pick up a place.
+- **One article, one place.** A feed's three bands are one queue, and an article placed in an
+  earlier pass is stepped over in a later one. What makes two rows the same article is the
+  link, not the id: a piece carried by a feed and by its mirror is two rows and one article.
+- **Termination.** A pass ends on a round where no feed had anything left *that could go on
+  the page* — which is not the same as a round that placed nothing. Empty rounds are ordinary
+  and the page is still composed; a feed whose whole queue is pieces another feed already
+  placed has nothing to offer, and must not read as though it had.
+- **The backstop.** Every feed in the running has odds above zero and cursors only move
+  forward, so the loop cannot sit in a state with nothing left to happen — but that is
+  termination with probability one, not termination. A run of 10,000 rounds that place nothing
+  ends a pass. With the odds lifted an empty round is at most a 1-in-e event, so a page that
+  still had something to draw would have to lose that bet ten thousand times running.
+- **The order is redrawn every round**, so no feed permanently gets first refusal on a link
+  two feeds both carry. Under a fixed order, Ploum.net's one new article — the same URL Hacker
+  News and Lobsters had both picked up — lost that race on every seed, and the feed never
+  appeared at all.
 
 ### Bands are positions in a queue, not separate pools
 

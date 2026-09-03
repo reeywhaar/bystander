@@ -2,6 +2,7 @@ package edition
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"bystander/internal/store"
@@ -53,9 +54,9 @@ func TestSelectIsDeterministic(t *testing.T) {
 // Priority is a probability, not an ordering: a feed at 90 appears more often than one at
 // 10 without silencing it.
 func TestPriorityShiftsTheOdds(t *testing.T) {
-	// More feeds than the page has room for, so the cap does not fill it by itself and
-	// the odds are what decide. With two feeds and a page they could both fill, every
-	// priority produces the same page — correct, and useless as a test.
+	// More feeds than the page has room for, so the odds are what decide. With two feeds and
+	// a page they could both fill, every priority produces the same page — correct, and
+	// useless as a test.
 
 	counts := map[string]int{}
 	for seed := range 300 {
@@ -99,8 +100,8 @@ func TestAllZeroTerminates(t *testing.T) {
 	}
 }
 
-// Volume buys nothing. A draw picks a feed and then takes one article from it, so a feed
-// with five hundred articles is drawn exactly as often as one with sixty at the same
+// Volume buys nothing. A round asks each feed once and takes at most one article, so a feed
+// with five hundred articles is asked exactly as often as one with sixty at the same
 // priority — which is why no per-feed cap is needed to stop a prolific publisher taking
 // the page.
 func TestVolumeDoesNotBuyAShareOfThePage(t *testing.T) {
@@ -142,8 +143,8 @@ func TestASmallFeedDoesNotStarveThePage(t *testing.T) {
 	}
 }
 
-// The failure that removing the cap was for: with a handful of feeds, the weights have to
-// decide the mix. A cap set at a fraction of the page could not leave them room.
+// With a handful of feeds, the sliders have to decide the mix and nothing else can. A cap set
+// at a fraction of the page would leave them no room to.
 func TestPriorityDecidesWithFewFeeds(t *testing.T) {
 	const size = 20
 	counts := map[string]int{}
@@ -500,5 +501,251 @@ func TestArticlesWithNoLinkAreNotAllTheSameArticle(t *testing.T) {
 
 	if picks := Select(sources(src), 10, 7); len(picks) != 5 {
 		t.Errorf("drew %d link-less articles, want all 5", len(picks))
+	}
+}
+
+// The slider is linear: a feed at 100 contributes ten times what a feed at 10 does.
+//
+// The property the quota sampler could not hold. It allotted whole shares and dealt the
+// leftovers — most of the page, once the thin feeds had been capped at what they had — by a
+// weighted draw on the *fractional parts* of those shares, which is a sawtooth of priority
+// rather than priority. Nothing in this file normalises against a total any more, so the ratio
+// between two feeds is the ratio between two sliders and does not depend on what else is on
+// the page.
+func TestTheSliderIsLinear(t *testing.T) {
+	for _, tc := range []struct{ loud, quiet int }{
+		{100, 10}, {50, 25}, {90, 30}, {60, 20},
+	} {
+		want := float64(tc.loud) / float64(tc.quiet)
+
+		counts := map[string]int{}
+		for seed := range 300 {
+			src := sources(feed("loud", tc.loud, 400), feed("quiet", tc.quiet, 400))
+			for _, pick := range Select(src, 60, int64(seed)) {
+				counts[pick.Item.FeedID]++
+			}
+		}
+
+		got := float64(counts["loud"]) / float64(counts["quiet"])
+		// A tenth either way. The page is finite, so the last round is cut off partway
+		// through and the ratio cannot be exact.
+		if got < want*0.9 || got > want*1.1 {
+			t.Errorf("%d against %d gave %.2f×, want about %.1f× (%d and %d articles)",
+				tc.loud, tc.quiet, got, want, counts["loud"], counts["quiet"])
+		}
+	}
+}
+
+// A feed that runs dry does not hand its places to whoever has the deepest queue.
+//
+// This is the bug, in the shape it had on live data. A front page of ninety drawn from four
+// deep news feeds and ten thin ones: the thin feeds could not fill their shares, the places
+// they could not use went back to be apportioned again over whoever still had something, and
+// what came back was the Guardian — at priority 10 — taking 24 places against Hacker News at
+// 25 taking 23. Its mean over 400 seeds was 26.7 against 20.4.
+func TestADeepFeedDoesNotInheritWhatAThinOneCannotFill(t *testing.T) {
+	counts := map[string]int{}
+	for seed := range 200 {
+		list := []*Source{feed("deep-quiet", 10, 200), feed("deep-loud", 25, 200)}
+		// Ten feeds set high and holding almost nothing, which is what a subscription
+		// list of blogs looks like on any given morning.
+		for i := range 10 {
+			list = append(list, feed(fmt.Sprintf("thin%d", i), 50, 3))
+		}
+		for _, pick := range Select(sources(list...), 90, int64(seed)) {
+			counts[pick.Item.FeedID]++
+		}
+	}
+
+	quiet, loud := counts["deep-quiet"], counts["deep-loud"]
+	if loud <= quiet {
+		t.Fatalf("the feed at 10 took %d places against %d for the feed at 25", quiet, loud)
+	}
+	if ratio := float64(loud) / float64(quiet); ratio < 2.2 || ratio > 2.8 {
+		t.Errorf("25 against 10 gave %.2f×, want about 2.5× (%d and %d articles)", ratio, loud, quiet)
+	}
+}
+
+// A round that places nothing does not end the page.
+//
+// Ten feeds at priority 1 come up empty on almost every round, and a loop that stopped when a
+// round placed nothing would return a nearly empty page for a subscription list that is merely
+// set quiet. What ends the composition is a round in which no feed had anything left to be
+// asked for, which is a different question.
+func TestAnEmptyRoundIsNotTheEndOfThePage(t *testing.T) {
+	list := make([]*Source, 0, 10)
+	for i := range 10 {
+		list = append(list, feed(fmt.Sprintf("q%d", i), 1, 100))
+	}
+
+	if got := Select(sources(list...), 40, 5); len(got) != 40 {
+		t.Fatalf("a page of feeds at priority 1 came out %d articles long, want a full 40", len(got))
+	}
+}
+
+// A page whose feeds all carry the same articles finishes, and finishes short.
+//
+// The composition ends on a round where no feed had anything left to be asked for, and a feed
+// whose whole queue is pieces another feed already placed has to count as one of those. This
+// is the case where "is there anything left" and "is there anything left that could go on the
+// page" come apart, and only the second one terminates.
+func TestAFeedOfNothingButDuplicatesTerminates(t *testing.T) {
+	own := &Source{FeedID: "own", Priority: 50}
+	mirror := &Source{FeedID: "mirror", Priority: 50}
+	for i := range 5 {
+		link := fmt.Sprintf("https://example.com/p/%d", i)
+		own.Fresh = append(own.Fresh, &store.Item{
+			ID: fmt.Sprintf("own-%d", i), FeedID: "own", Link: link, Title: "a"})
+		mirror.Fresh = append(mirror.Fresh, &store.Item{
+			ID: fmt.Sprintf("mirror-%d", i), FeedID: "mirror", Link: link, Title: "b"})
+	}
+
+	// A page far larger than the five distinct articles between them, so the composer has
+	// to decide that there is nothing left rather than that the page is full.
+	got := Select(sources(own, mirror), 80, 11)
+	if len(got) != 5 {
+		t.Fatalf("drew %d articles, want the 5 distinct ones", len(got))
+	}
+}
+
+// The backstop bounds a run of rounds that place nothing, and does not end the page itself.
+//
+// Composition ends when no feed has anything placeable left. That is guaranteed to be reached
+// — every feed in the running is at priority 1 or more, so it advances with at least a
+// one-in-a-hundred chance per round, and cursors only move forward — but it is guaranteed the
+// way a coin is guaranteed to come up heads eventually, and a server should not be composing a
+// page on that promise alone.
+//
+// The two halves of the guarantee, since only one of them is about the backstop: a page that
+// is slow but still drawing must run to the end regardless of how many rounds it takes, and
+// one that could spin must stop.
+func TestTheBackstopDoesNotCutShortAPageThatIsStillDrawing(t *testing.T) {
+	// A single feed at the lowest priority that is asked at all, so a round places something
+	// one time in a hundred and a full page needs several thousand rounds. Anything that
+	// bounded rounds rather than fruitless rounds would return a fraction of this page.
+	src := sources(feed("slow", 1, 300))
+
+	got := Select(src, 90, 4)
+	if len(got) != 90 {
+		t.Fatalf("a page from one feed at priority 1 came out %d articles long, want a full 90",
+			len(got))
+	}
+}
+
+// The odds are lifted to a whole round's worth, and never trimmed to one.
+func TestLiftOnlyEverRaisesTheOdds(t *testing.T) {
+	for _, tc := range []struct {
+		total int
+		want  float64
+	}{
+		{1, 100},  // one feed at 1, alone: asked every round
+		{10, 10},  // ten feeds at 1 are ten feeds at 10
+		{50, 2},   // two feeds at 25
+		{100, 1},  // exactly a round's worth: left alone
+		{1650, 1}, // a real subscription list: left alone
+	} {
+		if got := lift(tc.total); got != tc.want {
+			t.Errorf("lift(%d) = %v, want %v", tc.total, got, tc.want)
+		}
+		// The point of the lift, stated as the invariant it exists to hold.
+		if scaled := float64(tc.total) * lift(tc.total); scaled < priorityScale {
+			t.Errorf("lift(%d) leaves the round at %v, under a full %d", tc.total, scaled, priorityScale)
+		}
+	}
+}
+
+// A round comes up empty less than 1/e of the time, whatever anybody sets.
+//
+// A bound on the rate, and deliberately not a termination guarantee: empty rounds are ordinary
+// — ten feeds at 10% leave one empty about a third of the time — and nothing stops them
+// recurring. What this pins down is how often, which is what makes the expected length of a
+// composition about one round per article instead of a hundred.
+//
+// The probability a round places nothing is the product of (1 - each feed's odds); under a sum
+// of at least one that product is largest when the odds are spread thinnest, so n feeds at 1/n
+// is the worst case and it climbs towards 1/e without reaching it.
+//
+// Checked against the arithmetic rather than by sampling, so it is the bound being tested and
+// not a lucky seed.
+func TestARoundIsExpectedToPlaceAnArticle(t *testing.T) {
+	worst := 0.0
+	for _, prios := range [][]int{
+		{1},
+		{1, 1},
+		{50},
+		{100, 100},
+		{10, 25, 15, 25},
+		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+		{5, 10, 15, 30, 50, 50, 50, 60, 90, 100},
+	} {
+		// A hundred feeds at 1 is the shape that approaches the bound.
+		for range 90 {
+			prios = append(prios, 1)
+		}
+		total := 0
+		for _, p := range prios {
+			total += p
+		}
+		odds := lift(total)
+
+		empty := 1.0
+		for _, p := range prios {
+			empty *= 1 - float64(p)*odds/priorityScale
+		}
+		worst = math.Max(worst, empty)
+		if empty >= 1/math.E {
+			t.Errorf("%d feeds summing to %d leave a round empty %.4f of the time, over the 1/e bound",
+				len(prios), total, empty)
+		}
+	}
+	t.Logf("worst chance of an empty round across these shapes: %.4f (bound 1/e = %.4f)",
+		worst, 1/math.E)
+}
+
+// Only the ratios between the sliders matter, not what they are set to.
+//
+// Ten feeds at 1 and ten feeds at 50 are the same page. This is what the lift preserves — it
+// scales every live feed by one constant, and a constant cancels out of every ratio — and it is
+// the reason the lift can be a decision about how long composing takes rather than about what
+// it produces.
+func TestOnlyTheRatiosBetweenTheSlidersMatter(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		low, high []int
+	}{
+		{"all equal", []int{1, 1, 1, 1}, []int{50, 50, 50, 50}},
+		{"two to one", []int{1, 2}, []int{40, 80}},
+		{"a real page", []int{2, 5, 3, 5}, []int{10, 25, 15, 25}},
+	} {
+		share := func(prios []int) []float64 {
+			counts := make([]int, len(prios))
+			const runs, size = 300, 40
+			for seed := range runs {
+				var list []*Source
+				for i, p := range prios {
+					list = append(list, feed(fmt.Sprintf("f%d", i), p, 200))
+				}
+				for _, pick := range Select(sources(list...), size, int64(seed)) {
+					var i int
+					fmt.Sscanf(pick.Item.FeedID, "f%d", &i)
+					counts[i]++
+				}
+			}
+			out := make([]float64, len(counts))
+			for i, c := range counts {
+				out[i] = float64(c) / float64(runs*size)
+			}
+			return out
+		}
+
+		low, high := share(tc.low), share(tc.high)
+		for i := range low {
+			// Two independent Monte Carlo runs of the same distribution, so the tolerance
+			// is sampling noise rather than a fudge factor.
+			if math.Abs(low[i]-high[i]) > 0.03 {
+				t.Errorf("%s: feed %d takes %.3f of the page at %v and %.3f at %v",
+					tc.name, i, low[i], tc.low, high[i], tc.high)
+			}
+		}
 	}
 }
