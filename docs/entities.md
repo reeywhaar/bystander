@@ -772,8 +772,9 @@ the copy is written page by page with no free list, so a database that has had a
 articles pruned out of it comes back the size of what is in it. Measured on a real instance,
 315KB became 262KB.
 
-The two-database split shows up here as a policy: `main.db` is always in the archive and
-`derived.db` only when asked for. Not quite the "delete it freely" line the split is usually
+The two-database split shows up here as a policy, and `internal/backup` turns it into three
+modes: `main.db` is always in the archive, `derived.db` only when asked for, and only `main.db`
+ever decides that a copy is due. Not quite the "delete it freely" line the split is usually
 described by — `read_articles` lives in derived, so an instance restored without it offers back
 every article its owner has read. Cheap to include and worth including; still the operator's
 call, since it is the difference between a backup of the product and a backup of the cache too.

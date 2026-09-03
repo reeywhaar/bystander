@@ -62,6 +62,7 @@ var released = []struct{ name, sha string }{
 	{"20260826024458_main_account_deletion", "ae755365e789418241384e0601fc331d9ce9b7ef4ba8c3a6bc06d2399b57e3c3"},
 	{"20260828052421_main_subscription_note", "183b7199d26f5c7e43615bb0b323e074dcefb38890b26042e58780303b002319"},
 	{"20260828221340_main_recovery_links", "2f6b75bf8e77fba07247095b900589e0cc2185a2b9e0724201bb5f9b0c390225"},
+	{"20260903013756_derived_backup_state", "3f14af74dcbe2077c25d14a0bcb3ee0fabd87fbf234af6dd465b29d7e0989245"},
 }
 
 func all() []Migration {

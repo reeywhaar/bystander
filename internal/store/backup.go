@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // SnapshotFile is one database, whole, in memory.
@@ -72,4 +74,39 @@ func (s *Store) Snapshot(ctx context.Context, derived bool) ([]SnapshotFile, err
 		out = append(out, SnapshotFile{Name: source.name, Data: data})
 	}
 	return out, nil
+}
+
+// LastBackup is the digest of main.db as it was when a copy was last accepted by a backup
+// store, and when that was. A zero digest means none ever has been.
+//
+// In derived.db — see the migration — because the answer is about main.db and writing it into
+// main.db would change the thing being asked about.
+func (s *Store) LastBackup(ctx context.Context) ([]byte, time.Time, error) {
+	var (
+		digest []byte
+		at     int64
+	)
+	err := s.derived.QueryRowContext(ctx,
+		`SELECT digest, pushed_at FROM backup_state WHERE singleton = 1`).Scan(&digest, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, time.Time{}, nil
+	}
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return digest, time.Unix(at, 0).UTC(), nil
+}
+
+// RecordBackup remembers what was sent, so an unchanged database is not sent again.
+//
+// Written only after the store has accepted the archive. Recorded before, a rejected upload
+// would leave this program believing a copy exists that does not — and the next change to
+// main.db would be the only thing that ever made it try again.
+func (s *Store) RecordBackup(ctx context.Context, digest []byte, at time.Time) error {
+	_, err := s.derived.ExecContext(ctx, `
+		INSERT INTO backup_state (singleton, digest, pushed_at) VALUES (1, ?, ?)
+		ON CONFLICT (singleton) DO UPDATE SET
+			digest = excluded.digest, pushed_at = excluded.pushed_at`,
+		digest, at.UTC().Unix())
+	return err
 }

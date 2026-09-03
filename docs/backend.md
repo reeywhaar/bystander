@@ -19,7 +19,6 @@ internal/
   mail/              SMTP, and the one message this sends
   ids/               prefixed, sortable identifiers
   api/               HTTP handlers, middleware, SPA serving
-backup/              the backup sidecar: its own image, stdlib only
 web/
   dist/              the built bundle; read from disk at startup, not compiled in
 ```

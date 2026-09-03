@@ -13,7 +13,8 @@ ghcr.io/reeywhaar/bystander:latest
 | `BYSTANDER_PUBLIC_URL` | *required* | Origin for generated links, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where `main.db` and `derived.db` live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the archive carries `derived.db` too |
+| `BYSTANDER_BACKUP_URL` | unset | Where to post archives, e.g. `http://backup:8080/backup` — backio-agent's endpoint. Unset means no backups |
+| `BYSTANDER_BACKUP_MODE` | `relaxed` | `main`, `relaxed` or `all` — what the archive carries, and whether it has a floor |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
 `X-Forwarded-Host` are both client-supplied, and an invitation link built from a header a
@@ -71,8 +72,11 @@ is items and the current editions, and losing it costs one fetch cycle. That asy
 the reason for the split; see [entities.md](entities.md).
 
 Back it up with `sqlite3 main.db ".backup out.db"` or a filesystem snapshot, not `cp` — a
-plain copy of a WAL database while it is being written is a copy of an inconsistent
-moment.
+plain copy of a WAL database while it is being written is a copy of an inconsistent moment.
+
+`serve` will also do it: set `BYSTANDER_BACKUP_URL` and it posts an archive to a backio-agent
+whenever `main.db` has changed. See [Backups](../README.md#backups) for the modes and what
+each one carries.
 
 ## First run
 
@@ -126,24 +130,24 @@ CMD ["serve"]
 Split so `docker compose up` runs the daemon while `docker run --rm IMAGE invite` replaces
 the command rather than appending to it.
 
-## The backup image
+## There is no backup image any more
 
-A second image, `backup/Dockerfile`, published as `ghcr.io/reeywhaar/bystander-backup`. It
-fetches `GET /backup` on a loop, optionally encrypts with 7-Zip's AES-256, uploads, and prunes.
+There were two: the reader, and a sidecar of ours that fetched `GET /backup` from a listener on
+`:3000`, encrypted, uploaded and pruned. Both the sidecar and that listener are gone.
 
-A separate image rather than a second command in the main one: it has nothing to do with
-serving a page, it wants a different restart cadence, and keeping it out means the reader image
-gains neither 7-Zip nor a reason to hold an upload credential.
+[backio-agent](https://github.com/reeywhaar/backio) is a generic version of everything the
+sidecar did — take an archive, name it, encrypt it, upload it, prune both ends — so keeping our
+own meant building, publishing and patching an image to do somebody else's job slightly worse.
 
-It builds from the repo root so it can see `go.mod`, and skips `go mod download` — `backup/`
-imports only the standard library, checked with an empty module cache and `GOPROXY=off` rather
-than assumed. 7-Zip comes from the project's own static build pinned by checksum, not `apk add
-7zip`: the packaged binary links libstdc++, which is 2.8 MB of an image whose Go binary is a
-few, and a tarball from a web server arrives unsigned so the digest is the only thing between a
-compromised mirror and a binary that handles the backup password.
+What could not simply be deleted is the half the sidecar was doing *badly*. The agent takes a
+push and runs no schedule of its own, and a loop outside this process could only ever be a
+timer: nothing out there can know whether anything has been written since the last copy. So the
+decision moved in, where the answer is knowable — `internal/backup` builds the archive and posts
+it, and in the default mode only when `main.db` has actually changed.
 
-The schedule lives in `backup_loop.sh` rather than inside the process, so a stuck run cannot
-silently skip the next one — the container restarts instead.
+That also retired the argument for a listener on a port of its own. It existed because a
+sidecar had no browser, no login and nobody to type a password every hour; nothing fetches now,
+so there is no unauthenticated route to keep off the reader's port.
 
 ## CI
 
@@ -153,9 +157,7 @@ silently skip the next one — the container restarts instead.
 `npm test`. The Go tests run with no frontend build present; `web/dist/.gitkeep` is tracked
 precisely so they can.
 
-**publish** — needs `test`. Builds both images, the sidecar as a step on the same job so it
-reuses the checkout, QEMU, buildx and GHCR login, with a cache scope of its own because the two
-share no layers. Publishing `latest` unconditionally means a broken commit
+**publish** — needs `test`. Builds the image. Publishing `latest` unconditionally means a broken commit
 becomes the image everyone pulls, and the tests take under a minute. Builds
 `linux/amd64,linux/arm64` to GHCR with the built-in `GITHUB_TOKEN`; no secret to configure.
 QEMU is set up only for the final Alpine stage — everything expensive is pinned to

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Environment variables read by this package.
@@ -32,14 +33,19 @@ const (
 	// LogLevelEnv sets the slog level: debug, info, warn or error.
 	LogLevelEnv = "BYSTANDER_LOG_LEVEL"
 
-	// BackupDerivedEnv includes derived.db in the archive.
+	// BackupURLEnv is where a backup agent takes an archive — backio-agent's POST /backup,
+	// so on a compose network something like "http://backup:8080/backup".
 	//
-	// Off by default, which is the two-database split showing up in the backup policy:
-	// main.db cannot be recovered from anywhere and derived.db mostly can. Mostly, because
-	// read_articles lives there — an instance restored without it offers back every article
-	// its owner has already read. Worth switching on for most people; not worth deciding for
-	// them.
-	BackupDerivedEnv = "BYSTANDER_BACKUP_DERIVED"
+	// The whole address rather than a host, because the endpoint is the agent's to name and
+	// this program should not be the place that knows the path it happens to serve on today.
+	//
+	// Nothing is backed up unless this is set. There is no default, because a default would
+	// be a guess at a hostname on a network this program cannot see, and the failure it
+	// produces is a log line every few minutes about somewhere nobody meant to send anything.
+	BackupURLEnv = "BYSTANDER_BACKUP_URL"
+
+	// BackupModeEnv is what goes in the archive and what makes one happen — see [BackupMode].
+	BackupModeEnv = "BYSTANDER_BACKUP_MODE"
 
 	// WebDirEnv is where the built frontend lives.
 	//
@@ -49,9 +55,86 @@ const (
 	WebDirEnv = "BYSTANDER_WEB_DIR"
 )
 
+// BackupMode is what goes into an archive and what makes one happen.
+//
+// Two questions with three useful answers between them, rather than two switches with a
+// meaningless fourth combination. "derived only, when main changes" is not a policy anybody
+// wants, and a pair of booleans would offer it.
+type BackupMode string
+
+const (
+	// BackupMain carries main.db alone.
+	//
+	// The smallest thing worth keeping. main.db is what somebody typed — accounts, feeds,
+	// tags, pages, settings — and the one file that cannot be rebuilt from anywhere.
+	BackupMain BackupMode = "main"
+
+	// BackupRelaxed carries both, and is the default.
+	//
+	// derived.db comes along for the ride but never decides that a copy is due. What it holds
+	// is mostly rebuildable by one fetch cycle — mostly, because read_articles lives there,
+	// and an instance restored without it offers back every article its owner has already
+	// read. Cheap to carry, so carried; not worth waking up for, so it does not wake anything.
+	BackupRelaxed BackupMode = "relaxed"
+
+	// BackupAll is relaxed with a floor under it: a copy at least every [BackupAllPeriod],
+	// whether or not anybody touched a setting.
+	//
+	// The one mode that sends an archive when nothing a person did has changed. For an
+	// operator who wants what was *read* kept closely rather than as of the last time somebody
+	// added a feed — that record only ever changes by reading, which main.db never sees.
+	BackupAll BackupMode = "all"
+)
+
+// How long a copy waits, and how long an instance can go without one.
+//
+// Constants, not settings, and deliberately. Neither is a number an operator can reason about
+// better than this program can: the delay trades "how much of a burst becomes one archive"
+// against "how long a change sits uncopied", and the floor is only there to catch reading,
+// which is the one thing main.db never sees. Both have one right answer for every instance
+// this runs on, and a knob would mostly be a way to set them wrong.
+//
+// What an operator actually chooses is which of those promises they want, and that is the
+// mode.
+const (
+	// BackupDelay is how long after a change the copy goes out, in every mode.
+	//
+	// A delay and a throttle at once: nothing here reacts to a write, so somebody adding six
+	// feeds in a minute gets one archive holding all six rather than six archives.
+	BackupDelay = 5 * time.Minute
+
+	// BackupAllPeriod is how long [BackupAll] will go without sending anything.
+	BackupAllPeriod = 30 * time.Minute
+)
+
+// Valid reports whether m is a mode this program knows.
+func (m BackupMode) Valid() bool {
+	return m == BackupMain || m == BackupRelaxed || m == BackupAll
+}
+
+// Derived reports whether the archive carries derived.db.
+func (m BackupMode) Derived() bool { return m == BackupRelaxed || m == BackupAll }
+
+// Period is how long a mode will go without sending anything, or zero for no floor at all.
+//
+// Only [BackupAll] has one. Every mode sends when main.db changes; this is the extra promise
+// that one of them makes on top.
+func (m BackupMode) Period() time.Duration {
+	if m == BackupAll {
+		return BackupAllPeriod
+	}
+	return 0
+}
+
 // Defaults for everything that has one.
 const (
 	DefaultDataDir = "/data"
+
+	// DefaultBackupMode carries both databases and copies them when main.db changes.
+	//
+	// Relaxed rather than main, because derived.db is nearly free to carry and holds the one
+	// thing in it that cannot be refetched: what its owner has already read.
+	DefaultBackupMode = BackupRelaxed
 
 	// DefaultWebDir is where the image puts the bundle.
 	//
@@ -83,8 +166,10 @@ type Config struct {
 	// WebDir is the built frontend, read once at startup.
 	WebDir string
 
-	// BackupDerived is whether the archive carries derived.db as well as main.db.
-	BackupDerived bool
+	// BackupURL is where an archive is posted, or empty for no backups at all.
+	BackupURL string
+	// BackupMode is what goes in the archive, and what makes one happen.
+	BackupMode BackupMode
 
 	// Secure is whether the session cookie carries the Secure attribute, which is
 	// PublicURL being https and nothing else. Derived here rather than re-decided at
@@ -126,14 +211,15 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if v := strings.TrimSpace(os.Getenv(BackupDerivedEnv)); v != "" {
-		on, err := parseBool(BackupDerivedEnv, v)
-		if err != nil {
-			return nil, err
+	cfg.BackupURL = strings.TrimSpace(os.Getenv(BackupURLEnv))
+	cfg.BackupMode = DefaultBackupMode
+	if v := strings.TrimSpace(os.Getenv(BackupModeEnv)); v != "" {
+		mode := BackupMode(strings.ToLower(v))
+		if !mode.Valid() {
+			return nil, fmt.Errorf("%s: %q is not one of main, relaxed or all", BackupModeEnv, v)
 		}
-		cfg.BackupDerived = on
+		cfg.BackupMode = mode
 	}
-
 	return cfg, nil
 }
 

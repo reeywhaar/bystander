@@ -121,21 +121,6 @@ jobs:
           # "unknown/unknown" attestation entry beside it.
           provenance: false
 
-      # A step on this job rather than a job of its own, so it reuses the checkout, QEMU,
-      # buildx and GHCR login above. Its own cache scope because the two images share no
-      # layers — a stdlib-only Go binary and 7-Zip, against a Vite build and a SQLite driver.
-      - name: Build and push the backup sidecar
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: backup/Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository }}-backup:latest
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=backup
-          cache-to: type=gha,mode=max,scope=backup
-          provenance: false
-
       # The Dockerfile already fails the build if an entry is empty, so this is not that
       # check. It records the version in the run log, and — more usefully — proves the
       # published image actually serves the bundle rather than the "not built" placeholder,
@@ -147,11 +132,9 @@ jobs:
         run: |
           docker run --rm "$IMAGE" version
 
-          # :3000 published as well, which is the one place doing that is right — the runner
-          # has to reach it for the step below, and the container is removed at the end of it.
           docker run -d --name smoke \
             -e BYSTANDER_PUBLIC_URL=http://localhost:8080 \
-            -p 8080:80 -p 3000:3000 "$IMAGE"
+            -p 8080:80 "$IMAGE"
 
           for _ in $(seq 30); do
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
@@ -175,28 +158,14 @@ jobs:
             printf '%s' "$body" | grep -q '<div id="root">'
           done
 
-      # Its own step, against the container the step above left running, so a failure here
-      # says "the backup port" rather than "the smoke test". A backup that is not a database
-      # is the failure nobody discovers until the day they need it, which makes it worth its
-      # own line in the log.
-      - name: Smoke-test the backup port
-        run: |
-          curl -fsS -o /tmp/backup.tgz http://127.0.0.1:3000/backup
-          tar tzf /tmp/backup.tgz | grep -qx 'main.db'
-          # Not merely present: extractable, and SQLite's own magic at the front of it.
-          tar xzf /tmp/backup.tgz -C /tmp main.db
-          head -c 15 /tmp/main.db | grep -q 'SQLite format 3'
-
-          # And the route is not reachable on the reader's port, which is the whole reason
-          # it has a listener of its own.
-          if curl -fsS -o /tmp/leak http://127.0.0.1:8080/backup 2>/dev/null; then
-            if head -c 2 /tmp/leak | od -An -tx1 | grep -q '1f 8b'; then
-              echo "/backup served an archive on the reader's port"
-              exit 1
-            fi
-          fi
-
           docker rm -f smoke >/dev/null
+
+          # There is no backup port to test any more. This program posts its own archive to a
+          # backup agent rather than being fetched from, so what used to be checked here — that
+          # the archive is a real SQLite database, and that the route is not reachable on the
+          # reader's port — is checked in Go, against a receiver the test stands up. See
+          # internal/backup. A shell curl could only ever prove the weaker half.
+
 
   # A job of its own rather than steps on `publish`, because a failing `test` *skips*
   # `publish` rather than failing it, and a step in a job that never starts cannot report

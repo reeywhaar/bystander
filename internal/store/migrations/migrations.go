@@ -101,6 +101,7 @@ var Derived = []Migration{
 	derivedReadArticlesKept,
 	derivedImageRetryAt,
 	derivedReadIsNotTheEditions,
+	derivedBackupState,
 }
 
 // exec is the shape almost every migration takes: some SQL, in its own transaction.

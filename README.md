@@ -311,7 +311,8 @@ a day away.
 | `BYSTANDER_PUBLIC_URL` | *required* | The address you open in a browser, e.g. `https://read.example.com` |
 | `BYSTANDER_DATA_DIR` | `/data` | Where the two databases live |
 | `BYSTANDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `BYSTANDER_BACKUP_DERIVED` | `false` | Whether the backup archive carries `derived.db` too. See [Backups](#backups) |
+| `BYSTANDER_BACKUP_URL` | unset | Where to post archives, e.g. `http://backup:8080/backup` — backio-agent's endpoint. Unset means no backups. See [Backups](#backups) |
+| `BYSTANDER_BACKUP_MODE` | `relaxed` | `main`, `relaxed` or `all`: what the archive carries, and whether it has a floor |
 
 `BYSTANDER_PUBLIC_URL` **has to be told and cannot be inferred.** `Host` and
 `X-Forwarded-Host` are both client-supplied, and an invitation link built from a header a
@@ -350,8 +351,8 @@ settings around them, not the articles.
 not one file — it is `main.db`, `main.db-wal` and `main.db-shm`, and the committed state is
 spread across the three. Copy them at slightly different moments, which is what any file-level
 backup of a running service does, and what you have kept is a database as it never was. That is
-what the backup port below is for; `sqlite3 main.db ".backup out.db"` or a filesystem snapshot
-are the other two honest answers.
+what [Backups](#backups) below is for; `sqlite3 main.db ".backup out.db"` or a filesystem
+snapshot are the other two honest answers.
 
 Articles are kept for as long as the longest window anybody set needs — a month at least,
 a year at most, since unbounded growth is not a setting anybody meant to choose. The record
@@ -361,20 +362,76 @@ carried.
 
 ## Backups
 
-`GET /backup` returns the databases as a `.tgz`, taken with `VACUUM INTO` — so it is a
-consistent copy of a running instance, with the write-ahead log folded in and no sidecar files.
-It lives on **a listener of its own**, `:3000` inside the container, and that listener serves
-nothing else.
+This program takes its own copies and posts them to a backup agent. There is nothing to fetch
+from it and no port to protect: it used to serve `GET /backup` on a listener of its own, with a
+sidecar of ours fetching it on a loop, and both are gone.
+
+The archive is a `.tgz` of the databases taken with `VACUUM INTO` — a consistent copy of a
+running instance, with the write-ahead log folded in and no sidecar files. Entries are mode
+`0600`, named `bystander-<YYYYMMDD_HHMMSS>.tgz`.
+
+**Do not back it up with `cp`, or by `tar`-ing the volume.** A SQLite database in WAL mode is
+not one file — it is `main.db`, `main.db-wal` and `main.db-shm`, and the committed state is
+spread across the three. Copy them at slightly different moments, which is what any file-level
+backup of a running service does, and what you have kept is a database as it never was.
+`sqlite3 main.db ".backup out.db"` and a filesystem snapshot are the other two honest answers.
+
+### Where it goes
+
+[backio-agent](https://github.com/reeywhaar/backio) takes an archive at `POST /backup` and does
+the rest: naming, optional AES-256 encryption, upload to a remote, and retention on both ends.
+It is somebody else's image and it is generic, which is why this repository no longer publishes
+one of its own.
 
 ```
--e BYSTANDER_BACKUP_DERIVED=true    # include derived.db as well; default is main.db alone
+-e BYSTANDER_BACKUP_URL=http://backup:8080/backup
 ```
 
-**It is unauthenticated, so the port must never be published.** It hands over every password
-hash and session on the instance. It has a listener of its own precisely so that "not exposed"
-is a fact about your deployment rather than about a middleware being right: publishing the
-reader with `-p 8080:80` cannot reach it, and the mistake that would is `-p 3000:3000`, which
-there is no reason to write.
+**Nothing is backed up until that is set.** There is no default, because a default would be a
+guess at a hostname on a network this program cannot see.
+
+### When it goes
+
+Whenever `main.db` has changed, and at most once every five minutes. Nothing here reacts to a
+write, so somebody adding six feeds in a minute gets one archive holding all six rather than
+six archives — the delay is a throttle as much as a delay.
+
+`BYSTANDER_BACKUP_MODE` chooses what the archive carries, and whether there is a floor under
+how long the instance can go without one. It is optional.
+
+| mode | carries | sends |
+| --- | --- | --- |
+| `main` | `main.db` | when `main.db` changes |
+| `relaxed` *(default)* | both | when `main.db` changes |
+| `all` | both | when `main.db` changes, **and** at least every 30 minutes |
+
+The split follows the two databases. `main.db` is what somebody typed — accounts, feeds, tags,
+pages, settings — and cannot be rebuilt from anywhere. `derived.db` is what the machine fetched
+and mostly can be, by one fetch cycle. Mostly, because `read_articles` lives there: an instance
+restored without it offers back every article its owner has already read.
+
+That record is nearly free to carry, which is why `relaxed` is the default and why `main` is
+worth choosing only if the archive's size actually matters to you.
+
+`all` exists because of the same record from the other side: reading writes to `derived.db` and
+nothing else, so an afternoon of reading with no setting touched looks, to the change check,
+exactly like an idle instance. The floor catches it. When the floor fires it backs up and the
+clock starts again, so a change that was waiting has gone out with it.
+
+**Neither number is a setting.** Five minutes and thirty minutes are constants. The delay
+trades how much of a burst becomes one archive against how long a change sits uncopied, and the
+floor exists only to catch reading — both have one sensible answer on every instance this runs
+on, and a knob would mostly be a way to get them wrong. What there is to choose is which of
+those promises you want, and that is the mode.
+
+The first copy is taken at startup rather than five minutes in — a process that has just
+started is the one most likely to have been restarted onto a new volume.
+
+What was last accepted is remembered in `derived.db`, not `main.db`. Writing it to `main.db`
+would change `main.db`, and every check would then find a change it had caused itself. Losing
+that record costs one redundant upload.
+
+### Restoring
 
 Restoring is extracting, and there is no `POST /restore`. Stop the container first, because
 writing over a live data directory corrupts it:
@@ -386,50 +443,11 @@ docker start bystander
 ```
 
 A restored instance that finds an account in `main.db` does not mint a new invitation, so
-signing in works immediately. If you left `derived.db` out, the reader refetches and composes a
-fresh page — and offers back everything you had already read, because that record lives there.
+signing in works immediately. If the archive carried no `derived.db`, the reader refetches and
+composes a fresh page — and offers back everything you had already read, because that record
+lives there.
 
-### The sidecar
-
-`ghcr.io/reeywhaar/bystander-backup` fetches that archive on a loop, optionally encrypts it
-with AES-256, uploads it to [backio](https://github.com/Reeywhaar/backio), and prunes old
-copies. It never has to be reachable from outside either.
-
-| variable | default | what |
-| --- | --- | --- |
-| `BYSTANDER_URL` | `http://bystander:3000` | where the backup listener is |
-| `BACKUP_INTERVAL` | `3600` | seconds between backups |
-| `BACKUP_DIR` | `/backups` | where local copies are kept; set it and copies are always kept there |
-| `BACKUP_PASSWORD` | unset | when set, keep and upload a 7-Zip AES-256 `.zip` instead of the plain `.tgz` |
-| `BACKUP_TOKEN` | unset | backio token; **unset means local copies only, no upload** |
-| `BACKIO_SUBDIRECTORY` | required *when uploading* | remote directory; must match the token's grant |
-| `BACKIO_URL` | `http://backio:8080` | backio |
-| `BACKIO_PROVIDER` | `gdrive` | rclone remote name |
-
-Archives are named `bystander-<YYYYMMDD_HHMMSS>.<tgz|zip>`, mode `0600`.
-
-**Mount nothing at `/backups` and no local copies are kept at all.** The image does not create
-that directory, and Docker creates a mount target the image is missing — so the directory
-exists exactly when a volume is mounted over it. Without one, each archive goes to a temp
-directory the run deletes once the upload is done, because a copy in the container's writable
-layer would vanish with the container anyway, which is the one moment a local copy would have
-earned its keep. With neither a volume nor a `BACKUP_TOKEN` there is nowhere to put the
-archive, and the run says so and exits non-zero rather than backing up to nothing.
-
-**Retention, applied to the local directory and the remote alike:** the three newest archives
-from the newest day, the newest archive of each of the three newest days, and the newest
-archive of the previous week and the previous month. Seven at most, whatever the interval.
-
-Every slot is a calendar bucket keeper — the newest archive of a day, an ISO week, a month —
-rather than an archive of a given age. A bucket's keeper is settled once the bucket ends, so
-each run prunes to the same set the last one did, and the week and month slots hold real week-
-and month-old copies instead of whatever the first run happened to pin.
-
-Pruning the remote needs `read` and `delete` on the backio token. With a `create`-only token
-the uploads still work and the remote simply is not pruned.
-
-`BACKUP_PASSWORD` is worth setting when the remote is not yours — but the password is not kept
-anywhere, so an archive whose passphrase is lost is an archive nobody can open.
+### Together
 
 ```yaml
 services:
@@ -437,29 +455,34 @@ services:
     image: ghcr.io/reeywhaar/bystander:latest
     environment:
       BYSTANDER_PUBLIC_URL: https://read.example.com
-      BYSTANDER_BACKUP_DERIVED: "true"
+      BYSTANDER_BACKUP_URL: http://backup:8080/backup
     volumes:
       - bystander-data:/data
     ports:
-      - "8080:80"          # the reader. :3000 is deliberately NOT published.
+      - "8080:80"
 
   backup:
-    image: ghcr.io/reeywhaar/bystander-backup:latest
+    image: ghcr.io/reeywhaar/backio-agent:latest
+    restart: unless-stopped
     environment:
-      BYSTANDER_URL: http://bystander:3000
-      BACKUP_INTERVAL: "3600"
-      BACKUP_PASSWORD: a-long-passphrase   # optional; without it the .tgz is kept as-is
-    volumes:
-      - bystander-backups:/backups
+      BACKIO_HOST: http://backio:8080
+      BACKIO_PROVIDER: gdrive
+      BACKIO_SUBDIRECTORY: bystander/production
+      BACKIO_TOKEN: "<issued by backio>"
+      BACKUP_PASSWORD: a-long-passphrase   # optional AES-256
+    networks: [default, backup-net]
 
 volumes:
   bystander-data:
-  bystander-backups:
+
+networks:
+  backup-net:
+    external: true
 ```
 
-That is a local-only setup, and it is complete: the two containers share a network, the sidecar
-reaches `:3000` across it, and nothing is published but the reader. To send copies off the host
-as well, add `BACKUP_TOKEN` and `BACKIO_SUBDIRECTORY` and point `BACKIO_URL` at a backio.
+The reader is the only thing published. See backio-agent's own README for its retention
+settings and for how a token is issued; a passphrase it encrypts with is not kept anywhere, so
+an archive whose passphrase is lost is an archive nobody can open.
 
 ## What it deliberately does not do
 

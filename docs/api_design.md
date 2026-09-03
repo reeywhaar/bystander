@@ -477,44 +477,34 @@ asked about yet — a queue that has not caught up, not a failure. `POST .../ret
 `image_retry_at` for one reason, or for all of them, and the queue picks them up on its next
 sweep.
 
-## The backup port
+## There is no backup endpoint
 
-`GET /backup` lives on **a listener of its own**, `:3000` inside the container, and is the only
-route that listener serves. It is not reachable on the reader's port at all, and the reader's
-routes are not reachable on it. Fixed rather than configurable, like the reader's own port: a
-port number inside a container is not a thing an operator should have to think about twice.
+There was: `GET /backup` on a listener of its own at `:3000`, unauthenticated, meant for a
+sidecar on a private network. It and the sidecar are both gone — this program posts its own
+archive to a [backio-agent](https://github.com/reeywhaar/backio) now, and nothing fetches from
+it. See [Backups](../README.md#backups) for the modes, and `internal/backup` for why the
+decision of *when* had to move inside the process.
 
-```sh
-curl -O -J http://bystander:3000/backup
-```
+That removed an unauthenticated route rather than defending one, which is the better outcome of
+the two. The listener existed because its client was a container with no browser, no login and
+nobody to type a password every hour, and a credential whose only purpose is to be read by a
+process on the same private network is a lock on a door inside the house. Nothing needs reading
+now.
 
-`200` with `Content-Type: application/gzip`, an accurate `Content-Length`, and
-`Content-Disposition: attachment; filename="bystander-<YYYYMMDD_HHMMSS>.tgz"`. The archive
-mirrors the data directory, so restoring is extracting it over the mount:
+The archive itself is unchanged, and still mirrors the data directory so that restoring is
+extracting it over the mount:
 
 | member | when |
 | --- | --- |
 | `main.db` | always |
-| `derived.db` | when `BYSTANDER_BACKUP_DERIVED` is set |
+| `derived.db` | in the `relaxed` (the default) and `all` modes |
 
 Every member is a regular file with mode `0600` — the archive carries every password hash on
 the instance. There are no directory entries, so extracting cannot re-chmod a data directory
-that already exists.
-
-The archive is assembled in memory before the response starts, so a `200` is never a partial
-backup. Both databases are produced with `VACUUM INTO`, which is the whole reason this is an
-endpoint rather than a `tar` over the volume: a WAL database is three files with the committed
-state spread across them, so a file-level copy of a running instance is a copy of a moment that
-never existed.
-
-**Unauthenticated, so the port must never be published.** Publishing the reader with
-`-p 8080:80` cannot reach it; the mistake that would is `-p 3000:3000`, and there is no reason
-to write it. Publishing it hands every password
-hash and session to anyone who can reach the host. It is meant for a sibling container on a
-private network. There is no token because the client is a container with no browser and nobody
-to type one — a credential whose only purpose is to be read by a process on the same private
-network is a lock on a door inside the house. A listener of its own is what makes "not exposed"
-a property of the deployment rather than of a middleware being right.
+that already exists. Both databases are produced with `VACUUM INTO`, which is the whole reason
+this is not a `tar` over the volume: a WAL database is three files with the committed state
+spread across them, so a file-level copy of a running instance is a copy of a moment that never
+existed.
 
 Restore is an extract, not an endpoint — there is no `POST /restore`. Stop the service first,
 because writing over a live data directory corrupts it.
