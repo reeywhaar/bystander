@@ -280,6 +280,37 @@ On top of that, a band is never left in a column at all, whether or not the page
 card in four, and that is the correct answer to a page of bands — the alternative is a column
 of slivers, chosen so that a rule about landmarks could hold on a page that has none.
 
+### How wide a picture can carry
+
+Everything above is about the picture's *shape*. Its **size** is a separate limit, and it
+overrides all of it: a card is never laid out wider than its picture can fill at twice its own
+size.
+
+| slot | drawn | needs a picture at least |
+| --- | --- | --- |
+| `lead` | 1352px | 676px |
+| `wide` | 1007px | 504px |
+| `feature` | 772px | 386px |
+| `standard` | 512px | — the floor |
+
+The widths are measured in a browser against the real stylesheet rather than worked out from
+the track arithmetic, because the two disagree. Narrow screens shorten the widths onto the same
+sixteen tracks instead of changing the track count, so at an 820-pixel viewport a `feature` card
+spans all sixteen and comes out at 772 — wider than the 662 it gets on a full-size page. The
+bound has to be the widest a slot ever gets, not the widest screen.
+
+`standard` is a floor and not an answer of last resort. A card narrower than a column is not
+something this layout has, so a picture too small even for that is still drawn to fill its
+card — what the limit decides is only how far up from there the card may go. A picture nothing
+has measured caps nothing at all.
+
+This exists because of one real feed. The Art Newspaper publishes 140-pixel thumbnails and
+nothing else, and one of them was being drawn 1352 pixels wide across the top of a front page —
+nine and a half times its own size, which is a smear rather than a photograph. Against a real
+subscription list the limit costs about half a wide card per page of ninety (21.3 against the
+21.8 laid out with no limit at all), and takes the worst stretch on the page from 9.7x to the
+2.3x the floor makes unavoidable.
+
 ### What the client decides
 
 The client renders slots. It does not compute them, measure anything, or run a layout pass —

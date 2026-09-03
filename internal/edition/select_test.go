@@ -749,3 +749,97 @@ func TestOnlyTheRatiosBetweenTheSlidersMatter(t *testing.T) {
 		}
 	}
 }
+
+// A picture is never drawn much bigger than it is.
+//
+// A feed publishing 140-pixel thumbnails — a real one, and it publishes nothing else — was
+// having them drawn 1352 pixels wide across the top of a page. Nine and a half times, which is
+// not a soft photograph, it is a smear where a photograph should be.
+func TestASmallPictureDoesNotGetAWideCard(t *testing.T) {
+	// The thumbnail, at the size the feed actually serves.
+	tiny := slotsFrom(t, shaped("thumb", 50, 200, 140, 93), 12)
+	for _, slot := range wideSlots {
+		if tiny[slot] != 0 {
+			t.Errorf("a 140px picture was laid out in a %s card, which is drawn %dpx wide (%.1fx)",
+				slot, slotWidth[slot], float64(slotWidth[slot])/140)
+		}
+	}
+
+	// The floor, which is the other half of the rule: it stays a card with a picture in it
+	// rather than losing the picture or being squeezed narrower than a column.
+	if tiny[store.SlotStandard] == 0 {
+		t.Error("a small picture left no ordinary cards at all")
+	}
+	if tiny[store.SlotBrief] != 0 {
+		t.Error("a small picture cost a card its picture; the cap decides width, not whether")
+	}
+
+	// And a picture with the resolution to carry the page still carries it.
+	big := slotsFrom(t, shaped("big", 50, 200, 2400, 1600), 12)
+	for _, slot := range wideSlots {
+		if big[slot] == 0 {
+			t.Errorf("a 2400px picture never reached a %s card", slot)
+		}
+	}
+}
+
+// The widest slot a picture can carry, at each of the steps.
+func TestWidestSlotForFollowsTheResolution(t *testing.T) {
+	for _, tc := range []struct {
+		what string
+		w    int
+		want store.Slot
+	}{
+		{"a 140px thumbnail", 140, store.SlotStandard},
+		{"just under a feature", 385, store.SlotStandard},
+		{"exactly a feature", 386, store.SlotFeature},
+		{"just under wide", 503, store.SlotFeature},
+		{"exactly wide", 504, store.SlotWide},
+		{"just under a lead", 675, store.SlotWide},
+		{"exactly a lead", 676, store.SlotLead},
+		{"an ordinary photograph", 2000, store.SlotLead},
+	} {
+		item := &store.Item{ImageURL: "https://example.com/i.jpg", ImageWidth: tc.w, ImageHeight: tc.w}
+		got := widestSlotFor(item)
+		if got != tc.want {
+			t.Errorf("%s (%dpx): widest is %s, want %s", tc.what, tc.w, got, tc.want)
+		}
+		// However wide it ends up, it is never drawn past the bound.
+		if scale := float64(slotWidth[got]) / float64(tc.w); got != store.SlotStandard && scale > maxUpscale {
+			t.Errorf("%s (%dpx) in a %s card is %.2fx, past the %.1fx bound", tc.what, tc.w, got, scale, maxUpscale)
+		}
+	}
+
+	// Nothing to go on caps nothing: an unmeasured picture, and a card with no picture at all,
+	// are both laid out exactly as they were before this rule existed.
+	for _, item := range []*store.Item{
+		{ImageURL: "https://example.com/i.jpg"},
+		{ImageURL: "https://example.com/i.jpg", ImageWidth: 0, ImageHeight: 0},
+		{},
+		nil,
+	} {
+		if got := widestSlotFor(item); got != store.SlotLead {
+			t.Errorf("%+v was capped at %s; an unmeasured picture caps nothing", item, got)
+		}
+	}
+}
+
+// A band too small to be widened stays in its column.
+//
+// The band rule is a floor on width, and this is the one thing that overrides it: a 300px band
+// stretched to half a page is a mistake at both jobs at once, where the same file drawn sharp
+// in a column is at least a band.
+func TestASmallBandStaysInItsColumn(t *testing.T) {
+	tiny := slotsFrom(t, shaped("smallband", 50, 200, 300, 60), 12)
+	if tiny[store.SlotFeature] != 0 || tiny[store.SlotWide] != 0 || tiny[store.SlotLead] != 0 {
+		t.Errorf("a 300px band was widened anyway: lead %d, wide %d, feature %d",
+			tiny[store.SlotLead], tiny[store.SlotWide], tiny[store.SlotFeature])
+	}
+
+	// A band with the resolution for it is still promoted, which is the rule this must not
+	// have quietly repealed.
+	big := slotsFrom(t, shaped("bigband", 50, 200, 2000, 200), 12)
+	if big[store.SlotStandard] != 0 {
+		t.Errorf("%d bands were left in a column despite being 2000px wide", big[store.SlotStandard])
+	}
+}

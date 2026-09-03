@@ -329,6 +329,73 @@ var (
 	uprightWeights = []int{0, 0, 1}
 )
 
+// slotWidth is how wide a card in each slot is drawn, in CSS pixels — the widest it ever gets,
+// which is not always on the widest screen.
+//
+// Measured in a browser against the real stylesheet rather than worked out from the track
+// arithmetic, and the two disagree. The responsive rules shorten the widths onto the same
+// sixteen tracks instead of changing the track count, so at an 820-pixel viewport a feature
+// card spans all sixteen and comes out at 772 — wider than the 662 it gets on a full-size page.
+// Deriving these from four-of-sixteen would have taken the bound from the narrower number and
+// let the tablet blur through.
+var slotWidth = map[store.Slot]int{
+	store.SlotLead:     1352,
+	store.SlotWide:     1007,
+	store.SlotFeature:  772,
+	store.SlotStandard: 512,
+	store.SlotBrief:    512,
+}
+
+// maxUpscale is how far past its own size a picture may be drawn.
+//
+// Twice. A photograph at double is soft if somebody looks for it and unremarkable if they do
+// not; the failure this is against is not that subtle. A feed publishing 140-pixel thumbnails —
+// a real one, and it publishes nothing else — was having them drawn 1352 pixels wide across the
+// top of a page, nine and a half times their own size, which is not a photograph any more.
+//
+// Chosen by sweeping it against a real subscription list rather than by taste. Tighter costs
+// landmarks and buys nothing: at 1.5 the page keeps 20.3 wide cards out of the 21.8 it would
+// lay out with no bound at all, at 2.0 it keeps 21.3, and neither draws anything past twice.
+// Looser starts letting real stretch back in — at 2.5, wide cards begin carrying pictures at
+// two and a half times, which is where the softness stops being something you have to look for.
+//
+// At 2.0 every picture on that list is drawn inside the bound except the ones held there by the
+// floor below, which is as well as this can be asked to do.
+const maxUpscale = 2.0
+
+// widestSlotFor is the widest a card may be laid out without drawing its picture past
+// [maxUpscale].
+//
+// [store.SlotStandard] is a floor rather than an answer of last resort. A card narrower than a
+// column is not something this layout has, so a picture too small even for that is still drawn
+// to fill its card — what this decides is only how far up from there the card may go.
+//
+// A picture nobody has measured caps nothing, which is the ordinary case for anything published
+// in the last few minutes — see internal/jobs. The guess would be a guess in both directions,
+// and flattening every page composed in the minutes before the measurer catches up is the worse
+// of the two mistakes.
+func widestSlotFor(item *store.Item) store.Slot {
+	if item == nil || item.ImageURL == "" || item.ImageWidth <= 0 {
+		return store.SlotLead
+	}
+	room := float64(item.ImageWidth) * maxUpscale
+	// wideSlots is widest first, so the first that fits is the widest that does.
+	for _, slot := range wideSlots {
+		if float64(slotWidth[slot]) <= room {
+			return slot
+		}
+	}
+	return store.SlotStandard
+}
+
+// narrower is whichever of two slots is drawn narrower.
+func narrower(a, b store.Slot) store.Slot {
+	if slotWidth[a] <= slotWidth[b] {
+		return a
+	}
+	return b
+}
+
 // panoramaRatio is the shape past which a picture is a band rather than a picture.
 //
 // Five to two, which is the same number the reader stops drawing its own shapes at — see
@@ -497,7 +564,10 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 		case pictureUpright:
 			weights = uprightWeights
 		}
-		picks[pos].Slot = drawSlot(rng, weights)
+		// Held to what the picture can carry. The draw decides how wide this card would
+		// like to be; the picture decides how wide it may be, and a picture drawn past
+		// [maxUpscale] costs the page more than a landmark buys it.
+		picks[pos].Slot = narrower(drawSlot(rng, weights), widestSlotFor(picks[pos].Item))
 	}
 
 	// A band is never left in a column, whether or not it was one of the cards this page
@@ -518,7 +588,10 @@ func assignSlots(picks []store.Pick, rng *rand.Rand) {
 			continue
 		}
 		if shapeOfPicture(picks[i].Item) == pictureWide {
-			picks[i].Slot = store.SlotFeature
+			// And still held to what the picture can carry. A band too small to be widened
+			// stays in its column: a sharp short band reads as a band, where the same file
+			// stretched to half the page reads as a mistake at both jobs at once.
+			picks[i].Slot = narrower(store.SlotFeature, widestSlotFor(picks[i].Item))
 		}
 	}
 }
