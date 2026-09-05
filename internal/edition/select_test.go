@@ -566,13 +566,12 @@ func TestADeepFeedDoesNotInheritWhatAThinOneCannotFill(t *testing.T) {
 	}
 }
 
-// A round that places nothing does not end the page.
+// A page whose feeds are all set quiet still fills.
 //
-// Ten feeds at priority 1 come up empty on almost every round, and a loop that stopped when a
-// round placed nothing would return a nearly empty page for a subscription list that is merely
-// set quiet. What ends the composition is a round in which no feed had anything left to be
-// asked for, which is a different question.
-func TestAnEmptyRoundIsNotTheEndOfThePage(t *testing.T) {
+// Priorities are lengths on a line and the line is rebuilt from whoever is left, so what
+// matters is their ratios to each other and never what they are set to. Ten feeds at 1 divide
+// the line into ten equal stretches exactly as ten feeds at 50 would.
+func TestAPageOfQuietFeedsStillFills(t *testing.T) {
 	list := make([]*Source, 0, 10)
 	for i := range 10 {
 		list = append(list, feed(fmt.Sprintf("q%d", i), 1, 100))
@@ -608,106 +607,11 @@ func TestAFeedOfNothingButDuplicatesTerminates(t *testing.T) {
 	}
 }
 
-// The backstop bounds a run of rounds that place nothing, and does not end the page itself.
-//
-// Composition ends when no feed has anything placeable left. That is guaranteed to be reached
-// — every feed in the running is at priority 1 or more, so it advances with at least a
-// one-in-a-hundred chance per round, and cursors only move forward — but it is guaranteed the
-// way a coin is guaranteed to come up heads eventually, and a server should not be composing a
-// page on that promise alone.
-//
-// The two halves of the guarantee, since only one of them is about the backstop: a page that
-// is slow but still drawing must run to the end regardless of how many rounds it takes, and
-// one that could spin must stop.
-func TestTheBackstopDoesNotCutShortAPageThatIsStillDrawing(t *testing.T) {
-	// A single feed at the lowest priority that is asked at all, so a round places something
-	// one time in a hundred and a full page needs several thousand rounds. Anything that
-	// bounded rounds rather than fruitless rounds would return a fraction of this page.
-	src := sources(feed("slow", 1, 300))
-
-	got := Select(src, 90, 4)
-	if len(got) != 90 {
-		t.Fatalf("a page from one feed at priority 1 came out %d articles long, want a full 90",
-			len(got))
-	}
-}
-
-// The odds are lifted to a whole round's worth, and never trimmed to one.
-func TestLiftOnlyEverRaisesTheOdds(t *testing.T) {
-	for _, tc := range []struct {
-		total int
-		want  float64
-	}{
-		{1, 100},  // one feed at 1, alone: asked every round
-		{10, 10},  // ten feeds at 1 are ten feeds at 10
-		{50, 2},   // two feeds at 25
-		{100, 1},  // exactly a round's worth: left alone
-		{1650, 1}, // a real subscription list: left alone
-	} {
-		if got := lift(tc.total); got != tc.want {
-			t.Errorf("lift(%d) = %v, want %v", tc.total, got, tc.want)
-		}
-		// The point of the lift, stated as the invariant it exists to hold.
-		if scaled := float64(tc.total) * lift(tc.total); scaled < priorityScale {
-			t.Errorf("lift(%d) leaves the round at %v, under a full %d", tc.total, scaled, priorityScale)
-		}
-	}
-}
-
-// A round comes up empty less than 1/e of the time, whatever anybody sets.
-//
-// A bound on the rate, and deliberately not a termination guarantee: empty rounds are ordinary
-// — ten feeds at 10% leave one empty about a third of the time — and nothing stops them
-// recurring. What this pins down is how often, which is what makes the expected length of a
-// composition about one round per article instead of a hundred.
-//
-// The probability a round places nothing is the product of (1 - each feed's odds); under a sum
-// of at least one that product is largest when the odds are spread thinnest, so n feeds at 1/n
-// is the worst case and it climbs towards 1/e without reaching it.
-//
-// Checked against the arithmetic rather than by sampling, so it is the bound being tested and
-// not a lucky seed.
-func TestARoundIsExpectedToPlaceAnArticle(t *testing.T) {
-	worst := 0.0
-	for _, prios := range [][]int{
-		{1},
-		{1, 1},
-		{50},
-		{100, 100},
-		{10, 25, 15, 25},
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		{5, 10, 15, 30, 50, 50, 50, 60, 90, 100},
-	} {
-		// A hundred feeds at 1 is the shape that approaches the bound.
-		for range 90 {
-			prios = append(prios, 1)
-		}
-		total := 0
-		for _, p := range prios {
-			total += p
-		}
-		odds := lift(total)
-
-		empty := 1.0
-		for _, p := range prios {
-			empty *= 1 - float64(p)*odds/priorityScale
-		}
-		worst = math.Max(worst, empty)
-		if empty >= 1/math.E {
-			t.Errorf("%d feeds summing to %d leave a round empty %.4f of the time, over the 1/e bound",
-				len(prios), total, empty)
-		}
-	}
-	t.Logf("worst chance of an empty round across these shapes: %.4f (bound 1/e = %.4f)",
-		worst, 1/math.E)
-}
-
 // Only the ratios between the sliders matter, not what they are set to.
 //
-// Ten feeds at 1 and ten feeds at 50 are the same page. This is what the lift preserves — it
-// scales every live feed by one constant, and a constant cancels out of every ratio — and it is
-// the reason the lift can be a decision about how long composing takes rather than about what
-// it produces.
+// Ten feeds at 1 and ten feeds at 50 are the same page. Priorities are lengths on a line and
+// the line is measured against its own total, so what a slider is set to never matters on its
+// own — only what it is set to relative to the others.
 func TestOnlyTheRatiosBetweenTheSlidersMatter(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -841,5 +745,68 @@ func TestASmallBandStaysInItsColumn(t *testing.T) {
 	big := slotsFrom(t, shaped("bigband", 50, 200, 2000, 200), 12)
 	if big[store.SlotStandard] != 0 {
 		t.Errorf("%d bands were left in a column despite being 2000px wide", big[store.SlotStandard])
+	}
+}
+
+// Composing a page is bounded work, not a wager.
+//
+// Every turn around the fill loop does exactly one of two things: it places an article, or it
+// finds the feed it landed on has nothing left and takes it off the line. So a band cannot run
+// longer than size+len(feeds) turns, whatever the sliders say and however the queues fall.
+//
+// That is the whole reason this replaced a round robin. A round there asked every feed at its
+// own odds and could legitimately place nothing, so the work had no bound but a backstop at ten
+// thousand fruitless rounds, justified by an argument about 1/e rather than by a count.
+//
+// A break in that property does not show up as a wrong answer — it shows up as this test never
+// returning, which `go test` reports as a timeout. So the shapes below are the awkward ones:
+// queues that empty immediately, pages far larger than the pool, and feeds whose whole queue is
+// articles another feed already placed.
+func TestComposingAPageIsBoundedWork(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		list       []*Source
+		size, want int
+	}{
+		{"a page far larger than the pool", []*Source{feed("a", 50, 3), feed("b", 50, 2)}, 400, 5},
+		{"every feed holding one article", func() []*Source {
+			var l []*Source
+			for i := range 60 {
+				l = append(l, feed(fmt.Sprintf("f%d", i), 1+i%100, 1))
+			}
+			return l
+		}(), 200, 60},
+		{"one feed at the lowest priority there is", []*Source{feed("slow", 1, 300)}, 200, 200},
+		{"many feeds, all quiet, all deep", func() []*Source {
+			var l []*Source
+			for i := range 80 {
+				l = append(l, feed(fmt.Sprintf("f%d", i), 1, 40))
+			}
+			return l
+		}(), 200, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for seed := range 50 {
+				if got := Select(sources(tc.list...), tc.size, int64(seed)); len(got) != tc.want {
+					t.Fatalf("seed %d drew %d articles, want %d", seed, len(got), tc.want)
+				}
+			}
+		})
+	}
+
+	// The two feeds carry the same five links and nothing else, so most turns find the feed
+	// they landed on holding only articles already placed. Under a loop that waited for every
+	// queue to empty by luck rather than by removal, this is the shape that would spin.
+	own := &Source{FeedID: "own", Priority: 50}
+	mirror := &Source{FeedID: "mirror", Priority: 1}
+	for i := range 5 {
+		link := fmt.Sprintf("https://example.com/p/%d", i)
+		own.Fresh = append(own.Fresh, &store.Item{ID: fmt.Sprintf("o%d", i), FeedID: "own", Link: link})
+		mirror.Fresh = append(mirror.Fresh, &store.Item{ID: fmt.Sprintf("m%d", i), FeedID: "mirror", Link: link})
+	}
+	for seed := range 200 {
+		if got := Select(sources(own, mirror), 500, int64(seed)); len(got) != 5 {
+			t.Fatalf("seed %d drew %d articles, want the 5 distinct ones", seed, len(got))
+		}
 	}
 }
