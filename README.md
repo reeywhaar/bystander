@@ -392,9 +392,20 @@ guess at a hostname on a network this program cannot see.
 
 ### When it goes
 
-Whenever `main.db` has changed, and at most once every five minutes. Nothing here reacts to a
-write, so somebody adding six feeds in a minute gets one archive holding all six rather than
-six archives — the delay is a throttle as much as a delay.
+Whenever something in `main.db` **that somebody typed** has changed, and at most once every five
+minutes. Nothing here reacts to a write, so somebody adding six feeds in a minute gets one
+archive holding all six rather than six archives — the delay is a throttle as much as a delay.
+
+"That somebody typed" is doing real work in that sentence. This used to hash the whole of
+`main.db`, which is the wrong question: every fetch of every feed rewrites that feed's `etag`
+and its timestamps, so on an instance with fifty-five feeds the file differs about twelve times
+an hour — roughly two five-minute windows in three. A full backup went out each time, all day,
+because publishers had been asked whether they had anything new.
+
+So the fingerprint is over the content, and it leaves out what the machine writes down as it
+works: a feed's fetch bookkeeping, the job queue, when a session was last used, when a page's
+next edition is due. All of it still travels in every archive — an archive is the whole file —
+it just is not on its own a reason to send one.
 
 `BYSTANDER_BACKUP_MODE` chooses what the archive carries, and whether there is a floor under
 how long the instance can go without one. It is optional.

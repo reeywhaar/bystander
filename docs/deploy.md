@@ -75,7 +75,7 @@ Back it up with `sqlite3 main.db ".backup out.db"` or a filesystem snapshot, not
 plain copy of a WAL database while it is being written is a copy of an inconsistent moment.
 
 `serve` will also do it: set `BYSTANDER_BACKUP_URL` and it posts an archive to a backio-agent
-whenever `main.db` has changed. See [Backups](../README.md#backups) for the modes and what
+whenever something somebody typed into `main.db` has changed. See [Backups](../README.md#backups) for the modes and what
 each one carries.
 
 ## First run

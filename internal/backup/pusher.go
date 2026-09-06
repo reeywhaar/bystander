@@ -102,32 +102,36 @@ func (p *Pusher) Once(ctx context.Context) error {
 		return err
 	}
 
-	// main.db alone is snapshotted first, and only to be hashed.
+	// What is *in* main.db that somebody typed, rather than what the file looks like.
 	//
-	// The question is what is *in* main.db, and there is nothing cheaper that answers it: an
-	// mtime moves for a write that changed nothing, and a page count is shared by databases
-	// that differ. `VACUUM INTO` is the read either way. Doing it on main alone means an
-	// instance carrying derived.db is not rebuilding it every five minutes to find out
-	// whether anybody touched a setting.
-	probe, err := Build(ctx, p.Store, false, now)
+	// The file is the wrong question and asking it was the bug: every fetch of every feed
+	// rewrites that feed's etag and timestamps, so on an instance with fifty-odd feeds the
+	// file differs in about two five-minute windows out of three, and a full backup went out
+	// each time because a publisher had been asked whether it had anything new. See
+	// [store.Store.DurableDigest] for what is left out and why.
+	//
+	// Cheaper as well as more accurate. This used to snapshot main.db with `VACUUM INTO`
+	// purely to hash the result and throw it away — a whole copy of the database written every
+	// five minutes to answer a question about a handful of small tables.
+	current, err := p.Store.DurableDigest(ctx)
 	if err != nil {
 		return err
 	}
-	changed := !bytes.Equal(last, probe.Digest)
+	changed := !bytes.Equal(last, current)
 
 	// And the floor, which only "all" has. It is what catches the one thing main.db never
 	// sees: reading. An article marked read writes to derived.db and nothing else, so an
 	// instance where somebody read all afternoon and changed no setting looks, from here,
 	// exactly like an idle one.
 	//
-	// A push clears both at once. The digest it records is the one the probe just took, so
-	// the change that was waiting for its delay has been sent — there is nothing left
-	// pending, and the floor starts again from now.
+	// A push clears both at once. The digest it records is the one taken above, so the change
+	// that was waiting for its delay has been sent — there is nothing left pending, and the
+	// floor starts again from now.
 	period := p.Mode.Period()
 	due := period > 0 && !at.IsZero() && now.Sub(at) >= period
 
 	if !changed && !due {
-		p.Log.Debug("nothing to back up; main.db is as it was",
+		p.Log.Debug("nothing to back up; nothing has been typed since the last one",
 			"since", at.Format(time.RFC3339), "floor", period)
 		return nil
 	}
@@ -144,8 +148,8 @@ func (p *Pusher) Once(ctx context.Context) error {
 
 	// Only now. Recorded before the agent accepted it, a rejected upload would leave this
 	// program believing a copy exists that does not — and in the change-driven modes the next
-	// write to main.db would be the only thing that ever made it try again.
-	if err := p.Store.RecordBackup(ctx, archive.Digest, now); err != nil {
+	// change would be the only thing that ever made it try again.
+	if err := p.Store.RecordBackup(ctx, current, now); err != nil {
 		return err
 	}
 

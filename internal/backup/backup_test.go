@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -381,4 +382,125 @@ func TestNoAddressMeansNoBackups(t *testing.T) {
 	cancel()
 	// Returns rather than blocking on a timer, which is what makes it safe to always start.
 	p.Run(ctx)
+}
+
+// Polling a publisher is not a reason to send the database somewhere.
+//
+// This is the whole of the bug this file's digest exists to avoid. Every fetch of every feed
+// rewrites that feed's etag and its timestamps, so main.db as a *file* differs constantly: on a
+// real instance of fifty-five feeds, about twelve writes an hour, which is roughly two
+// five-minute windows in three. Hashing the file therefore sent a complete backup every ten
+// minutes or so, all day, because publishers were being asked whether they had anything new.
+func TestAskingAPublisherIsNotAChange(t *testing.T) {
+	ctx := t.Context()
+	st := testStore(t)
+	agent := &received{}
+	p := pusher(t, st, agent.server(t).URL, config.BackupRelaxed)
+
+	feed, err := st.UpsertFeed(ctx, "https://example.com/feed", "Example", "https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first pass sends, because nothing has been kept anywhere yet.
+	if err := p.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if agent.count() != 1 {
+		t.Fatalf("%d archives after the first pass, want 1", agent.count())
+	}
+
+	// Now poll it, over and over, exactly as the fetcher does.
+	for i := range 20 {
+		next := time.Now().Add(time.Duration(i+1) * time.Minute)
+		if err := st.RecordSuccess(ctx, feed.ID, "Example", "https://example.com",
+			fmt.Sprintf(`W/"%d"`, i), time.Now().Format(time.RFC1123), 200,
+			30*time.Minute, next); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if agent.count() != 1 {
+		t.Errorf("%d archives after twenty fetches, want 1 — polling is not typing", agent.count())
+	}
+
+	// A failure is the same kind of nothing: a status, a message, a backoff.
+	for i := range 5 {
+		if err := st.RecordFailure(ctx, feed.ID, 503, "the server answered 503", "",
+			time.Now().Add(time.Duration(i+1)*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if agent.count() != 1 {
+		t.Errorf("%d archives after five failed fetches, want 1", agent.count())
+	}
+
+	// And the thing that must still get through: a publisher renaming itself is written by
+	// the same call, and is worth keeping.
+	if err := st.RecordSuccess(ctx, feed.ID, "Example, renamed", "https://example.com",
+		`W/"new"`, "", 200, 30*time.Minute, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if agent.count() != 2 {
+		t.Errorf("%d archives, want 2 — the feed's name changed", agent.count())
+	}
+}
+
+// The other things the machine writes to main.db as it works.
+func TestWhatElseDoesNotCountAsAChange(t *testing.T) {
+	ctx := t.Context()
+	st := testStore(t)
+	agent := &received{}
+	p := pusher(t, st, agent.server(t).URL, config.BackupRelaxed)
+
+	principal, err := st.CreatePrincipal(ctx, "alice", "correct-horse", store.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before := agent.count()
+
+	// Work in flight. Rows appear and vanish as the runner gets to them, and the image
+	// measurer queues two hundred at a time.
+	for i := range 10 {
+		if err := st.Enqueue(ctx, "measure-image",
+			fmt.Sprintf("https://example.com/%d.png", i),
+			fmt.Sprintf("a picture (%d)", i),
+			fmt.Sprintf(`{"url":"https://example.com/%d.png"}`, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if agent.count() != before {
+		t.Errorf("queuing work sent %d archives", agent.count()-before)
+	}
+
+	// A page's clock, which the scheduler moves every time it composes an edition.
+	pages, err := st.Pages(ctx, principal.ID)
+	if err != nil || len(pages) == 0 {
+		t.Fatalf("Pages() = %v, %v", pages, err)
+	}
+	for i := range 5 {
+		if err := st.ScheduleNextEdition(ctx, pages[0].ID,
+			time.Now().Add(time.Duration(i+1)*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if agent.count() != before {
+		t.Errorf("composing editions sent %d archives", agent.count()-before)
+	}
 }

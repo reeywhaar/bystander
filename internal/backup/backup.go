@@ -26,11 +26,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"slices"
 	"time"
 
 	"bystander/internal/store"
@@ -41,18 +41,14 @@ func Filename(t time.Time) string {
 	return "bystander-" + t.UTC().Format("20060102_150405") + ".tgz"
 }
 
-// Archive is one copy of the databases, and the digest that says which copy it is.
+// Archive is one copy of the databases.
+//
+// It used to carry a digest of the vacuumed main.db as well, which is what decided whether to
+// send it. That question moved to [store.Store.DurableDigest] and is asked about the content
+// rather than about the file — because the file changes every time a feed is polled, which is
+// constantly and means nothing. See pusher.go.
 type Archive struct {
 	Body []byte
-	// Digest identifies main.db's contents, and nothing else's.
-	//
-	// Taken from the vacuumed bytes rather than from the tarball, because a tarball carries a
-	// timestamp in its gzip header and in every entry — two archives of one unchanged
-	// database differ, which is exactly the question this is asked to answer. `VACUUM INTO`
-	// writes a database page by page in a defined order, so identical contents produce
-	// identical bytes; where that ever stopped being true the cost is a redundant upload
-	// rather than a missed one, which is the right way for this to fail.
-	Digest []byte
 }
 
 // Build renders the databases as a gzipped tar, in memory.
@@ -65,15 +61,10 @@ func Build(ctx context.Context, st *store.Store, derived bool, now time.Time) (*
 		return nil, fmt.Errorf("snapshot: %w", err)
 	}
 
-	var digest []byte
 	var out bytes.Buffer
 	gz := gzip.NewWriter(&out)
 	tw := tar.NewWriter(gz)
 	for _, f := range files {
-		if f.Name == store.MainFile {
-			sum := sha256.Sum256(f.Data)
-			digest = sum[:]
-		}
 		// 0600 throughout: the archive carries every password hash and session on the
 		// instance, so an extracted copy should not be readable by anyone else. No directory
 		// entries, so extracting cannot re-chmod a data directory that already exists.
@@ -97,10 +88,10 @@ func Build(ctx context.Context, st *store.Store, derived bool, now time.Time) (*
 	if err := gz.Close(); err != nil {
 		return nil, fmt.Errorf("close gzip: %w", err)
 	}
-	if digest == nil {
+	if !slices.ContainsFunc(files, func(f store.SnapshotFile) bool { return f.Name == store.MainFile }) {
 		return nil, fmt.Errorf("the snapshot carried no %s", store.MainFile)
 	}
-	return &Archive{Body: out.Bytes(), Digest: digest}, nil
+	return &Archive{Body: out.Bytes()}, nil
 }
 
 // maxReply is how much of a rejection is read back.
