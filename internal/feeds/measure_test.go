@@ -82,7 +82,7 @@ func TestMeasuringReadsTheHeaderAndNotThePicture(t *testing.T) {
 	}
 
 	payload, _ := json.Marshal(map[string]string{"url": item.ImageURL})
-	if err := Measure(st, "test")(t.Context(), string(payload)); err != nil {
+	if err := Measure(st, "test", nil, nil, nil)(t.Context(), string(payload)); err != nil {
 		t.Fatalf("Measure(): %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestMeasuringGivesUpOnAnswersThatWillNotChange(t *testing.T) {
 			w.WriteHeader(code)
 		}))
 		payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
-		err := Measure(st, "test")(t.Context(), string(payload))
+		err := Measure(st, "test", nil, nil, nil)(t.Context(), string(payload))
 		host.Close()
 
 		// Asking again is asking somebody's server to keep saying no on a timer.
@@ -148,7 +148,7 @@ func TestMeasuringDoesNotComeBackAfterATemporaryRefusal(t *testing.T) {
 		}
 
 		payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
-		err = Measure(st, "test")(t.Context(), string(payload))
+		err = Measure(st, "test", nil, nil, nil)(t.Context(), string(payload))
 		host.Close()
 
 		if !errors.Is(err, jobs.Drop) {
@@ -172,7 +172,7 @@ func TestMeasuringGivesUpOnThingsThatAreNotPictures(t *testing.T) {
 	defer host.Close()
 
 	payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
-	if err := Measure(st, "test")(t.Context(), string(payload)); !errors.Is(err, jobs.Drop) {
+	if err := Measure(st, "test", nil, nil, nil)(t.Context(), string(payload)); !errors.Is(err, jobs.Drop) {
 		t.Errorf("err = %v, want it dropped", err)
 	}
 }
@@ -453,7 +453,7 @@ func TestAHostInTroubleIsAskedAgainSoonerThanOneThatSaidNo(t *testing.T) {
 			}
 
 			payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.png"})
-			if err := Measure(st, "bystander/test")(t.Context(), string(payload)); err == nil {
+			if err := Measure(st, "bystander/test", nil, nil, nil)(t.Context(), string(payload)); err == nil {
 				t.Fatal("a refusal was reported as a measurement")
 			}
 
@@ -511,7 +511,7 @@ func TestAWebPPictureIsMeasured(t *testing.T) {
 	}
 
 	payload, _ := json.Marshal(map[string]string{"url": host.URL + "/pic.webp"})
-	if err := Measure(st, "bystander/test")(t.Context(), string(payload)); err != nil {
+	if err := Measure(st, "bystander/test", nil, nil, nil)(t.Context(), string(payload)); err != nil {
 		t.Fatalf("Measure(): %v", err)
 	}
 

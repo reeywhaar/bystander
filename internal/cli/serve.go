@@ -70,7 +70,13 @@ func serve(parent context.Context) error {
 	}
 
 	sessions := session.New(st, cfg.Secure, log)
+	// Relays an administrator has configured, read per request that needs one rather than
+	// once at startup, so adding one takes effect on the next fetch instead of the next
+	// restart. See internal/feeds/proxy.go.
+	relays := func(ctx context.Context) ([]*store.Proxy, error) { return st.Proxies(ctx) }
+
 	fetcher := feeds.NewFetcher(cfg.PublicURL.String())
+	fetcher.Proxies, fetcher.Routes, fetcher.Log = relays, st, log
 	generator := edition.NewGenerator(st, log)
 	scheduler := edition.NewScheduler(st, generator, log)
 
@@ -106,7 +112,7 @@ func serve(parent context.Context) error {
 	runner := jobs.New(st, log)
 
 	runner.Handle(feeds.MeasureImage, jobs.Work{
-		Handle: feeds.Measure(st, fetcher.UserAgent()),
+		Handle: feeds.Measure(st, fetcher.UserAgent(), relays, st, log),
 		// Pictures nothing has measured yet. Asked for by the runner rather than announced by
 		// whoever created the work: hooks were the first design — after a fetch, after the
 		// sweep, at startup — and they still missed the commonest case, because adding a feed

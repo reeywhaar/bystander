@@ -21,6 +21,7 @@ to have fixed.
 | [frontend.md](frontend.md) | Islands, the API layer, query keys, styling |
 | [deploy.md](deploy.md) | Image, environment, volumes, CI |
 | [mail.md](mail.md) | SMTP, recovery addresses, and what is deliberately not sent |
+| [proxies.md](proxies.md) | Reaching a publisher that refuses this instance |
 | [screenshots/](screenshots/) | How the README's pictures are made, and by what |
 
 ## When these disagree with the code

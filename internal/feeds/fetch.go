@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -51,6 +52,27 @@ var ErrNotAFeed = errors.New("that URL is not a feed")
 type Fetcher struct {
 	client    *http.Client
 	userAgent string
+
+	// Proxies is the relays to fall back on when a publisher cannot be reached directly, in
+	// the order to try them. Nil, or a function returning none, means direct only.
+	//
+	// A function rather than a list, because an administrator can add and remove relays while
+	// this is running and a list read at startup would be a list that needed a restart to
+	// change. Called once per request that needs one, which is the rare case — a fetch that
+	// succeeds directly never asks. See proxy.go.
+	Proxies Relays
+
+	// Routes is what remembers which relay last reached a publisher, so a blocked one is not
+	// re-discovered on every fetch. Optional: without it every request starts from the top.
+	Routes Routes
+
+	// Log is where a relay being used, or failing, is recorded. Optional.
+	//
+	// Worth having even though nothing depends on it: "this feed is only reachable through
+	// Frankfurt" is the sort of thing an operator needs to be able to find out, and it is
+	// invisible from the outside because a relayed fetch and a direct one produce the same
+	// articles.
+	Log *slog.Logger
 }
 
 // NewFetcher builds a fetcher.
@@ -109,7 +131,7 @@ func (f *Fetcher) Fetch(ctx context.Context, feed *store.Feed, now time.Time) (*
 		req.Header.Set("If-Modified-Since", feed.LastModified)
 	}
 
-	res, err := f.client.Do(req)
+	res, err := f.do(ctx, req)
 	if err != nil {
 		return nil, unreachable(feed.CanonicalURL, err)
 	}
@@ -387,7 +409,7 @@ func (f *Fetcher) get(ctx context.Context, target string) (body, finalURL string
 	req.Header.Set("User-Agent", f.userAgent)
 	req.Header.Set("Accept", "application/atom+xml, application/rss+xml, application/feed+json, text/html;q=0.8, */*;q=0.5")
 
-	res, err := f.client.Do(req)
+	res, err := f.do(ctx, req)
 	if err != nil {
 		return "", "", unreachable(target, err)
 	}

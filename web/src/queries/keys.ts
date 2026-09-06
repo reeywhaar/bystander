@@ -46,6 +46,7 @@ export const qk = {
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
   adminSmtp: ["admin", "smtp"] as const,
+  adminProxies: ["admin", "proxies"] as const,
   /** How the pictures on this instance are getting on. */
   adminImages: ["admin", "images"] as const,
   adminImagesUnmeasured: (reason: string) =>

@@ -85,6 +85,7 @@ var Main = []Migration{
 	mainAccountDeletion,
 	mainSubscriptionNote,
 	mainRecoveryLinks,
+	mainProxies,
 }
 
 // Derived owns what the machine produced. Everything here is reconstructible from main.db
@@ -102,6 +103,7 @@ var Derived = []Migration{
 	derivedImageRetryAt,
 	derivedReadIsNotTheEditions,
 	derivedBackupState,
+	derivedProxyRoutes,
 }
 
 // exec is the shape almost every migration takes: some SQL, in its own transaction.

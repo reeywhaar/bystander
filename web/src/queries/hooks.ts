@@ -16,14 +16,20 @@ import {
 import {
   deleteAdminInvitesById,
   deleteAdminUsersById,
+  deleteAdminProxiesById,
   deleteAdminSmtp,
   getAdminInvites,
+  getAdminProxies,
   getAdminSmtp,
   getAdminUsers,
   patchAdminUsersById,
   postAdminInvites,
   postAdminSmtpTest,
   postAdminUsersByIdRecovery,
+  postAdminProxies,
+  postAdminProxyReset,
+  postAdminProxyTest,
+  putAdminProxiesById,
   putAdminSmtp,
 } from "@app/api/actions/admin";
 import { getMe } from "@app/api/actions/auth";
@@ -67,6 +73,7 @@ import type {
   Article,
   Edition,
   ImportSelection,
+  ProxyForm,
   Role,
   Session,
   SmtpForm,
@@ -785,6 +792,71 @@ export function useTestSmtp() {
   return useMutation({
     mutationFn: ({ to, relay }: { to: string; relay?: SmtpForm }) =>
       callApi(postAdminSmtpTest(to, relay)),
+  });
+}
+
+/**
+ * The relays a publisher that blocks this instance can be reached through.
+ *
+ * Tokens are never in the answer: they are write-only, so a page that lists relays cannot
+ * hand a credential back out again.
+ */
+export function useProxies() {
+  const callApi = useApiCall();
+  return useQuery({
+    queryKey: qk.adminProxies,
+    queryFn: ({ signal }) => callApi(getAdminProxies(), signal),
+  });
+}
+
+export function useSaveProxy() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, form }: { id?: string; form: ProxyForm }) =>
+      id === undefined
+        ? callApi(postAdminProxies(form))
+        : callApi(putAdminProxiesById(id, form)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.adminProxies });
+    },
+  });
+}
+
+export function useForgetProxy() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => callApi(deleteAdminProxiesById(id)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.adminProxies });
+    },
+  });
+}
+
+/** Forgets every publisher learned through one relay, leaving the relay in place. */
+export function useResetProxy() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => callApi(postAdminProxyReset(id)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.adminProxies });
+    },
+  });
+}
+
+/**
+ * Asks a relay to fetch something, for real.
+ *
+ * `proxy` tries settings that have not been saved, which is the only way to find out whether a
+ * token works before it replaces one that already did.
+ */
+export function useTestProxy() {
+  const callApi = useApiCall();
+  return useMutation({
+    mutationFn: (body: { id?: string; proxy?: ProxyForm; url?: string }) =>
+      callApi(postAdminProxyTest(body)),
   });
 }
 

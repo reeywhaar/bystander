@@ -39,6 +39,8 @@ const (
 	Page         = "pg_"
 	SMTP         = "m_"
 	Job          = "j_"
+	// Proxy names one relay this instance may reach a publisher through.
+	Proxy = "px_"
 	// Instance is the one row of settings that belong to the instance rather than to
 	// anybody on it.
 	Instance = "in_"

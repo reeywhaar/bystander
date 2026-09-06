@@ -474,6 +474,60 @@ export interface SmtpForm {
   sender_name: string;
 }
 
+/**
+ * How a relay is spoken to.
+ *
+ * `proxio` rewrites the request's URL and sends it over the ordinary client; `socks5` leaves
+ * the request alone and makes the connection somewhere else. They are different layers, which
+ * is why the form asks for different fields.
+ */
+export type ProxyKind = "proxio" | "socks5";
+
+/** A relay as the interface may show it: everything except the token. */
+export interface Proxy {
+  id: string;
+  kind: ProxyKind;
+  /** What to call it in a list. Empty is normal — the address is already a name. */
+  label: string;
+  /** The endpoint's own address, with no path: the path is the kind's business. */
+  url: string;
+  /** Empty for kinds that authenticate with a secret alone, which is proxio. */
+  username: string;
+  /** 0..100, highest tried first. Zero means tried last, not never — `enabled` is never. */
+  priority: number;
+  /** Off without being forgotten, so a failing relay can be parked rather than deleted. */
+  enabled: boolean;
+  /** Says a token is stored without saying what it is. */
+  has_token: boolean;
+  /** How many publishers are currently reached through this relay. */
+  routes: number;
+  created_at: number;
+  updated_at: number;
+}
+
+/** A relay as it is written back. The token is the only field that is write-only. */
+export interface ProxyForm {
+  kind: ProxyKind;
+  label: string;
+  url: string;
+  username: string;
+  /** Empty leaves the stored token alone; required only the first time. */
+  token: string;
+  priority: number;
+  enabled: boolean;
+}
+
+/** What came of asking a relay to fetch something. */
+export interface ProxyTestResult {
+  ok: boolean;
+  /** What the target answered, when the relay got that far. */
+  status?: number;
+  /** What was actually fetched, which is this instance's own address when none was given. */
+  url?: string;
+  /** Why not, and whose fault it was, when it did not. */
+  error?: string;
+}
+
 /** One article in a feed nobody has subscribed to yet. */
 export interface PreviewItem {
   title: string;

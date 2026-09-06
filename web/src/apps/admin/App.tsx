@@ -11,6 +11,7 @@ import { ImagesPage } from "@app/apps/admin/ImagesPage";
 import { InvitesPage } from "@app/apps/admin/InvitesPage";
 import { PublishingPage } from "@app/apps/admin/PublishingPage";
 import { MailPage } from "@app/apps/admin/MailPage";
+import { ProxiesPage } from "@app/apps/admin/ProxiesPage";
 import { UsersPage } from "@app/apps/admin/UsersPage";
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
                       { to: "/admin/invites", label: "Invitations" },
                       { to: "/admin/mail", label: "Mail" },
                       { to: "/admin/images", label: "Images" },
+                      { to: "/admin/relays", label: "Relays" },
                       { to: "/admin/publishing", label: "Publishing" },
                     ]}
                   />
@@ -41,6 +43,7 @@ export function App() {
                     <Route path="/admin/invites" element={<InvitesPage />} />
                     <Route path="/admin/mail" element={<MailPage />} />
                     <Route path="/admin/images" element={<ImagesPage />} />
+                    <Route path="/admin/relays" element={<ProxiesPage />} />
                     <Route
                       path="/admin/publishing"
                       element={<PublishingPage />}

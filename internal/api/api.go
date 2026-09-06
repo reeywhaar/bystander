@@ -183,6 +183,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/smtp", s.requireAdmin(s.putSMTP))
 	mux.Handle("DELETE /api/admin/smtp", s.requireAdmin(s.deleteSMTP))
 	mux.Handle("POST /api/admin/smtp/test", s.requireAdmin(s.testSMTP))
+
+	mux.Handle("GET /api/admin/proxies", s.requireAdmin(s.listProxies))
+	mux.Handle("POST /api/admin/proxies", s.requireAdmin(s.addProxy))
+	mux.Handle("PUT /api/admin/proxies/{id}", s.requireAdmin(s.putProxy))
+	mux.Handle("DELETE /api/admin/proxies/{id}", s.requireAdmin(s.deleteProxy))
+	mux.Handle("POST /api/admin/proxies/test", s.requireAdmin(s.testProxy))
+	mux.Handle("POST /api/admin/proxies/{id}/reset", s.requireAdmin(s.resetProxy))
 	mux.Handle("GET /api/admin/instance", s.requireAdmin(s.getInstance))
 	mux.Handle("PUT /api/admin/instance", s.requireAdmin(s.putInstance))
 	mux.Handle("GET /api/admin/images", s.requireAdmin(s.images))

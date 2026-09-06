@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -158,8 +159,19 @@ func retryAfter(res *http.Response, fallback time.Duration) time.Duration {
 // thirty pictures, and asking a publisher for thirty things the moment they publish is how a
 // reader's address ends up blocked. As a job it is a few every sweep, spread over an hour that
 // nobody is waiting through — the page is already correct without any of this.
-func Measure(st *store.Store, agent string) jobs.Handler {
+// relays and log are how a picture behind the same wall as its feed is still measured: a
+// publisher that geo-blocks the feed blocks the pictures beside it, and a measurement that
+// always failed would keep every one of those cards laid out as though nothing had measured it.
+//
+// Worth being clear about what this does not fix. The reader's browser loads the picture
+// directly, so a blocked picture is still a blocked picture on the page — what a relay buys
+// here is the *shape*, which is what decides how wide the card is laid out. See
+// edition.widestSlotFor.
+func Measure(st *store.Store, agent string, relays Relays, routes Routes, log *slog.Logger) jobs.Handler {
 	client := &http.Client{Timeout: measureTimeout}
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
 
 	return func(ctx context.Context, payload string) error {
 		var job measurePayload
@@ -180,7 +192,7 @@ func Measure(st *store.Store, agent string) jobs.Handler {
 		// Politeness first, and a real saving when it is honoured.
 		req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", measureBudget-1))
 
-		res, err := client.Do(req)
+		res, err := relay(ctx, client, req, relays, routes, log)
 		if err != nil {
 			// A refused connection, a DNS failure, a timeout — most often the timeout,
 			// which is five seconds and which a cold handshake to a distant host can spend

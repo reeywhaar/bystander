@@ -532,6 +532,9 @@ putEditionItemsByIdRead       PUT    /api/edition/items/{id}/read
 patchFeedsById                PATCH  /api/feeds/{id}
 postAdminInvites              POST   /api/admin/invites
 putAdminSmtp                  PUT    /api/admin/smtp
+putAdminProxiesById           PUT    /api/admin/proxies/{id}
+postAdminProxyTest            POST   /api/admin/proxies/test
 ```
 
-Mail has a document of its own: [mail.md](mail.md).
+Mail has a document of its own: [mail.md](mail.md), and so do the relays a blocked publisher
+is reached through: [proxies.md](proxies.md).
