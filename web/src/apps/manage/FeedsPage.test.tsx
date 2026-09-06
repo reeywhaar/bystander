@@ -1,9 +1,22 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { Subscription, Tag } from "@app/api/types";
 import { renderWith } from "@app/test/harness";
+
+/**
+ * The feeds screen, at an address.
+ *
+ * It reads the query for an address handed over by a subscription link, so it has to be
+ * rendered inside a router — see internal/api/subscribe.go for what puts one there.
+ */
+const renderWithRoute = (
+  node: Parameters<typeof renderWith>[0],
+  recording: Parameters<typeof renderWith>[1],
+  route = "/manage",
+) => renderWith(node, recording, { route });
 
 import { FeedsPage } from "@app/apps/manage/FeedsPage";
 
@@ -55,7 +68,7 @@ function subscription(overrides: Partial<Subscription> = {}): Subscription {
 }
 
 function render(feeds: Subscription[], tags: Tag[]) {
-  return renderWith(<FeedsPage />, {
+  return renderWithRoute(<FeedsPage />, {
     "GET /api/feeds": { body: feeds },
     "GET /api/tags": { body: tags },
     // Without this the write fails, `onSuccess` never runs, and nothing is invalidated —
@@ -206,7 +219,7 @@ describe("FeedsPage", () => {
    * having" is "was this worth taking" asked later and deserves the same answer.
    */
   it("previews a feed it already follows, with nothing to add", async () => {
-    renderWith(<FeedsPage />, {
+    renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [subscription()] },
       "GET /api/tags": { body: [] },
       "POST /api/feeds/preview": {
@@ -461,8 +474,115 @@ describe("FeedsPage, before following anything", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
   };
 
+  // A subscription link — /subscribe?url=… — lands here with the address in the query, and
+  // should end up exactly where pasting the same address into the box does.
+  describe("arriving from a subscription link", () => {
+    const linked = (route: string) =>
+      renderWithRoute(
+        <FeedsPage />,
+        {
+          "GET /api/feeds": { body: [] },
+          "GET /api/tags": { body: [] },
+          "POST /api/feeds/discover": {
+            body: { candidates: [candidate("The Example", preview.feed_url)] },
+          },
+          "POST /api/feeds/preview": { body: preview },
+        },
+        route,
+      );
+
+    it("looks the address up without anybody pressing anything", async () => {
+      linked("/manage?add=" + encodeURIComponent("https://example.com/rss"));
+
+      // The same preview typing it into the box would have produced.
+      expect(
+        await screen.findByText("A story about a thing"),
+      ).toBeInTheDocument();
+    });
+
+    it("asks about the address that was linked, and asks once", async () => {
+      const { transport } = linked(
+        "/manage?add=" + encodeURIComponent("https://example.com/rss"),
+      );
+      await screen.findByText("A story about a thing");
+
+      const asked = transport.calls.filter(
+        (call) => call.path === "/api/feeds/discover",
+      );
+      if (asked.length !== 1) {
+        throw new Error(`asked ${asked.length} times, want once`);
+      }
+      expect(asked[0]?.body).toEqual({ url: "https://example.com/rss" });
+    });
+
+    it("leaves the address in the box, and takes it out of the URL", async () => {
+      linked("/manage?add=" + encodeURIComponent("https://example.com/rss"));
+      await screen.findByText("A story about a thing");
+
+      // In the field, where it can be corrected.
+      expect(screen.getByLabelText("Feed or site address")).toHaveValue(
+        "https://example.com/rss",
+      );
+      // And out of the address bar, so a refresh does not run the whole thing again.
+      expect(window.location.search).not.toContain("add=");
+    });
+
+    it("subscribes to nothing on its own", async () => {
+      const { transport } = linked(
+        "/manage?add=" + encodeURIComponent("https://example.com/rss"),
+      );
+      await screen.findByText("A story about a thing");
+
+      // A link is a suggestion, not a decision. The preview is where somebody says yes.
+      expect(
+        transport.calls.some((call) => call.path === "/api/feeds/import"),
+      ).toBe(false);
+    });
+
+    // The application mounts in StrictMode — see mount.tsx — which runs every effect twice
+    // on purpose to find exactly this kind of bug, and measured in this setup it really does
+    // run twice. This checks the arrangement rather than either half of it: whichever of the
+    // cleared query and the ref is doing the work on any given day, one click is one question
+    // asked of a publisher.
+    it("asks once even when React mounts it twice", async () => {
+      const { transport } = renderWithRoute(
+        <StrictMode>
+          <FeedsPage />
+        </StrictMode>,
+        {
+          "GET /api/feeds": { body: [] },
+          "GET /api/tags": { body: [] },
+          "POST /api/feeds/discover": {
+            body: { candidates: [candidate("The Example", preview.feed_url)] },
+          },
+          "POST /api/feeds/preview": { body: preview },
+        },
+        "/manage?add=" + encodeURIComponent("https://example.com/rss"),
+      );
+      await screen.findByText("A story about a thing");
+
+      const asked = transport.calls.filter(
+        (call) => call.path === "/api/feeds/discover",
+      );
+      if (asked.length !== 1) {
+        throw new Error(`asked ${asked.length} times, want once`);
+      }
+    });
+
+    it("is an ordinary feeds screen when nothing was linked", async () => {
+      const { transport } = linked("/manage");
+
+      expect(await screen.findByLabelText("Feed or site address")).toHaveValue(
+        "",
+      );
+      expect(
+        transport.calls.some((call) => call.path === "/api/feeds/discover"),
+      ).toBe(false);
+    });
+  });
+
   it("shows one discovered feed rather than subscribing to it", async () => {
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/feeds/discover": {
@@ -485,7 +605,7 @@ describe("FeedsPage, before following anything", () => {
   });
 
   it("subscribes when the preview is accepted", async () => {
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/feeds/discover": {
@@ -516,7 +636,7 @@ describe("FeedsPage, before following anything", () => {
    * say what they already knew.
    */
   it("files the previewed feed under what was ticked", async () => {
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [news, world, art] },
       "POST /api/feeds/discover": {
@@ -566,7 +686,7 @@ describe("FeedsPage, before following anything", () => {
       priority: 50,
       created_at: 0,
     };
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/tags": { status: 201, body: made },
@@ -613,7 +733,7 @@ describe("FeedsPage, before following anything", () => {
   // Over the picker each row already carries its own chips, and a second set in the preview
   // would be two answers to one question.
   it("offers no filing in the preview when the picker is behind it", async () => {
-    renderWith(<FeedsPage />, {
+    renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [news, art] },
       "POST /api/feeds/discover": {
@@ -644,7 +764,7 @@ describe("FeedsPage, before following anything", () => {
    * nothing ticked — otherwise "None" is the first thing anybody has to press.
    */
   it("starts a list of several with nothing chosen", async () => {
-    renderWith(<FeedsPage />, {
+    renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/feeds/discover": {
@@ -679,7 +799,7 @@ describe("FeedsPage, before following anything", () => {
       priority: 50,
       created_at: 0,
     };
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/tags": { status: 201, body: made },
@@ -736,7 +856,7 @@ describe("FeedsPage, before following anything", () => {
   });
 
   it("ticks the row it was opened from, and leaves the list up", async () => {
-    const { transport } = renderWith(<FeedsPage />, {
+    const { transport } = renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": { body: [] },
       "GET /api/tags": { body: [] },
       "POST /api/feeds/discover": {
@@ -781,7 +901,7 @@ describe("FeedsPage, before following anything", () => {
    * be, and offers the thing somebody who pasted it twice most likely wanted.
    */
   it("says you have it already rather than opening a picker", async () => {
-    renderWith(<FeedsPage />, {
+    renderWithRoute(<FeedsPage />, {
       "GET /api/feeds": {
         body: [
           {

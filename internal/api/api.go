@@ -202,6 +202,9 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
 	})
 
+	// Ahead of the SPA catch-all, and more specific than it, so it wins.
+	mux.HandleFunc("GET "+SubscribePath, s.subscribe)
+
 	mux.Handle("/", s.spa)
 
 	return s.csrfGuard(mux)

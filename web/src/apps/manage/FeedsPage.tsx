@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router";
 
 import type { PlannedFeed, Subscription, Tag } from "@app/api/types";
 import { Alert } from "@app/components/ui/Alert";
@@ -40,7 +41,12 @@ export function FeedsPage() {
   const discover = useDiscoverFeeds();
   const add = useImportFeeds();
 
-  const [url, setUrl] = useState("");
+  // An address handed over by a subscription link — /subscribe?url=… lands here with it in
+  // the query. See internal/api/subscribe.go.
+  const [params, setParams] = useSearchParams();
+  const handed = params.get("add") ?? "";
+
+  const [url, setUrl] = useState(handed);
   // What the site turned out to offer, once there is more than one thing to choose from.
   const [choices, setChoices] = useState<PlannedFeed[] | null>(null);
   const [selection, setSelection] = useState<PlanSelection>(
@@ -135,12 +141,23 @@ export function FeedsPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    ask(url);
+  }
+
+  /**
+   * What an address is, before anything is subscribed to.
+   *
+   * Called from the form and from a subscription link, which is the point of it being one
+   * function: `/subscribe?url=…` should end up exactly where pasting the same address into the
+   * box does, and two code paths to the same screen are two chances for them to differ.
+   */
+  function ask(address: string) {
     setProblem(null);
 
     // Ask what the address is before subscribing to it. A site names its feeds in the
     // markup and usually names several — posts, comments, a podcast — and picking the
     // first is how somebody ends up following comments they never wanted.
-    discover.mutate(url, {
+    discover.mutate(address, {
       onSuccess: ({ candidates }) => {
         // Counted after dropping what is already followed, so a site whose other feed you
         // took last week still goes straight in rather than opening a picker with one row.
@@ -168,6 +185,31 @@ export function FeedsPage() {
       onError: (error) => setProblem(error.message),
     });
   }
+
+  // An address that arrived by link is looked up as though it had been typed and submitted,
+  // because that is what somebody who clicked "subscribe" has already decided.
+  //
+  // Once, and the once matters: the application mounts in StrictMode — see mount.tsx — which
+  // runs every effect twice on purpose, and measured here it really does run twice. Asking a
+  // publisher the same question twice because React mounted a component twice is not a thing
+  // a publisher should have to absorb.
+  //
+  // Two things stop it, and only one of them is doing the work today. Clearing the query is
+  // enough on its own, because that lands before the second invocation and leaves `handed`
+  // empty — but "before" there is react-router's flushing timing rather than a promise
+  // anybody made, so the ref is what makes the once not depend on it.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (handed === "" || asked.current) return;
+    asked.current = true;
+    // Out of the address bar as soon as it is taken, so a refresh — or a back button after
+    // subscribing — does not run the whole thing again. The field keeps it, which is where
+    // it is useful.
+    setParams({}, { replace: true });
+    ask(handed);
+    // `ask` is redeclared every render and is not worth a useCallback for a one-shot effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handed]);
 
   const working = discover.isPending || add.isPending;
 

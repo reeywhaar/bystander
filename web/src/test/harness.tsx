@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { render, type RenderResult } from "@testing-library/react";
 import type { ReactNode } from "react";
 
@@ -67,6 +68,17 @@ export class RecordedTransport implements Transport {
 export function renderWith(
   node: ReactNode,
   recording: Recording,
+  options: {
+    /**
+     * The address to render at, for a component that reads the URL.
+     *
+     * Passing it puts a router around the tree; leaving it out puts nothing there. Opt-in
+     * rather than always, because three test files render components that bring a router of
+     * their own — react-router refuses to be nested, and those tests would all fail on a
+     * wrapper they never asked for.
+     */
+    route?: string;
+  } = {},
 ): RenderResult & {
   transport: RecordedTransport;
 } {
@@ -75,12 +87,22 @@ export function renderWith(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
-  const result = render(
+  const tree = (
     <QueryClientProvider client={client}>
       <ApiProvider dispatcher={new ApiDispatcher(transport)}>
         {node}
       </ApiProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
+  );
+
+  // In memory rather than the browser's, so a test can start at any address and nothing it
+  // does touches the real history.
+  const result = render(
+    options.route === undefined ? (
+      tree
+    ) : (
+      <MemoryRouter initialEntries={[options.route]}>{tree}</MemoryRouter>
+    ),
   );
   return { ...result, transport };
 }

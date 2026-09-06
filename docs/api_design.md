@@ -536,5 +536,13 @@ putAdminProxiesById           PUT    /api/admin/proxies/{id}
 postAdminProxyTest            POST   /api/admin/proxies/test
 ```
 
+`/subscribe?url=…` is the one address here that is not under `/api` and not a screen: it
+redirects to the feed list with the address in hand, so a publisher's "subscribe in your
+reader" link and a browser's `feed:` handler both land somewhere that can do something with it.
+See `internal/api/subscribe.go`, and [Subscribing from elsewhere](../README.md#subscribing-from-elsewhere).
+
+```
+```
+
 Mail has a document of its own: [mail.md](mail.md), and so do the relays a blocked publisher
 is reached through: [proxies.md](proxies.md).

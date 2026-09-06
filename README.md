@@ -360,6 +360,26 @@ of what a page has *shown* is kept three times longer than that, so it always ou
 article it refers to and a long-dormant feed cannot resurface something that page has already
 carried.
 
+## Subscribing from elsewhere
+
+```
+https://read.example.com/subscribe?url=https%3A%2F%2Fexample.com%2Frss
+```
+
+The shape every other reader uses, which is the whole reason for picking it: a publisher's
+"subscribe in your reader" menu is a list of these, and a bookmarklet or an extension that knows
+the shape works here without knowing anything about this program.
+
+It redirects to the feed list with the address in the box and the same question asked of it that
+pasting it there would ask — what does this site offer, and which of it do you want — because
+that screen already exists and a second way to add a feed is a second place for the two to
+disagree. Nothing is subscribed to on your behalf.
+
+`feed:` and `web+feed:` links are unwrapped, so a page linking `feed://example.com/rss` works as
+well as one linking the address plainly. No session is needed to follow the link: the screen it
+lands on asks for one and carries the address through the login form, so a link sent to somebody
+who has not signed in still arrives at the right place.
+
 ## Backups
 
 This program takes its own copies and posts them to a backup agent. There is nothing to fetch

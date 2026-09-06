@@ -98,6 +98,15 @@ func CanonicalURL(raw string) (string, error) {
 	if raw == "" {
 		return "", Invalid("that is not a URL")
 	}
+	// What a browser hands a subscription link, before anything else looks at it.
+	//
+	// `feed:` and `web+feed:` are the schemes a reader registers for, and a page linking to
+	// one writes it either as `feed:https://example.com/rss` — the scheme wrapping a whole
+	// URL — or as `feed://example.com/rss`, where it stands in for the scheme itself. Both
+	// spellings are in the wild and neither is a scheme anything can fetch, so both are
+	// unwrapped here rather than refused. See internal/api/subscribe.go.
+	raw = unwrapFeedScheme(raw)
+
 	// A bare hostname is what people paste. Assuming https rather than refusing turns a
 	// dead end into a fetch that will say something useful.
 	if !strings.Contains(raw, "://") {
@@ -128,6 +137,26 @@ func CanonicalURL(raw string) (string, error) {
 	}
 	u.Fragment = ""
 	return u.String(), nil
+}
+
+// feedSchemes are the prefixes a browser puts in front of a subscription link, longest first
+// so `web+feed:` is not half-matched by `feed:`.
+var feedSchemes = []string{"web+feed://", "web+feed:", "feed://", "feed:"}
+
+// unwrapFeedScheme takes a subscription link back to the address inside it.
+//
+// `feed:https://example.com/rss` carries a whole URL and only the prefix goes. `feed://example.com/rss`
+// uses the scheme as the scheme, so what is left has no scheme at all and the caller's bare-hostname
+// rule supplies https — which is the right guess and the one a browser makes too.
+//
+// Anything that is not one of these is returned untouched, so an ordinary address pays nothing.
+func unwrapFeedScheme(raw string) string {
+	for _, prefix := range feedSchemes {
+		if len(raw) >= len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix) {
+			return raw[len(prefix):]
+		}
+	}
+	return raw
 }
 
 // UpsertFeed returns the feed for a URL, creating it if nobody follows it yet.
