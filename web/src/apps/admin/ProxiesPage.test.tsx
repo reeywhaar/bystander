@@ -70,12 +70,16 @@ describe("ProxiesPage", () => {
     // Someone here has decided they might want one; the next question is what to install.
     const link = await screen.findByRole("link", { name: /proxio/i });
     expect(link).toHaveAttribute("href", "https://github.com/reeywhaar/proxio");
-    expect(screen.getByText(/socks5 endpoint you already have/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/socks5 endpoint you already have/i),
+    ).toBeInTheDocument();
   });
 
   it("says what proxio is, with somewhere to get it, and what SOCKS5 needs instead", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     const link = within(dialog()).getByRole("link", { name: /proxio/i });
     expect(link).toHaveAttribute("href", "https://github.com/reeywhaar/proxio");
@@ -98,7 +102,9 @@ describe("ProxiesPage", () => {
 
   it("shows an address somebody could copy, and never one on this network", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     expect(within(dialog()).getByLabelText(/address/i)).toHaveAttribute(
       "placeholder",
@@ -150,7 +156,9 @@ describe("ProxiesPage", () => {
 
   it("asks the kind first, and asks for a username only where one is used", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     // proxio takes one opaque token and no name.
     expect(within(dialog()).getByLabelText(/token/i)).toBeInTheDocument();
@@ -170,7 +178,9 @@ describe("ProxiesPage", () => {
 
   it("will not save a relay without the parts its kind needs", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     const save = within(dialog()).getByRole("button", { name: /^save$/i });
     expect(save).toBeDisabled();
@@ -187,10 +197,14 @@ describe("ProxiesPage", () => {
 
   it("can try a relay that has not been saved yet", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     // Nothing typed yet, so there is nothing to dial.
-    expect(within(dialog()).getByRole("button", { name: /try it/i })).toBeDisabled();
+    expect(
+      within(dialog()).getByRole("button", { name: /try it/i }),
+    ).toBeDisabled();
 
     await userEvent.type(
       within(dialog()).getByLabelText(/address/i),
@@ -199,10 +213,14 @@ describe("ProxiesPage", () => {
     await userEvent.type(within(dialog()).getByLabelText(/token/i), "sekrit");
 
     // And now it can be tried, without having been saved over anything.
-    await userEvent.click(within(dialog()).getByRole("button", { name: /try it/i }));
+    await userEvent.click(
+      within(dialog()).getByRole("button", { name: /try it/i }),
+    );
     const dialogs = await screen.findAllByRole("dialog");
     const test = dialogs[dialogs.length - 1]!;
-    expect(within(test).getByLabelText(/address to fetch/i)).toBeInTheDocument();
+    expect(
+      within(test).getByLabelText(/address to fetch/i),
+    ).toBeInTheDocument();
   });
 
   it("leaves a stored token alone when the field is left empty", async () => {
@@ -214,11 +232,15 @@ describe("ProxiesPage", () => {
     const token = within(dialog()).getByLabelText(/token/i);
     expect(token).toHaveValue("");
     expect(
-      within(dialog()).getByText(/leave this empty to keep the one already set/i),
+      within(dialog()).getByText(
+        /leave this empty to keep the one already set/i,
+      ),
     ).toBeInTheDocument();
 
     // Saving without typing one is allowed, because empty means "the one already there".
-    expect(within(dialog()).getByRole("button", { name: /^save$/i })).toBeEnabled();
+    expect(
+      within(dialog()).getByRole("button", { name: /^save$/i }),
+    ).toBeEnabled();
   });
 
   it("asks what to fetch, and says what came back", async () => {
@@ -248,7 +270,8 @@ describe("ProxiesPage", () => {
       "POST /api/admin/proxies/test": {
         body: {
           ok: false,
-          error: "Frankfurt answered 401 Unauthorized and said the fault was its own",
+          error:
+            "Frankfurt answered 401 Unauthorized and said the fault was its own",
         },
       },
     });
@@ -258,7 +281,9 @@ describe("ProxiesPage", () => {
       within(dialog()).getByRole("button", { name: /^try it$/i }),
     );
 
-    expect(await screen.findByText(/the fault was its own/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/the fault was its own/i),
+    ).toBeInTheDocument();
   });
 
   it("says what each relay is carrying, so resetting it is not a guess", async () => {
@@ -268,11 +293,15 @@ describe("ProxiesPage", () => {
     expect(
       within(first).getByText(/2 publishers reached through it/i),
     ).toBeInTheDocument();
-    expect(within(first).getByRole("button", { name: /reset/i })).toBeInTheDocument();
+    expect(
+      within(first).getByRole("button", { name: /reset/i }),
+    ).toBeInTheDocument();
 
     // Nothing learned through it, so there is nothing to forget and no button to press.
     const second = await rowAt(1);
-    expect(within(second).queryByText(/reached through it/i)).not.toBeInTheDocument();
+    expect(
+      within(second).queryByText(/reached through it/i),
+    ).not.toBeInTheDocument();
     expect(
       within(second).queryByRole("button", { name: /reset/i }),
     ).not.toBeInTheDocument();
@@ -302,7 +331,9 @@ describe("ProxiesPage", () => {
 
   it("orders relays by priority, highest first, and says so", async () => {
     render([]);
-    await userEvent.click(await screen.findByRole("button", { name: /add a relay/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /add a relay/i }),
+    );
 
     // A relay somebody has just gone to the trouble of configuring is one they want used.
     expect(within(dialog()).getByLabelText(/priority/i)).toHaveValue("100");

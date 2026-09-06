@@ -115,10 +115,7 @@ export function ProxiesPage() {
       {/* Mounted only while open, so each visit starts from what is stored rather than
           from whatever was typed last time. */}
       {editing !== undefined ? (
-        <ProxyDialog
-          current={editing}
-          onClose={() => setEditing(undefined)}
-        />
+        <ProxyDialog current={editing} onClose={() => setEditing(undefined)} />
       ) : null}
 
       <DeleteProxyDialog proxy={deleting} onClose={() => setDeleting(null)} />

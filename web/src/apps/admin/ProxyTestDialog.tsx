@@ -52,7 +52,11 @@ export function ProxyTestDialog({
             variant="primary"
             disabled={test.isPending}
             onClick={() =>
-              test.mutate({ id, proxy, url: target === "" ? undefined : target })
+              test.mutate({
+                id,
+                proxy,
+                url: target === "" ? undefined : target,
+              })
             }
           >
             {test.isPending ? "Trying…" : "Try it"}
