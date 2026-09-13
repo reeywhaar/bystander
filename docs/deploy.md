@@ -167,10 +167,18 @@ Then it smoke-tests **the published image**: `/healthz`, and a check that the se
 is not the placeholder. That last one is the only failure that otherwise reaches users
 looking exactly like a successful publish.
 
-**notify** — Telegram on either outcome, gated on the secrets existing so a repo that has
-not set them up does not get a red run on every push. It says which half broke: a failing
-test means the commit is bad, a failing publish means the commit is fine and the build is
-not.
+**notify** — a message on either outcome, through **notifio**. It says which half broke: a
+failing test means the commit is bad, a failing publish means the commit is fine and the build
+is not.
+
+`reeywhaar/notifio/ghactions/notify@main`, which is a composite action — so nothing is checked
+out here and it finds its own script through `github.action_path`. The two secrets are
+`NOTIFIO_HOST` and `NOTIFIO_TOKEN`, and a repository with neither set skips both steps rather
+than failing: a notifier nobody has configured should not look like a broken build.
+
+Where the message lands is not this repository's business. A token is issued for one channel
+and the channel pins its destination, so nothing here says Telegram or email — which is also
+why the link preview is not set here: that belongs in the channel's own config.
 
 `concurrency` with `cancel-in-progress`, so a newer commit wins the race for `latest`
 rather than queueing behind an older one that would overwrite it.
