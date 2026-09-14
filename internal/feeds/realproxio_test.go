@@ -123,3 +123,24 @@ func TestAgainstARealProxio(t *testing.T) {
 			"reported as the publisher's", proxyError)
 	}
 }
+
+// listenEverywhere binds a test server to every interface, so one URL is reachable from here
+// and from inside a container.
+func listenEverywhere(t *testing.T) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return listener
+}
+
+// portOf is the port half of a listener's address.
+func portOf(t *testing.T, addr string) string {
+	t.Helper()
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
+}

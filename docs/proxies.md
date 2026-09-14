@@ -81,6 +81,41 @@ which fetches the address and hands back what it got. The stored address is the 
 the path is this program's business, so pasting the whole example URL still works and the
 credential in it is moved out of the address rather than left on screen.
 
+### The token is proved, not sent
+
+```
+?token=pxc_1789343452.d42e37bd.e623089d47e297adbe2e2b48c2cd7ef1bd7f5305d6b31432…
+        └────┬───┘ └───┬──┘ └──────────────────────┬─────────────────────────┘
+             │         │                           sha256("<nonce>.<id>.<key>")
+             │         the first eight of the key, which is the id proxio prints
+             unix seconds, good for five minutes
+```
+
+The key is `sha256(secret)`, which is what proxio already stores for every token — so it never
+needs the secret back and this instance never sends it. Fields are separated by a dot because a
+dot is unreserved in a URL, so the value goes into the query unescaped.
+
+**It matters here more than it would behind a header.** proxio's credential travels in the URL,
+because that is what lets one proxio stand in front of another — and a URL is the one part of a
+request that everything writes down. A reverse proxy redacts `Authorization` and then logs the
+request line in full, so the raw token would land in the access log of every hop, in every place
+a URL gets pasted, and it would work forever once there.
+
+The goal is exactly that narrow: **stop the raw token travelling, so it has nowhere to land.**
+It is not authentication — nothing binds the value to the URL it arrived on — and it does not
+stop a replay inside the five minutes. What it does is close the gap between *a log file is a
+credential* and *a log file is a record of requests*.
+
+Plain SHA-256 rather than HMAC, and the key goes **last**: length extension would forge a digest
+for `nonce.id.key‖pad‖extra`, which is not a shape anything builds. proxio's
+[docs/nonced.md](https://github.com/reeywhaar/proxio/blob/main/docs/nonced.md) makes the argument
+properly.
+
+**This needs a proxio recent enough to understand it.** An older one sees `pxc_…` as a token it
+has never heard of and answers `401` with `X-Proxio-Error`, which the ladder reports as the
+relay's own fault rather than the publisher's — so the symptom is a relay that fails every test
+with a refusal, not feeds that quietly stop.
+
 It also sets `X-Proxio-Error` when a failure is its own rather than the target's, and that
 header is load-bearing. Without it a relay refusing a stale token (`401`) and a publisher
 demanding a login (`401`) are indistinguishable — and since `401` is not a status worth
@@ -160,6 +195,10 @@ Two places would otherwise write one down, and both are guarded:
 - **The log.** `net/http` wraps every transport failure in a `*url.Error` that prints the address
   it dialled. Logged as it comes, one unreachable relay writes the token into the log file on
   every attempt. The cause is kept and the address dropped; the relay is named separately.
+
+Both predate nonced tokens and both still matter. What goes on the wire is no longer the secret,
+but it is still a working credential for five minutes, and `FinalURL` is stored rather than
+rotated — a five-minute value written onto a feed row is a five-minute value that lives there.
 
 Switching a relay off keeps its credential so it can be switched back on. Deleting does not, and
 the dialog says so.

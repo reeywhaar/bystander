@@ -3,11 +3,15 @@ package feeds
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,8 +33,8 @@ func proxio(t *testing.T, token string) (*httptest.Server, *[]string) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		if r.URL.Query().Get("token") != token {
-			w.Header().Set(proxyError, `{"error":"bad token"}`)
+		if !verifyNonced(r.URL.Query().Get("token"), token, time.Now()) {
+			w.Header().Set(proxyError, `{"error":"auth"}`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -65,6 +69,41 @@ func proxio(t *testing.T, token string) (*httptest.Server, *[]string) {
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &seen
+}
+
+// verifyNonced is proxio's own check, so the stand-in above judges a token the way the real
+// thing does rather than comparing strings and proving nothing.
+//
+// Mirrors tokens.VerifyNonced: split on dots, parse the nonce strictly as digits, bound it to
+// the window, and compare the digest of "<nonce>.<id>.<sha256 of the secret>". Deliberately a
+// second implementation — a test that shared code with the thing under test could only agree
+// with it.
+func verifyNonced(wire, secret string, now time.Time) bool {
+	rest, found := strings.CutPrefix(wire, "pxc_")
+	if !found {
+		return false
+	}
+	parts := strings.Split(rest, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	nonce, id, mac := parts[0], parts[1], parts[2]
+
+	seconds, err := strconv.ParseInt(nonce, 10, 64)
+	if err != nil {
+		return false
+	}
+	if skew := now.Sub(time.Unix(seconds, 0)); skew > 5*time.Minute || skew < -5*time.Minute {
+		return false
+	}
+
+	sum := sha256.Sum256([]byte(secret))
+	key := hex.EncodeToString(sum[:])
+	if len(key) < 8 || id != key[:8] {
+		return false
+	}
+	want := sha256.Sum256([]byte(nonce + "." + id + "." + key))
+	return subtle.ConstantTimeCompare([]byte(mac), []byte(hex.EncodeToString(want[:]))) == 1
 }
 
 func relayAt(url, token string) *store.Proxy {
@@ -301,7 +340,8 @@ func TestWhatArrivesAtTheRelay(t *testing.T) {
 	req.Header.Set("If-None-Match", `W/"abc"`)
 	req.Header.Set("User-Agent", "bystander/test")
 
-	sent, err := through(req, relayAt("http://proxio.internal:80", "tok"))
+	const secret = "px_the-actual-credential"
+	sent, err := through(req, relayAt("http://proxio.internal:80", secret))
 	if err != nil {
 		t.Fatalf("through(): %v", err)
 	}
@@ -315,8 +355,16 @@ func TestWhatArrivesAtTheRelay(t *testing.T) {
 	if q.Get("url") != target {
 		t.Errorf("url is %q, want %q", q.Get("url"), target)
 	}
-	if q.Get("token") != "tok" {
-		t.Errorf("token is %q", q.Get("token"))
+	// Proved, not sent. This is the whole of what nonced tokens are for: the credential
+	// travels in a URL, and a URL is the one part of a request that everything writes down.
+	if got := q.Get("token"); got == secret {
+		t.Error("the raw credential went on the wire")
+	} else if !verifyNonced(got, secret, time.Now()) {
+		t.Errorf("token is %q, which proxio would refuse", got)
+	}
+	// And nowhere else in the URL either — not the query, not the nested target.
+	if strings.Contains(sent.URL.String(), secret) {
+		t.Errorf("the credential is in the address: %s", sent.URL)
 	}
 	if q.Get("hide") != "1" {
 		t.Error("hide is not set; the relay would forward this instance's own address")
@@ -829,5 +877,111 @@ func TestARouteToADeadRelayIsDroppedEvenWhenNothingElseWorks(t *testing.T) {
 	}
 	if routes.id != "" || routes.forgets == 0 {
 		t.Errorf("a route to a dead relay survived a fetch where nothing worked: %+v", routes)
+	}
+}
+
+// The wire value matches proxio's own recipe, field for field.
+//
+// Checked against a worked example rather than against this package's own arithmetic, so the
+// two implementations have to agree about something outside both of them. The value below is
+// what proxio's documented shell recipe produces for this secret at this second:
+//
+//	key=$(printf %s "$SECRET" | sha256sum | cut -d' ' -f1)
+//	id=$(printf %s "$key" | cut -c1-8)
+//	tok="pxc_$ts.$id.$(printf '%s.%s.%s' "$ts" "$id" "$key" | sha256sum | cut -d' ' -f1)"
+func TestANoncedTokenMatchesProxiosRecipe(t *testing.T) {
+	const (
+		secret = "px_ofbiycu8I6cgWHPcwy_KdAoEsFf7X8B9g8ulJYqlam0"
+		want   = "pxc_1789343452.d42e37bd." +
+			"e623089d47e297adbe2e2b48c2cd7ef1bd7f5305d6b3143242f7dbcd76be9298"
+	)
+	if got := nonced(secret, time.Unix(1789343452, 0)); got != want {
+		t.Errorf("nonced() = %q\n            want %q", got, want)
+	}
+}
+
+// The shape proxio parses: a prefix, three dot-separated fields, digits and hex.
+func TestTheShapeOfANoncedToken(t *testing.T) {
+	got := nonced("px_secret", time.Unix(1789343452, 0))
+
+	rest, found := strings.CutPrefix(got, "pxc_")
+	if !found {
+		t.Fatalf("%q does not begin pxc_", got)
+	}
+	parts := strings.Split(rest, ".")
+	if len(parts) != 3 {
+		t.Fatalf("%q has %d fields, want three", got, len(parts))
+	}
+	nonce, id, mac := parts[0], parts[1], parts[2]
+
+	if nonce != "1789343452" {
+		t.Errorf("nonce is %q, want unix seconds", nonce)
+	}
+	if len(id) != 8 {
+		t.Errorf("id is %q, want eight characters", id)
+	}
+	// 64 hex characters, because proxio checks the length before anything else.
+	if len(mac) != sha256.Size*2 {
+		t.Errorf("digest is %d characters, want %d", len(mac), sha256.Size*2)
+	}
+	for _, field := range []string{id, mac} {
+		if _, err := hex.DecodeString(field); err != nil {
+			t.Errorf("%q is not hex", field)
+		}
+	}
+	// Nothing needs escaping, which is why the fields are separated by a dot rather than a
+	// colon: the whole value goes into a query parameter as it stands.
+	if url.QueryEscape(got) != got {
+		t.Errorf("%q does not survive a query string unescaped", got)
+	}
+}
+
+// The id is read off the key, so it never gives the secret away.
+//
+// It is what proxio prints in a listing, and what a refused request in a log can be traced by,
+// which only works because it is safe to write down.
+func TestTheIdGivesNothingAway(t *testing.T) {
+	const secret = "px_a-secret-worth-keeping"
+	got := nonced(secret, time.Unix(1789343452, 0))
+
+	if strings.Contains(got, secret) {
+		t.Fatalf("the secret is in the value: %q", got)
+	}
+	// Not a prefix of the secret either, which is the lazier way to build an id and would
+	// hand over a few characters of it every time.
+	id := strings.Split(strings.TrimPrefix(got, "pxc_"), ".")[1]
+	if strings.HasPrefix(secret, id) {
+		t.Errorf("the id %q is the head of the secret", id)
+	}
+	sum := sha256.Sum256([]byte(secret))
+	if want := hex.EncodeToString(sum[:])[:8]; id != want {
+		t.Errorf("id is %q, want %q — the first eight of the key", id, want)
+	}
+}
+
+// A new value every second, so one captured from a log is spent.
+func TestANoncedTokenChangesWithTheClock(t *testing.T) {
+	const secret = "px_secret"
+	at := time.Unix(1789343452, 0)
+
+	first := nonced(secret, at)
+	if same := nonced(secret, at); same != first {
+		t.Error("the same second gave two different values; nothing would verify")
+	}
+	if later := nonced(secret, at.Add(time.Second)); later == first {
+		t.Error("a second later gave the same value")
+	}
+	// And well outside proxio's window it is refused, which is the point of the whole thing.
+	stale := nonced(secret, at.Add(-nonceWindow-time.Minute))
+	if verifyNonced(stale, secret, at) {
+		t.Error("a value from outside the window still verified")
+	}
+}
+
+// A different secret cannot be proved with this one.
+func TestANoncedTokenIsOnlyGoodForItsOwnSecret(t *testing.T) {
+	at := time.Unix(1789343452, 0)
+	if verifyNonced(nonced("px_one", at), "px_another", at) {
+		t.Error("one secret's value verified against another's")
 	}
 }

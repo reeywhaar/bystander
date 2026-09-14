@@ -1,13 +1,46 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"bystander/internal/store"
 )
+
+// provesToken is proxio's check of a nonced token, enough of it for a stand-in relay.
+//
+// The secret never goes on the wire — see feeds.nonced — so a stand-in that compared strings
+// would reject every real request. Deliberately written out again rather than shared with the
+// feeds package's copy: two readings of somebody else's protocol that agree are worth more
+// than one that both sides import.
+func provesToken(wire, secret string) bool {
+	rest, found := strings.CutPrefix(wire, "pxc_")
+	if !found {
+		return false
+	}
+	parts := strings.Split(rest, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	nonce, id, mac := parts[0], parts[1], parts[2]
+	if _, err := strconv.ParseInt(nonce, 10, 64); err != nil {
+		return false
+	}
+
+	sum := sha256.Sum256([]byte(secret))
+	key := hex.EncodeToString(sum[:])
+	if len(key) < 8 || id != key[:8] {
+		return false
+	}
+	want := sha256.Sum256([]byte(nonce + "." + id + "." + key))
+	return mac == hex.EncodeToString(want[:])
+}
 
 type proxyList struct {
 	Proxies []proxyBody `json:"proxies"`
@@ -236,8 +269,8 @@ func TestTestingARelaySaysWhoFailed(t *testing.T) {
 	h.signIn(store.RoleAdmin, "root")
 
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("token") != "good" {
-			w.Header().Set("X-Proxio-Error", `{"error":"bad token"}`)
+		if !provesToken(r.URL.Query().Get("token"), "good") {
+			w.Header().Set("X-Proxio-Error", `{"error":"auth"}`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -483,8 +516,8 @@ func TestARelayCanBeTriedBeforeItIsSaved(t *testing.T) {
 
 	var asked string
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("token") != "good" {
-			w.Header().Set("X-Proxio-Error", `{"error":"bad token"}`)
+		if !provesToken(r.URL.Query().Get("token"), "good") {
+			w.Header().Set("X-Proxio-Error", `{"error":"auth"}`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

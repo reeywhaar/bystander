@@ -2,11 +2,14 @@ package feeds
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
@@ -40,6 +43,57 @@ func worthRetrying(status int, err error) bool {
 	return blockedStatuses[status]
 }
 
+// noncePrefix marks a token that has been proved rather than sent.
+const noncePrefix = "pxc_"
+
+// nonceWindow is how long one is good for, and is proxio's number rather than ours.
+//
+// Only here to be said in a comment and in an error: nothing on this side enforces it. It is
+// what makes a value that reaches a log file useless by the time anybody reads the log.
+const nonceWindow = 5 * time.Minute
+
+// nonced proves a proxio token instead of sending it.
+//
+// proxio's credential travels in the URL rather than a header, because that is what lets one
+// proxio stand in front of another — and a URL is the one part of a request that everything
+// writes down. A reverse proxy redacts Authorization and then logs request.uri in full, so the
+// raw token lands in the access log of every hop, and works forever once it is there.
+//
+//	pxc_1789343452.b7e1cda9.e95a47206414e7d1c60a4424dbeb230e85eebc92ba0b6530bac5d43bf881fb58
+//	└┬─┘└────┬───┘ └───┬──┘ └───────────────────────────────┬──────────────────────────────┘
+//	 │       │         │                                    sha256("<nonce>.<id>.<key>")
+//	 │       │         the first 8 of the key, which is the id proxio prints
+//	 │       unix seconds
+//	 prefix
+//
+// The key is sha256 of the secret, which is what proxio already stores for every token: it
+// never needs the secret back, and we never send it. Dots separate the fields because a dot is
+// unreserved in a URL, so the whole value goes into a query parameter unescaped — and no field
+// can contain one, being digits and hex.
+//
+// # Why a plain hash rather than HMAC
+//
+// Length extension is the objection to keying a plain hash, and it does not apply because the
+// key goes *last*: a forged digest would be for `nonce.id.key‖pad‖extra`, which is not a shape
+// anything builds. See proxio's docs/nonced.md, where the argument is made properly.
+//
+// # What it is not
+//
+// Not authentication. Nothing binds the value to the URL it arrived on, and anyone who captures
+// one inside proxio's [nonceWindow] can point it at something else. The goal is narrower and
+// worth stating plainly: stop the raw token travelling, so it has nowhere to land.
+func nonced(secret string, now time.Time) string {
+	key := hash(secret)
+	nonce := strconv.FormatInt(now.Unix(), 10)
+	id := key[:8]
+	return noncePrefix + nonce + "." + id + "." + hash(nonce+"."+id+"."+key)
+}
+
+func hash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
 // proxyError is the header proxio sets when the failure is its own rather than the target's.
 //
 // Load-bearing, and not merely for the log line. Without it the two are indistinguishable: a
@@ -68,7 +122,7 @@ func through(req *http.Request, proxy *store.Proxy) (*http.Request, error) {
 	target.Path = "/proxy"
 	target.RawQuery = url.Values{
 		"url":   {req.URL.String()},
-		"token": {proxy.Token},
+		"token": {nonced(proxy.Token, time.Now())},
 		// The instance's own address is nobody's business but ours: without this, proxio
 		// appends an X-Forwarded-For naming the machine the relay was there to stand in for.
 		"hide": {"1"},
