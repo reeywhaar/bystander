@@ -76,13 +76,22 @@ whatever the real bundle happens to contain.
 **The bundle is read from disk, not embedded.** `serve` hands `api.NewSPA` an
 `os.DirFS` over `BYSTANDER_WEB_DIR` (`/srv/web` in the image, `web/dist` from a checkout).
 
-It used to be `//go:embed all:dist`, and dropping that cost nothing at runtime: `NewSPA`
-walks whatever it is given *once*, at startup, and copies every file into a map — so the
-bundle was in memory because of what `NewSPA` does, not because of where it came from.
-What embedding did cost was the build. It made every stylesheet an input to the Go
-compiler, so a one-line CSS change invalidated the Docker layer that compiles and relinks
-a twenty-megabyte binary. Now the frontend and the binary are built by stages that do not
-depend on each other.
+It used to be `//go:embed all:dist`. Embedding cost the build: it made every stylesheet an
+input to the Go compiler, so a one-line CSS change invalidated the Docker layer that compiles
+and relinks a twenty-megabyte binary. Now the frontend and the binary are built by stages that
+do not depend on each other.
+
+**Nor is it held in memory.** `NewSPA` used to copy every file into a map at startup — the
+gzipped bytes and a decompressed copy of each — which was 1.8 MB of a heap whose whole live size
+is about four. It now builds an index (path, content type, validator, both sizes) by reading each
+file through once without keeping it, and streams from the directory per request. The OS page
+cache keeps hot files warm and can give the memory back, which a heap copy never would.
+
+The image gzips the text files at build time, so a browser is sent the stored bytes as they
+are. A client that sends no `Accept-Encoding` — `curl`, a health check, the smoke test in CI —
+gets them decompressed as they stream, and both forms share one ETag. The bundle is assumed not
+to change under a running process: in the image it cannot, and from a checkout a rebuild wants a
+restart to be seen.
 
 ## `internal/store`
 

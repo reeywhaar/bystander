@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 
 	"bystander/internal/session"
@@ -43,14 +44,32 @@ const (
 
 // SPA serves the built React bundle.
 //
-// Every file is read into memory once, at construction, with its ETag and content type
-// precomputed. A Vite bundle is a few hundred kilobytes, so the memory is free, and
-// holding it as bytes sidesteps every http.FileServerFS quirk that would otherwise need
-// working around: the implicit /index.html redirect, directory listings, and range
-// handling we do not want. It also means the content type comes from an explicit table
-// rather than mime.TypeByExtension, which on a minimal container depends on an
-// /etc/mime.types that may not be installed.
+// Straight off the disk, a request at a time, and nothing of the bundle is held but an index.
+// It used to read every file into memory at startup — the gzipped bytes and a decompressed copy
+// of each besides — which was about two megabytes of heap on a program whose whole live heap is
+// four, spent on bytes the OS page cache already keeps warm and can drop when it needs the room.
+// That copy dates from when the bundle was embedded in the binary; see config.DefaultWebDir.
+//
+// The index is what startup still builds: which paths exist, where each lives, its content type
+// and a validator. Computing the validator means reading each file once, streamed through the
+// hash and not kept.
+//
+// # Why not http.FileServerFS
+//
+// Everything that made holding the bytes attractive is still true of it: the implicit
+// /index.html redirect, directory listings, and range handling we do not want. None of that
+// needed the bytes held, only the handler written by hand, so it still is. The content type
+// comes from an explicit table rather than mime.TypeByExtension too, which on a minimal
+// container depends on an /etc/mime.types that may not be installed.
+//
+// # The bundle is not expected to change under a running process
+//
+// It cannot in the image, where it is a layer. From a checkout it can — a rebuild while the
+// server runs — and then what was indexed at startup no longer matches the files: a validator
+// that answers 304 for a changed file, and new asset names this has never heard of. Restart
+// after a rebuild, which is what was already needed to see one.
 type SPA struct {
+	dist   fs.FS
 	assets map[string]asset
 
 	// Four documents rather than one, because these are four applications with four
@@ -74,19 +93,27 @@ type SPA struct {
 	landing func(*http.Request) bool
 }
 
-// asset holds a file in both the form it is stored in and the form a client without gzip
-// support needs.
+// asset is where a file is and what to say about it — not the file.
 //
-// The build gzips the bundle before it is embedded, which is worth doing twice over: it
-// takes a few hundred kilobytes off the binary, and it means the compressed bytes are
-// served straight from memory rather than being recompressed on every request. plain is
-// decompressed once at startup for the rare client that sends no Accept-Encoding.
+// The image gzips the text files in the bundle at build time (see the Dockerfile), so most of
+// these name a ".gz" and are sent as they are to a client that accepts gzip, which is every
+// browser. The rest — curl, a health check, the smoke test in CI — get it decompressed as it is
+// streamed. Pictures are stored plain, because gzipping a raster image makes it bigger.
 type asset struct {
-	body    []byte // as stored: gzipped when gzipped is true
-	plain   []byte // always uncompressed
+	// file is the path inside dist, ".gz" included when gzipped. Empty for the placeholder,
+	// which is not a file.
+	file string
+	// inline is the placeholder's body, which is the one document with nothing on disk.
+	inline []byte
+
 	etag    string
 	ctype   string
 	gzipped bool
+
+	// size is the file as stored; plain is what it decompresses to. The same number when the
+	// file is not gzipped. Both are known up front so every response can say how long it is,
+	// whichever form it takes.
+	size, plain int64
 }
 
 // placeholderIndex stands in when web/dist holds no build.
@@ -113,43 +140,23 @@ const placeholderIndex = `<!doctype html>
 </body></html>
 `
 
-// NewSPA loads dist into memory. A missing index.html is not fatal: the API is still
-// useful and the placeholder explains itself.
+// NewSPA indexes dist. A missing index.html is not fatal: the API is still useful and the
+// placeholder explains itself.
 func NewSPA(dist fs.FS, log *slog.Logger) (*SPA, error) {
-	s := &SPA{assets: make(map[string]asset), log: log}
+	s := &SPA{dist: dist, assets: make(map[string]asset), log: log}
 
 	err := fs.WalkDir(dist, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		b, err := fs.ReadFile(dist, p)
-		if err != nil {
-			return err
-		}
-
-		// The build stage gzips the bundle before it is embedded. Registering a
-		// "foo.js.gz" under "/foo.js" means nothing else — not this package, not the
-		// bundle's own asset references — has to know the difference.
-		name, gzipped := strings.CutSuffix(p, ".gz")
-		if !gzipped {
-			s.assets["/"+p] = asset{body: b, plain: b, etag: etagOf(b), ctype: contentType(p)}
-			return nil
-		}
-
-		plain, err := gunzip(b)
+		a, err := describe(dist, p)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
-		s.assets["/"+name] = asset{
-			body:  b,
-			plain: plain,
-			// Keyed on the uncompressed bytes, so both representations of a file share
-			// one validator. That is what makes Vary: Accept-Encoding correct rather than
-			// a way for a cache to hand somebody the wrong encoding.
-			etag:    etagOf(plain),
-			ctype:   contentType(name),
-			gzipped: true,
-		}
+		// Registering "foo.js.gz" under "/foo.js" means nothing else — not this package,
+		// not the bundle's own asset references — has to know the difference.
+		name, _ := strings.CutSuffix(p, ".gz")
+		s.assets["/"+name] = a
 		return nil
 	})
 	if err != nil {
@@ -160,7 +167,8 @@ func NewSPA(dist fs.FS, log *slog.Logger) (*SPA, error) {
 		s.index, s.hasIndex = idx, true
 	} else {
 		b := []byte(placeholderIndex)
-		s.index = asset{body: b, plain: b, etag: etagOf(b), ctype: "text/html; charset=utf-8"}
+		s.index = asset{inline: b, etag: etagOf(b), ctype: "text/html; charset=utf-8",
+			size: int64(len(b)), plain: int64(len(b))}
 		log.Warn("serving a placeholder page: web/dist/index.html is missing, so this build has no frontend")
 	}
 
@@ -190,13 +198,61 @@ func NewSPA(dist fs.FS, log *slog.Logger) (*SPA, error) {
 	return s, nil
 }
 
-func gunzip(b []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewReader(b))
+// describe reads one file through once to learn what the index needs, and keeps none of it.
+//
+// The validator is taken over the *uncompressed* bytes, so both representations of a file share
+// one. That is what makes Vary: Accept-Encoding correct rather than a way for a cache to hand
+// somebody the wrong encoding — and it is why a gzipped file is decompressed here, into the hash
+// and nowhere else.
+func describe(dist fs.FS, p string) (asset, error) {
+	f, err := dist.Open(p)
 	if err != nil {
-		return nil, err
+		return asset{}, err
 	}
-	defer r.Close()
-	return io.ReadAll(r)
+	defer f.Close()
+
+	stored := &counter{r: f}
+	var src io.Reader = stored
+	name, gzipped := strings.CutSuffix(p, ".gz")
+	if gzipped {
+		z, err := gzip.NewReader(stored)
+		if err != nil {
+			return asset{}, err
+		}
+		defer z.Close()
+		src = z
+	}
+
+	sum := sha256.New()
+	plain, err := io.Copy(sum, src)
+	if err != nil {
+		return asset{}, err
+	}
+	// Whatever gzip left unread — a trailer it did not need — still counts toward what is
+	// on disk, and the stored length is what a gzip response says it is.
+	if _, err := io.Copy(io.Discard, stored); err != nil {
+		return asset{}, err
+	}
+	return asset{
+		file:    p,
+		etag:    `"` + hex.EncodeToString(sum.Sum(nil)[:16]) + `"`,
+		ctype:   contentType(name),
+		gzipped: gzipped,
+		size:    stored.n,
+		plain:   plain,
+	}, nil
+}
+
+// counter is a reader that remembers how much came through it.
+type counter struct {
+	r io.Reader
+	n int64
+}
+
+func (c *counter) Read(b []byte) (int, error) {
+	n, err := c.r.Read(b)
+	c.n += int64(n)
+	return n, err
 }
 
 func (s *SPA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -308,29 +364,74 @@ func carriesSession(r *http.Request) bool {
 
 func (s *SPA) serve(w http.ResponseWriter, r *http.Request, a asset) {
 	h := w.Header()
-	h.Set("ETag", a.etag)
-	h.Set("Content-Type", a.ctype)
-
-	body := a.plain
+	// Vary regardless of which representation this particular request gets: a cache that
+	// stored the compressed bytes without it would later hand them to a client that cannot
+	// read them.
 	if a.gzipped {
-		// Vary regardless of which representation this particular request gets: a cache
-		// that stored the compressed bytes without it would later hand them to a client
-		// that cannot read them.
 		h.Set("Vary", "Accept-Encoding")
-		if acceptsGzip(r) {
-			h.Set("Content-Encoding", "gzip")
-			body = a.body
-		}
 	}
+	send := a.gzipped && acceptsGzip(r)
 
 	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, a.etag) {
+		h.Set("ETag", a.etag)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+
+	// Opened before a single header goes out, so a file that cannot be read is an error
+	// response rather than a 200 that stops halfway.
+	var body io.Reader
 	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
+		src, done, err := s.open(a, send)
+		if err != nil {
+			s.log.Error("could not read a file the bundle was indexed with; has it changed since startup?",
+				"file", a.file, "error", err)
+			writeError(w, http.StatusInternalServerError, "could not read "+r.URL.Path)
+			return
+		}
+		defer done()
+		body = src
 	}
+
+	h.Set("ETag", a.etag)
+	h.Set("Content-Type", a.ctype)
+	length := a.plain
+	if send {
+		h.Set("Content-Encoding", "gzip")
+		length = a.size
+	}
+	h.Set("Content-Length", strconv.FormatInt(length, 10))
+	w.WriteHeader(http.StatusOK)
+
+	if body != nil {
+		// Nothing to be done about a failure part way through: the status has gone. It is
+		// nearly always the client leaving, which is not worth more than a debug line.
+		if _, err := io.Copy(w, body); err != nil {
+			s.log.Debug("stopped sending a file", "file", a.file, "error", err)
+		}
+	}
+}
+
+// open is a file in the form this response wants: as stored, or decompressed on the way out.
+//
+// done closes whatever was opened, and is always safe to call.
+func (s *SPA) open(a asset, asStored bool) (io.Reader, func(), error) {
+	if a.file == "" {
+		return bytes.NewReader(a.inline), func() {}, nil
+	}
+	f, err := s.dist.Open(a.file)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !a.gzipped || asStored {
+		return f, func() { f.Close() }, nil
+	}
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return z, func() { z.Close(); f.Close() }, nil
 }
 
 // acceptsGzip is a substring check rather than a full Accept-Encoding parse.

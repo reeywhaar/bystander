@@ -62,8 +62,10 @@ func serve(parent context.Context) error {
 
 	// os.DirFS rather than an embed. The bundle is a directory beside the binary, so a
 	// change to it is not a change to anything the Go compiler has seen — see
-	// config.DefaultWebDir. NewSPA reads the whole of it into memory here and never looks
-	// at the directory again, so a missing one is the same as an empty one: the placeholder.
+	// config.DefaultWebDir. NewSPA indexes it here and streams each file from it per
+	// request. An empty directory serves the placeholder; a missing one is a startup error,
+	// because it is nearly always a mistyped BYSTANDER_WEB_DIR and a placeholder would hide
+	// that behind a page saying the frontend was never built.
 	spa, err := api.NewSPA(os.DirFS(cfg.WebDir), log)
 	if err != nil {
 		return fmt.Errorf("load the frontend from %s: %w", cfg.WebDir, err)

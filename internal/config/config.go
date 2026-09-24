@@ -143,10 +143,11 @@ const (
 	// stylesheet invalidated the build layer and Docker recompiled and relinked twenty-odd
 	// megabytes of binary to serve a file it had already built.
 	//
-	// Nothing is given up by that. api.NewSPA walks whatever it is handed once, at startup,
-	// and copies every file into a map — so the bundle was only ever in memory because of
-	// what NewSPA does with it, not because of where it came from. Embedded or read off the
-	// disk, the same bytes end up in the same map and the file system is never touched again.
+	// It also meant the bundle ended up held in memory, and that outlived the embed: NewSPA
+	// went on copying every file into a map — the gzipped bytes and a decompressed copy of
+	// each — which was about two megabytes of a four-megabyte heap. It now indexes the
+	// directory at startup and streams each file from it per request, leaving the bytes to
+	// the OS page cache, which keeps them warm and can give them back.
 	//
 	// A checkout is the other case this has to serve: `go run .` from the repository root
 	// finds web/dist, and a tree that has never run `npm run build` finds nothing and gets

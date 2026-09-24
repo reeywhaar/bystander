@@ -1,9 +1,10 @@
 # Plans, scratch scripts, deploy keys — mine, not the repository's.
 private
 
-# The built frontend, except the one file that must be tracked: //go:embed all:dist needs
-# something to match, or a fresh clone fails to compile before Node has ever run. See
-# web/embed.go.
+# The built frontend, except the one file that must be tracked. It keeps web/dist in
+# existence in a fresh clone, so BYSTANDER_WEB_DIR=web/dist serves the placeholder page rather
+# than failing to start: an empty bundle directory is a page saying nothing was built, and a
+# missing one is refused as a mistyped path. See internal/cli/serve.go.
 web/dist/*
 !web/dist/.gitkeep
 

@@ -1,10 +1,17 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io"
+	"io/fs"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"bystander/internal/session"
 	"bystander/internal/store"
@@ -325,5 +332,189 @@ func TestAnInstanceCanTurnTheLandingPageOff(t *testing.T) {
 
 	if got := ask(); !strings.Contains(got, "login") {
 		t.Errorf("turned back on, a stranger got %q, want the landing page", got)
+	}
+}
+
+// opens counts how often each file is opened, so a test can see whether the bundle is being
+// read from disk or from something held.
+type opens struct {
+	fs.FS
+	n map[string]int
+}
+
+func (o *opens) Open(name string) (fs.File, error) {
+	o.n[name]++
+	return o.FS.Open(name)
+}
+
+func gz(t *testing.T, s string) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	w := gzip.NewWriter(&b)
+	if _, err := w.Write([]byte(s)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// A bundle laid out the way the image lays it out: text gzipped in place, pictures plain.
+func bundle(t *testing.T) (*opens, string) {
+	t.Helper()
+	const script = "console.log('the reader');"
+	return &opens{n: map[string]int{}, FS: fstest.MapFS{
+		"index.html.gz":           {Data: gz(t, "<!doctype html><div id=root></div>")},
+		"assets/reader-abc.js.gz": {Data: gz(t, script)},
+		"landing/front.webp":      {Data: []byte("RIFF....WEBP")},
+	}}, script
+}
+
+func spaFor(t *testing.T, dist fs.FS) *SPA {
+	t.Helper()
+	s, err := NewSPA(dist, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func request(s *SPA, method, path string, header ...string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	return rec
+}
+
+// Nothing of the bundle is held: a file is read when it is asked for, every time.
+//
+// This is the whole change. The bundle used to be copied into memory at startup — gzipped and
+// decompressed both — which was about two megabytes of heap for bytes the OS page cache keeps
+// warm anyway, and can give back when it needs the room.
+func TestTheBundleIsReadFromDiskEachTime(t *testing.T) {
+	dist, _ := bundle(t)
+	s := spaFor(t, dist)
+	indexed := dist.n["assets/reader-abc.js.gz"]
+
+	for range 3 {
+		if rec := request(s, http.MethodGet, "/assets/reader-abc.js", "Accept-Encoding", "gzip"); rec.Code != 200 {
+			t.Fatalf("answered %d", rec.Code)
+		}
+	}
+	if got := dist.n["assets/reader-abc.js.gz"] - indexed; got != 3 {
+		t.Errorf("three requests opened the file %d times; want once each, from disk", got)
+	}
+}
+
+// One stored file answers both kinds of client, and they agree about what it is.
+func TestGzippedFilesServeBothKindsOfClient(t *testing.T) {
+	dist, script := bundle(t)
+	s := spaFor(t, dist)
+
+	zipped := request(s, http.MethodGet, "/assets/reader-abc.js", "Accept-Encoding", "gzip, br")
+	plain := request(s, http.MethodGet, "/assets/reader-abc.js")
+
+	// A browser gets the stored bytes as they are, which is what gzipping at build time buys.
+	if zipped.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("a client that accepts gzip was not sent it")
+	}
+	stored := dist.FS.(fstest.MapFS)["assets/reader-abc.js.gz"].Data
+	if !bytes.Equal(zipped.Body.Bytes(), stored) {
+		t.Error("the gzipped response is not the stored file")
+	}
+	if zipped.Header().Get("Content-Length") != strconv.Itoa(len(stored)) {
+		t.Errorf("Content-Length %q, want the stored size %d", zipped.Header().Get("Content-Length"), len(stored))
+	}
+
+	// Anything else — curl, a health check, CI's smoke test — gets it decompressed on the way out.
+	if plain.Header().Get("Content-Encoding") != "" {
+		t.Error("a client that did not ask for gzip was sent it")
+	}
+	if plain.Body.String() != script {
+		t.Errorf("decompressed body is %q", plain.Body.String())
+	}
+	if plain.Header().Get("Content-Length") != strconv.Itoa(len(script)) {
+		t.Errorf("Content-Length %q, want the decompressed size %d", plain.Header().Get("Content-Length"), len(script))
+	}
+
+	// One validator for both, and a Vary that keeps a cache from mixing them up.
+	if zipped.Header().Get("ETag") == "" || zipped.Header().Get("ETag") != plain.Header().Get("ETag") {
+		t.Errorf("ETags differ: %q and %q", zipped.Header().Get("ETag"), plain.Header().Get("ETag"))
+	}
+	for _, rec := range []*httptest.ResponseRecorder{zipped, plain} {
+		if rec.Header().Get("Vary") != "Accept-Encoding" {
+			t.Errorf("Vary is %q", rec.Header().Get("Vary"))
+		}
+	}
+}
+
+// A picture is stored plain and sent plain, whatever the client accepts.
+func TestPicturesAreNotGzipped(t *testing.T) {
+	dist, _ := bundle(t)
+	rec := request(spaFor(t, dist), http.MethodGet, "/landing/front.webp", "Accept-Encoding", "gzip")
+
+	if rec.Header().Get("Content-Encoding") != "" || rec.Header().Get("Vary") != "" {
+		t.Errorf("a plain file came with Content-Encoding %q, Vary %q",
+			rec.Header().Get("Content-Encoding"), rec.Header().Get("Vary"))
+	}
+	if rec.Body.String() != "RIFF....WEBP" || rec.Header().Get("Content-Type") != "image/webp" {
+		t.Errorf("got %q as %q", rec.Body.String(), rec.Header().Get("Content-Type"))
+	}
+}
+
+// Neither a HEAD nor a 304 needs the file, so neither opens it.
+func TestHeadAndNotModifiedDoNotOpenTheFile(t *testing.T) {
+	dist, script := bundle(t)
+	s := spaFor(t, dist)
+	indexed := dist.n["assets/reader-abc.js.gz"]
+
+	head := request(s, http.MethodHead, "/assets/reader-abc.js")
+	if head.Code != 200 || head.Body.Len() != 0 {
+		t.Errorf("HEAD answered %d with %d bytes", head.Code, head.Body.Len())
+	}
+	if head.Header().Get("Content-Length") != strconv.Itoa(len(script)) {
+		t.Errorf("HEAD said Content-Length %q", head.Header().Get("Content-Length"))
+	}
+
+	cached := request(s, http.MethodGet, "/assets/reader-abc.js", "If-None-Match", head.Header().Get("ETag"))
+	if cached.Code != http.StatusNotModified || cached.Body.Len() != 0 {
+		t.Errorf("a matching validator answered %d with %d bytes", cached.Code, cached.Body.Len())
+	}
+
+	if got := dist.n["assets/reader-abc.js.gz"] - indexed; got != 0 {
+		t.Errorf("the file was opened %d times for a HEAD and a 304", got)
+	}
+}
+
+// A file that has gone since startup is an error, not a 200 that stops halfway.
+//
+// It cannot happen in the image. It can from a checkout rebuilt under a running server, and the
+// log line says so.
+func TestAFileThatHasGoneIsAnErrorNotAHalfResponse(t *testing.T) {
+	files := fstest.MapFS{
+		"index.html":           {Data: []byte("<!doctype html>")},
+		"assets/reader-abc.js": {Data: []byte("console.log(1)")},
+	}
+	s := spaFor(t, files)
+	delete(files, "assets/reader-abc.js")
+
+	rec := request(s, http.MethodGet, "/assets/reader-abc.js")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("answered %d, want 500", rec.Code)
+	}
+	if rec.Header().Get("ETag") != "" || rec.Header().Get("Content-Length") == strconv.Itoa(len("console.log(1)")) {
+		t.Error("the error went out wearing the missing file's headers")
+	}
+}
+
+// With no build at all there is still a page, and it explains itself.
+func TestNoBuildStillServesThePlaceholder(t *testing.T) {
+	rec := request(spaFor(t, fstest.MapFS{}), http.MethodGet, "/", "Accept", "text/html")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "has not been built") {
+		t.Fatalf("answered %d: %.80q", rec.Code, rec.Body.String())
 	}
 }

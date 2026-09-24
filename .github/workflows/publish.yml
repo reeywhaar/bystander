@@ -44,10 +44,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # Works without the frontend having been built: web/dist/.gitkeep is tracked, so the
-      # //go:embed in web/embed.go resolves and the binary falls back to its placeholder
-      # page. That is the whole reason the file is committed — and the whole reason
-      # vite.config.ts does not empty the directory.
+      # Works without the frontend having been built: the bundle is a directory read at
+      # runtime rather than anything the compiler sees, and a missing or empty one serves the
+      # placeholder page. See config.DefaultWebDir.
       - name: Test the backend
         run: go test ./...
 
