@@ -22,7 +22,18 @@ docs/screenshots/capture.mjs
 That builds the frontend and the binary, starts eight stand-in publishers and a reader
 against them, subscribes to all eight through the reader's own API, makes a second front page
 filtered to one section, composes both, marks a few articles read, drives headless Chromium
-over the DevTools protocol, and overwrites the PNGs here. Everything it starts is stopped again on the way out, including on failure.
+over the DevTools protocol, and writes the PNGs here. Everything it starts is stopped again on the way out, including on failure.
+
+Each PNG says its density, 72 dpi times `SCALE`, in a pHYs chunk and in EXIF, as a macOS
+screenshot does, so a viewer that reads it shows it at its size on screen rather than twice that.
+
+**A screen that did not change leaves its file alone.** The caret is hidden and transitions are
+finished before each shot, and the rasteriser still moves a few anti-aliased pixels now and then,
+so a new shot that differs from the file already there in under a thousandth of its pixels, by at
+most 24 levels, is not written. The landing page's WebPs are lossy and cannot be compared that
+way, so each is taken again only when its PNG was. `frontpage` and `read` still change on every
+run, and that is a real change: each run composes a new page, and what has been read is picked
+from it.
 
 Needs `go`, `node`, and Chromium or Chrome. No Docker, no npm packages beyond the
 frontend's own, and no Playwright — Chromium has a headless mode and Node has `fetch` and a

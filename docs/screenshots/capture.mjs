@@ -6,7 +6,7 @@
 //
 // Builds the frontend and the binary, starts eight stand-in publishers and a reader against
 // them, subscribes to all eight through the reader's own API, composes a page, drives headless
-// Chromium over the DevTools protocol, and overwrites the PNGs next to this file. Everything it
+// Chromium over the DevTools protocol, and writes the PNGs next to this file. Everything it
 // starts is stopped again on the way out, including on failure.
 //
 // Requires: go, node, and Chromium or Chrome. No Docker, and no npm packages beyond the
@@ -19,13 +19,14 @@
 // two levels of shell escaping is the kind of line nobody can read and everybody has to test by
 // running it.
 import { spawn, execFileSync } from "node:child_process";
-import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { connect } from "./cdp.mjs";
+import { alike } from "./png.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..");
@@ -419,6 +420,11 @@ for (const rank of [4, 9, 15]) {
 
 page.close();
 
+// What the PNGs were before, so the landing page's copies are taken again only where these changed.
+const LANDING = ["frontpage", "feeds", "feed", "pages", "page", "read"];
+const read = (file) => (existsSync(file) ? readFileSync(file) : null);
+const previous = new Map(LANDING.map((name) => [name, read(join(OUT, `${name}.png`))]));
+
 step(`capturing: front page ${WIDTH}x${HEIGHT} in a ${VIEW}-tall window, the rest ${NARROW} wide, ${THEME} theme`);
 run("node", [join(here, "shoot.mjs")], {
   stdio: "inherit",
@@ -447,13 +453,29 @@ run("node", [join(here, "shoot.mjs")], {
 //
 // Driven from here rather than left to whoever remembers, so the two sets cannot drift: one
 // run, one set of stand-in publishers, one composed page, photographed twice.
-step("capturing the landing page's copies");
+//
+// Only where the PNG changed, or the copy is missing. A lossy WebP cannot be compared the way
+// shoot.mjs compares a PNG, and without that every run rewrote all six for a few anti-aliased
+// pixels; the PNG is the same page from the same run, so it answers for its copy.
+const LANDING_OUT = join(here, "..", "..", "web", "public", "landing");
+const retake = LANDING.filter((name) => {
+  const before = previous.get(name);
+  const after = read(join(OUT, `${name}.png`));
+  return !existsSync(join(LANDING_OUT, `${name}.webp`)) || !before || !after || !alike(before, after);
+});
+if (retake.length === 0) {
+  step("done; the landing page's copies are already of these screens");
+  cleanup();
+  process.exit(0);
+}
+
+step(`capturing the landing page's copies: ${retake.join(", ")}`);
 run("node", [join(here, "shoot.mjs")], {
   stdio: "inherit",
   env: {
     ...process.env,
     BASE,
-    OUT: join(here, "..", "..", "web", "public", "landing"),
+    OUT: LANDING_OUT,
     SESSION_COOKIE: cookie,
     WIDTH: String(WIDTH),
     HEIGHT: String(HEIGHT),
@@ -462,7 +484,7 @@ run("node", [join(here, "shoot.mjs")], {
     THEME,
     OPEN_FEED: "The Meridian",
     FORMAT: "webp",
-    ONLY: "frontpage,feeds,feed,pages,page,read",
+    ONLY: retake.join(","),
   },
 });
 

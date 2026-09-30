@@ -16,10 +16,11 @@
 //   SCALE           device pixels per CSS pixel        (default 2)
 //   ONLY            comma-separated shots to take      (default all of them)
 //   FORMAT          png | webp                         (default png)
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { connect } from "./cdp.mjs";
+import { alike, stamp } from "./png.mjs";
 
 const BASE = process.env.BASE ?? "http://localhost";
 const OUT = process.env.OUT ?? ".";
@@ -147,6 +148,16 @@ async function shot(name, clip) {
   // first paint — `font-display: swap` means a shot taken too early is a shot of the
   // fallback serif. Nothing else in this file would have noticed.
   await evaluate("document.fonts.ready.then(() => true)");
+  // And everything at rest: a caret mid-blink or a colour mid-transition is a few pixels that
+  // differ from run to run, and a picture git sees as new.
+  await evaluate(`(() => {
+    const style = document.createElement("style");
+    style.textContent =
+      "*, ::before, ::after { caret-color: transparent !important; transition: none !important; }";
+    document.head.append(style);
+    for (const animation of document.getAnimations()) animation.finish();
+    return true;
+  })()`);
   await evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))");
   const { data } = await send("Page.captureScreenshot", {
     format: FORMAT,
@@ -158,8 +169,24 @@ async function shot(name, clip) {
       ? { clip: { x: 0, y: 0, ...clip, scale: SCALE / 2 }, captureBeyondViewport: true }
       : {}),
   });
-  writeFileSync(`${OUT}/${name}.${FORMAT}`, Buffer.from(data, "base64"));
-  console.log(`  wrote ${name}.${FORMAT}`);
+  const file = `${OUT}/${name}.${FORMAT}`;
+  const taken = Buffer.from(data, "base64");
+  if (FORMAT !== "png") {
+    writeFileSync(file, taken);
+    console.log(`  wrote ${name}.${FORMAT}`);
+    return;
+  }
+  const png = stamp(taken, SCALE);
+  const before = existsSync(file) ? readFileSync(file) : null;
+  if (before && alike(before, png)) {
+    // The same picture, kept; its metadata brought up to date if the stamp has changed.
+    const restamped = stamp(before, SCALE);
+    if (!restamped.equals(before)) writeFileSync(file, restamped);
+    console.log(`  ${name}.png, unchanged`);
+    return;
+  }
+  writeFileSync(file, png);
+  console.log(`  wrote ${name}.png`);
 }
 
 await send("Page.enable");
