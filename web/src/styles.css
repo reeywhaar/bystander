@@ -195,6 +195,8 @@ body {
      * four lines in it draws a frame around four lines and a foot of nothing, which reads as
      * a mistake. Unstretched, the box ends where the story does and the empty space belongs
      * to the page, where it is unremarkable.
+     *
+     * The masonry depends on it too: a card's span never changes its height. See lib/masonry.ts.
      */
     align-items: start;
   }

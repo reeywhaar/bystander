@@ -390,7 +390,7 @@ cards are at the top, so what is on screen at that moment moves least. Resizing 
 things, and that is fine — a different width was always going to be a different page, and the
 reader is the one doing it.
 
-Two things it has to account for, both learned by getting them wrong:
+Three things it has to account for, all learned by getting them wrong:
 
 - **`row-gap` must be zero.** A row gap applies between every one of the eight-pixel rows a
   card spans, so a forty-row card would carry forty gaps inside it. The space between rows is
@@ -398,6 +398,14 @@ Two things it has to account for, both learned by getting them wrong:
 - **The measurement must include those margins.** `getBoundingClientRect` stops at the border
   box, so a span computed from it leaves the margin outside the card's grid area and the next
   card packs straight against it. The page came out with the stories touching, top to bottom.
+- **Measuring must not take the spans away.** They were cleared first, so a card would not be
+  measured at the height of its old span — which it never is, because `align-items: start`
+  makes a card as tall as its content whatever it spans. What the clearing did do was stand
+  every card on one eight-pixel row for the length of the measuring: the page was shorter than
+  the window, and the browser clamped the scroll position to fit. Chromium's scroll anchoring
+  put it back; without that the reader was thrown to the top. It happened while scrolling
+  because that is when a lazy picture is requested, and one that fails to load is hidden, which
+  is a card changing height.
 
 The `ResizeObserver` watches width only. Packing changes the grid's height, which would call
 the observer straight back; it converges, but a loop that relies on converging is still a loop.

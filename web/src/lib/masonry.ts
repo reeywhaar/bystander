@@ -68,14 +68,8 @@ export function useMasonry(
       const el = grid.current;
       if (!el) return;
 
-      for (const child of Array.from(el.children)) {
-        if (!(child instanceof HTMLElement)) continue;
-
-        // Cleared before measuring. A card still carrying last measurement's span would be
-        // measured at that height rather than at the height its content wants, so the page
-        // would only ever grow.
-        child.style.gridRowEnd = "";
-      }
+      // Measured with last time's spans still on: clearing them collapsed the page for the
+      // length of the measuring and threw the reader to the top. See docs/frontend.md.
 
       // Every read first, then every write. Interleaving them makes the browser lay the page
       // out again between each pair, which turns one reflow into one per card.

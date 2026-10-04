@@ -117,6 +117,33 @@ describe("useMasonry", () => {
     expect(card.style.gridRowEnd).toBe(settled);
   });
 
+  it("never takes a card's span away while measuring", () => {
+    stubResizeObserver();
+    let height = 100;
+
+    const { getByTestId } = render(<Grid />);
+    const grid = getByTestId("grid");
+    const card = getByTestId("card");
+    heights(grid, () => 300);
+    heights(card, () => height);
+
+    const observer = observers[0]!;
+    observer.cb(
+      [{ target: card, contentRect: { height, width: 300 } }] as never,
+      observer.self,
+    );
+
+    const writes = vi.spyOn(card.style, "gridRowEnd", "set");
+    height = 60;
+    observer.cb(
+      [{ target: card, contentRect: { height, width: 300 } }] as never,
+      observer.self,
+    );
+
+    expect(writes).toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalledWith("");
+  });
+
   // Every card, not only the grid — the grid's height changing is what packing does, and a
   // card's height changing is what packing is for.
   it("watches the grid and every card in it", () => {
