@@ -478,6 +478,7 @@ CREATE TABLE saved (
   source_title TEXT    NOT NULL DEFAULT '',
   source_url   TEXT    NOT NULL DEFAULT '',
   saved_at     INTEGER NOT NULL,
+  read_at      INTEGER,                          -- read on the page of saved articles
   PRIMARY KEY (principal_id, item_id)
 ) STRICT, WITHOUT ROWID;
 CREATE INDEX saved_when ON saved(principal_id, saved_at DESC);
@@ -497,8 +498,11 @@ follower has gone the feed row is collected and can no longer say what it was ca
 Saving is a fact about a person and an article, like reading, so an article can be saved from any
 page it is on — including somebody else's published one.
 
-Saving also writes a `read_articles` row stamped with `saved_at`, and the saved page counts only a
-read stamped later — see [edition.md](edition.md#the-page-of-saved-articles).
+`read_at` is the saved page's **own read mark**, and `read_articles` is not consulted there. One
+mark between the two pages had each undoing the other — saving reads an article where it was
+found, which greyed it on arrival where it was saved to, and reading it there greyed it back on
+the Front Page. On the save, so it goes with the save. See
+[edition.md](edition.md#the-page-of-saved-articles).
 
 ### `instance_settings`
 
@@ -780,9 +784,7 @@ pages as *new* again — it falls to the last band, behind everything unread —
 stops a story coming back a year later as though it were fresh. A month-long memory forgets, and
 forgetting is the one thing it must not do.
 
-What ends it is unfollowing the feed, and `DeleteSubscription` does that in the same call —
-except for articles the person has saved, whose read marks stay with them for as long as they
-are saved; the sweep spares those too, whoever saved them. The
+What ends it is unfollowing the feed, and `DeleteSubscription` does that in the same call. The
 sweep is the safety net for the two ways that can be missed: the delete crosses the two
 databases and so cannot share a transaction with the unsubscribe, and a feed the last follower
 drops is collected wholesale rather than one subscription at a time.

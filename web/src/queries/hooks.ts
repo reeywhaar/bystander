@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import { getSharesByToken, postShares } from "@app/api/actions/shares";
 import {
@@ -36,10 +41,12 @@ import { getMe } from "@app/api/actions/auth";
 import {
   deleteEditionItemsByIdRead,
   deleteEditionItemsByIdSaved,
+  deleteEditionItemsByIdSavedRead,
   getEdition,
   postEditionRegenerate,
   putEditionItemsByIdRead,
   putEditionItemsByIdSaved,
+  putEditionItemsByIdSavedRead,
 } from "@app/api/actions/edition";
 import {
   deleteFeedsById,
@@ -167,6 +174,38 @@ export function useRegenerate(page = "") {
  * statement. On failure the previous page is put back, which is the only honest thing to
  * do with an optimistic update that did not happen.
  */
+/**
+ * The slug of the page of saved articles, if the strip has been loaded and there is one.
+ *
+ * That page keeps a read mark of its own, apart from every other page's, so an optimistic write
+ * has to know which cached edition is it — see store.SetSavedRead.
+ */
+function savedSlug(client: QueryClient): string | undefined {
+  return client.getQueryData<Page[]>(qk.pages)?.find((page) => page.is_saved)
+    ?.slug;
+}
+
+/** Changes one article in the cached editions `touch` picks, and returns what was there before. */
+function markHeld(
+  client: QueryClient,
+  id: string,
+  change: Partial<Article>,
+  touch: (onSavedPage: boolean) => boolean,
+) {
+  const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
+  const saved = savedSlug(client);
+  for (const [key, current] of previous) {
+    if (!current || !touch(saved !== undefined && key[1] === saved)) continue;
+    client.setQueryData<Edition>(key, {
+      ...current,
+      items: current.items.map((article: Article) =>
+        article.id === id ? { ...article, ...change } : article,
+      ),
+    });
+  }
+  return previous;
+}
+
 export function useSetRead() {
   const callApi = useApiCall();
   const client = useQueryClient();
@@ -186,22 +225,13 @@ export function useSetRead() {
       // the article is on. An optimistic update that touched only the visible page would
       // disagree with the server the moment somebody switched tabs — and would then be
       // silently corrected on the next fetch, which is the confusing way round.
-      const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
-
-      client.setQueriesData<Edition>({ queryKey: qk.edition }, (current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.map((article: Article) =>
-                article.id === id
-                  ? {
-                      ...article,
-                      read_at: read ? Math.floor(Date.now() / 1000) : null,
-                    }
-                  : article,
-              ),
-            }
-          : current,
+      //
+      // Every page but the saved one, which keeps its own mark: see useSetSavedRead.
+      const previous = markHeld(
+        client,
+        id,
+        { read_at: read ? Math.floor(Date.now() / 1000) : null },
+        (onSavedPage) => !onSavedPage,
       );
       return { previous };
     },
@@ -224,8 +254,8 @@ export function useSetRead() {
  * Keeps an article for later, or lets it go, optimistically and on every page held — the same
  * shape as [useSetRead], because saving is the same kind of fact: about a person and an article.
  *
- * Saving also reads it, as the server does: greyed on every page held but the saved page, where
- * the save's own read does not count — see store.ReadOnSavedPage. Unsaving leaves reading alone.
+ * Saving also reads it, as the server does: greyed on every page held but the saved page, which
+ * keeps its own mark — see useSetSavedRead. Unsaving leaves reading alone.
  */
 export function useSetSaved() {
   const callApi = useApiCall();
@@ -239,29 +269,14 @@ export function useSetSaved() {
 
     onMutate: async ({ id, saved }) => {
       await client.cancelQueries({ queryKey: qk.edition });
-      const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
       const now = Math.floor(Date.now() / 1000);
-      const savedPage = client
-        .getQueryData<Page[]>(qk.pages)
-        ?.find((page) => page.is_saved);
-
-      for (const [key, current] of previous) {
-        if (!current) continue;
-        const onSavedPage =
-          savedPage !== undefined && key[1] === savedPage.slug;
-        client.setQueryData<Edition>(key, {
-          ...current,
-          items: current.items.map((article: Article) =>
-            article.id === id
-              ? {
-                  ...article,
-                  saved_at: saved ? now : null,
-                  read_at: saved && !onSavedPage ? now : article.read_at,
-                }
-              : article,
-          ),
-        });
-      }
+      const previous = markHeld(
+        client,
+        id,
+        { saved_at: saved ? now : null },
+        () => true,
+      );
+      if (saved) markHeld(client, id, { read_at: now }, (onSaved) => !onSaved);
       return { previous };
     },
 
@@ -277,14 +292,48 @@ export function useSetSaved() {
     onSettled: (_data, _error, { saved }) => {
       void client.invalidateQueries({ queryKey: qk.pages });
       void client.invalidateQueries({ queryKey: qk.read });
-      const savedPage = client
-        .getQueryData<Page[]>(qk.pages)
-        ?.find((page) => page.is_saved);
-      if (saved && savedPage) {
+      const slug = savedSlug(client);
+      if (saved && slug !== undefined) {
         void client.invalidateQueries({
-          queryKey: qk.editionOf(savedPage.slug),
+          queryKey: qk.editionOf(slug),
           exact: true,
         });
+      }
+    },
+  });
+}
+
+/**
+ * Marks an article read or unread on the page of saved articles, and only there — the mark that
+ * page keeps apart from every other page's, so reading something there does not grey it on the
+ * Front Page, and having read it on the Front Page does not grey it here.
+ */
+export function useSetSavedRead() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, read }: { id: string; read: boolean }) =>
+      callApi(
+        read
+          ? putEditionItemsByIdSavedRead(id)
+          : deleteEditionItemsByIdSavedRead(id),
+      ),
+
+    onMutate: async ({ id, read }) => {
+      await client.cancelQueries({ queryKey: qk.edition });
+      const previous = markHeld(
+        client,
+        id,
+        { read_at: read ? Math.floor(Date.now() / 1000) : null },
+        (onSavedPage) => onSavedPage,
+      );
+      return { previous };
+    },
+
+    onError: (_error, _variables, context) => {
+      for (const [key, edition] of context?.previous ?? []) {
+        client.setQueryData(key, edition);
       }
     },
   });

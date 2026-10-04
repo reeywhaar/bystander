@@ -223,7 +223,8 @@ as you set, and can be renamed or published — but it draws from what you saved
 your feeds, so it has no filter.
 
 Saving an article also marks it read, so it greys where you found it — but it arrives on Read
-later unread, and it is there the next time you open that page. Reading it there greys it as it would anywhere, and the next turn may draw
+later unread, and it is there the next time you open that page. Read later keeps read marks of
+its own: reading something there greys it there and nowhere else, and the next turn may draw
 something else instead. It stays saved until you unsave it, including after you unfollow the feed it came
 from: what you saved is a copy, and yours.
 

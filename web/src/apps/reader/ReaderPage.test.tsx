@@ -290,6 +290,56 @@ describe("ReaderPage", () => {
     );
   });
 
+  // The saved page reads for itself, so marking there must not land on the Front Page's mark.
+  it("marks read on the saved page with that page's own mark", async () => {
+    const { transport } = renderWith(
+      <MemoryRouter initialEntries={["/f/later"]}>
+        <Routes>
+          <Route path="/f/:slug" element={<ReaderPage me={me} />} />
+        </Routes>
+      </MemoryRouter>,
+      {
+        "GET /api/pages": {
+          body: [
+            page(),
+            page({
+              id: "pg_2",
+              name: "Read later",
+              slug: "later",
+              is_main: false,
+              is_saved: true,
+            }),
+          ],
+        },
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "PUT /api/edition/items/a_1/saved/read": { status: 204 },
+      },
+    );
+
+    await screen.findByRole("link", { name: "Story a_1" });
+    await waitFor(() =>
+      expect(transport.calls).toContainEqual(
+        expect.objectContaining({ path: "/api/pages" }),
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Mark read" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Mark unread" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(transport.calls).toContainEqual(
+        expect.objectContaining({
+          method: "PUT",
+          path: "/api/edition/items/a_1/saved/read",
+        }),
+      ),
+    );
+    expect(transport.calls).not.toContainEqual(
+      expect.objectContaining({ path: "/api/edition/items/a_1/read" }),
+    );
+  });
+
   // Empty for want of saving, which is not the same sentence as empty for want of feeds.
   it("says what the page of saved articles is made from when it is empty", async () => {
     renderWith(

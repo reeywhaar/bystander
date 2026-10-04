@@ -271,13 +271,15 @@ type ExportedSaved struct {
 	SourceURL   string `json:"source_url"`
 	PublishedAt int64  `json:"published_at"`
 	SavedAt     int64  `json:"saved_at"`
+	// ReadAt is when it was read on the page of saved articles, or null.
+	ReadAt *int64 `json:"read_at"`
 }
 
 // ExportSaved is everything somebody has kept for later, newest first. Held at once rather than
 // read in batches: it is a list somebody curates by hand, not a history that grows by itself.
 func (s *Store) ExportSaved(ctx context.Context, principalID string) ([]ExportedSaved, error) {
 	rows, err := s.main.QueryContext(ctx,
-		`SELECT title, link, source_title, source_url, published_at, saved_at
+		`SELECT title, link, source_title, source_url, published_at, saved_at, read_at
 		   FROM saved WHERE principal_id = ?
 		  ORDER BY saved_at DESC`, principalID)
 	if err != nil {
@@ -287,9 +289,15 @@ func (s *Store) ExportSaved(ctx context.Context, principalID string) ([]Exported
 
 	out := []ExportedSaved{}
 	for rows.Next() {
-		var a ExportedSaved
-		if err := rows.Scan(&a.Title, &a.Link, &a.Source, &a.SourceURL, &a.PublishedAt, &a.SavedAt); err != nil {
+		var (
+			a    ExportedSaved
+			read sql.NullInt64
+		)
+		if err := rows.Scan(&a.Title, &a.Link, &a.Source, &a.SourceURL, &a.PublishedAt, &a.SavedAt, &read); err != nil {
 			return nil, fmt.Errorf("export saved: %w", err)
+		}
+		if read.Valid {
+			a.ReadAt = &read.Int64
 		}
 		out = append(out, a)
 	}

@@ -68,8 +68,6 @@ func TestASavedArticleOutlivesItsFeed(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	p := principal(t, s)
-	saving := time.Now().UTC().Truncate(time.Second)
-	at(t, s, saving)
 
 	feed, err := s.UpsertFeed(ctx, "https://example.com/meridian.xml", "The Meridian", "https://example.com")
 	if err != nil {
@@ -88,10 +86,8 @@ func TestASavedArticleOutlivesItsFeed(t *testing.T) {
 	if err := s.SaveArticle(ctx, p.ID, item.ID); err != nil {
 		t.Fatalf("SaveArticle(): %v", err)
 	}
-	// Read later, on the saved page — which is the read that counts there.
-	at(t, s, saving.Add(time.Hour))
-	if err := s.SetRead(ctx, p.ID, item.ID, true); err != nil {
-		t.Fatalf("SetRead(): %v", err)
+	if err := s.SetSavedRead(ctx, p.ID, item.ID, true); err != nil {
+		t.Fatalf("SetSavedRead(): %v", err)
 	}
 
 	// Unfollowed, and then everything the sweep does to a feed nobody follows.
@@ -144,8 +140,6 @@ func TestSavedArticlesAreBandedLikeAnyOther(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	p := principal(t, s)
-	saving := time.Now().UTC().Truncate(time.Second)
-	at(t, s, saving)
 	feedID := seedFeed(t, s, p.ID, "meridian", 0, 1, 2, 3)
 
 	queues, err := s.Queues(ctx, MainPageID(p.ID), p.ID, []string{feedID}, 10, nil)
@@ -164,9 +158,8 @@ func TestSavedArticlesAreBandedLikeAnyOther(t *testing.T) {
 	if _, err := s.AddEdition(ctx, page, 1, []Pick{{Item: shown, Slot: SlotLead}}); err != nil {
 		t.Fatalf("AddEdition(): %v", err)
 	}
-	at(t, s, saving.Add(time.Hour))
-	if err := s.SetRead(ctx, p.ID, read.ID, true); err != nil {
-		t.Fatalf("SetRead(): %v", err)
+	if err := s.SetSavedRead(ctx, p.ID, read.ID, true); err != nil {
+		t.Fatalf("SetSavedRead(): %v", err)
 	}
 
 	got, err := s.SavedQueues(ctx, page.ID, p.ID)
@@ -202,45 +195,66 @@ func TestSavedArticlesAreBandedLikeAnyOther(t *testing.T) {
 	}
 }
 
-// Saving puts an article aside, which is dealing with it on the page it was found on: it greys
-// there and everywhere else. Not on the saved page, where it has only just arrived — and not again
-// on a second save, which would otherwise stamp a read later than the save.
-func TestSavingMarksReadEverywhereButTheSavedPage(t *testing.T) {
+// The saved page keeps a read mark of its own, and neither page's mark touches the other's. Saving
+// reads an article where it was found, which must not grey it on arrival where it was saved to —
+// and reading it there must not grey it back on the Front Page.
+func TestTheSavedPageKeepsItsOwnReadMarks(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	p := principal(t, s)
-	saving := time.Now().UTC().Truncate(time.Second)
-	at(t, s, saving)
 	feedID := seedFeed(t, s, p.ID, "meridian", 0, 1)
 
-	queues, err := s.Queues(ctx, MainPageID(p.ID), p.ID, []string{feedID}, 10, nil)
-	if err != nil {
-		t.Fatalf("Queues(): %v", err)
+	front := func() *Queue {
+		t.Helper()
+		queues, err := s.Queues(ctx, MainPageID(p.ID), p.ID, []string{feedID}, 10, nil)
+		if err != nil {
+			t.Fatalf("Queues(): %v", err)
+		}
+		return queues[feedID]
 	}
-	item := queues[feedID].Fresh[0]
+	item := front().Fresh[0]
 	if err := s.SaveArticle(ctx, p.ID, item.ID); err != nil {
 		t.Fatalf("SaveArticle(): %v", err)
 	}
-
-	queues, err = s.Queues(ctx, MainPageID(p.ID), p.ID, []string{feedID}, 10, nil)
-	if err != nil {
-		t.Fatalf("Queues(): %v", err)
-	}
-	if len(queues[feedID].Read) != 1 {
-		t.Errorf("Front Page queue %+v, want the saved article read there", queues[feedID])
-	}
-
-	at(t, s, saving.Add(time.Hour))
-	if err := s.SaveArticle(ctx, p.ID, item.ID); err != nil {
-		t.Fatalf("SaveArticle() again: %v", err)
+	later := func() *Queue {
+		t.Helper()
+		queues, err := s.SavedQueues(ctx, savedPage(t, s, p.ID).ID, p.ID)
+		if err != nil {
+			t.Fatalf("SavedQueues(): %v", err)
+		}
+		return queues[item.ID]
 	}
 
-	saved, err := s.SavedQueues(ctx, savedPage(t, s, p.ID).ID, p.ID)
-	if err != nil {
-		t.Fatalf("SavedQueues(): %v", err)
+	if q := front(); len(q.Read) != 1 {
+		t.Errorf("Front Page queue %+v, want the saved article read there", q)
 	}
-	if q := saved[item.ID]; q == nil || len(q.Fresh) != 1 {
-		t.Errorf("saved page queue %+v, want it fresh: the read was the save's own", q)
+	if q := later(); q == nil || len(q.Fresh) != 1 {
+		t.Errorf("saved page queue %+v, want it unread: saving read it on the Front Page", q)
+	}
+
+	// Unread on the Front Page and read on the saved page: each holds.
+	if err := s.SetRead(ctx, p.ID, item.ID, false); err != nil {
+		t.Fatalf("SetRead(): %v", err)
+	}
+	if err := s.SetSavedRead(ctx, p.ID, item.ID, true); err != nil {
+		t.Fatalf("SetSavedRead(): %v", err)
+	}
+	if q := front(); len(q.Read) != 0 {
+		t.Errorf("Front Page queue %+v, want it unread: it was read on the saved page", q)
+	}
+	if q := later(); q == nil || len(q.Read) != 1 {
+		t.Errorf("saved page queue %+v, want it read there", q)
+	}
+
+	// And reading it on the Front Page again does not unread or reread anything on the other.
+	if err := s.SetRead(ctx, p.ID, item.ID, true); err != nil {
+		t.Fatalf("SetRead(): %v", err)
+	}
+	if err := s.SetSavedRead(ctx, p.ID, item.ID, false); err != nil {
+		t.Fatalf("SetSavedRead(): %v", err)
+	}
+	if q := later(); q == nil || len(q.Fresh) != 1 {
+		t.Errorf("saved page queue %+v, want it unread there whatever the Front Page says", q)
 	}
 }
 

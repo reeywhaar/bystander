@@ -123,6 +123,8 @@ PUT    /api/edition/items/{id}/read      → 204
 DELETE /api/edition/items/{id}/read      → 204
 PUT    /api/edition/items/{id}/saved     → 204
 DELETE /api/edition/items/{id}/saved     → 204
+PUT    /api/edition/items/{id}/saved/read → 204
+DELETE /api/edition/items/{id}/saved/read → 204
 ```
 
 `?page=` names one of the caller's front pages, by slug or by id. **Absent is the Front Page**,
@@ -135,9 +137,12 @@ article greyed on one tab is greyed on the next.
 
 Saving works the same way and for the same reason: `PUT …/saved` keeps an article for whoever is
 calling, from any page it is on, including somebody else's published one. The first save also
-makes the page of saved articles — see [Front pages](#front-pages) — and marks the article read,
-except on that page; see [edition.md](edition.md#the-page-of-saved-articles). `read_at` and
-`saved_at` on each item are both the viewer's.
+makes the page of saved articles — see [Front pages](#front-pages) — and marks the article read.
+
+That page keeps a read mark of its own, which `…/saved/read` sets and nothing else touches: the
+ordinary mark does not grey a card there, and that page's mark greys nothing anywhere else. See
+[edition.md](edition.md#the-page-of-saved-articles). `read_at` and `saved_at` on each item are
+both the viewer's, and on their own page of saved articles `read_at` is that page's mark.
 
 `GET /api/edition` answers `200` with an empty `items` array before the first page is
 generated — except for the page of saved articles, which is composed on the spot when it has no

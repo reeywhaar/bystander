@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"bystander/internal/store"
 )
@@ -254,18 +253,21 @@ func (s *Server) liveEdition(ctx context.Context, page *store.Page, viewerID str
 // keptFor marks an article as saved by whoever is looking, and names its source from what they
 // kept when nothing else can: a saved article outlives its feed, and the feed's own row with it.
 //
-// On their page of saved articles it also drops the read mark that saving made, which belongs to
-// the page the article was saved from. See store.ReadOnSavedPage.
+// On their page of saved articles the read mark is the save's own rather than the ordinary one —
+// see store.SetSavedRead — and something no longer saved has none there.
 func keptFor(article *articleBody, saved *store.SavedArticle, onSavedPage bool) {
+	if onSavedPage {
+		article.ReadAt = nil
+		if saved != nil && !saved.ReadAt.IsZero() {
+			at := saved.ReadAt.Unix()
+			article.ReadAt = &at
+		}
+	}
 	if saved == nil {
 		return
 	}
 	at := saved.SavedAt.Unix()
 	article.SavedAt = &at
-	if onSavedPage && article.ReadAt != nil &&
-		!store.ReadOnSavedPage(time.Unix(*article.ReadAt, 0), saved.SavedAt) {
-		article.ReadAt = nil
-	}
 	if article.Feed.Title == "" {
 		article.Feed.ID = saved.FeedID
 		article.Feed.Title = saved.SourceTitle
@@ -293,6 +295,18 @@ func (s *Server) saveArticle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) unsaveArticle(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.UnsaveArticle(r.Context(), principalOf(r).ID, r.PathValue("id")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (s *Server) markSavedRead(w http.ResponseWriter, r *http.Request)   { s.setSavedRead(w, r, true) }
+func (s *Server) unmarkSavedRead(w http.ResponseWriter, r *http.Request) { s.setSavedRead(w, r, false) }
+
+// setSavedRead marks a saved article read on the page of saved articles, and nowhere else.
+func (s *Server) setSavedRead(w http.ResponseWriter, r *http.Request, read bool) {
+	if err := s.store.SetSavedRead(r.Context(), principalOf(r).ID, r.PathValue("id"), read); err != nil {
 		s.fail(w, r, err)
 		return
 	}

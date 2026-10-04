@@ -51,6 +51,23 @@ export function putEditionItemsByIdSaved(id: string): ApiAction<void> {
   );
 }
 
+/** `PUT /api/edition/items/{id}/saved/read` — read on the page of saved articles, and only there. */
+export function putEditionItemsByIdSavedRead(id: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "PUT", path: `/api/edition/items/${seg(id)}/saved/read` }),
+  );
+}
+
+/** `DELETE /api/edition/items/{id}/saved/read` */
+export function deleteEditionItemsByIdSavedRead(id: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({
+      method: "DELETE",
+      path: `/api/edition/items/${seg(id)}/saved/read`,
+    }),
+  );
+}
+
 /** `DELETE /api/edition/items/{id}/saved` */
 export function deleteEditionItemsByIdSaved(id: string): ApiAction<void> {
   return createApiAction((d) =>

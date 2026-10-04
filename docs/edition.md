@@ -374,7 +374,8 @@ unread-count problem wearing a different hat.
 **A mark is a fact about a person and an article**, and nothing else — not about the edition it
 was made on, not about the page. So it survives the page turning, it greys the article on every
 other page currently carrying it, and it works on a page somebody else published, because the
-join is against whoever is looking. It ends when the feed is unfollowed, unless the article is saved. There is one endpoint
+join is against whoever is looking. It ends when the feed is unfollowed. The page of saved
+articles is the exception: it keeps a mark of its own — see below. There is one endpoint
 for all of that and there used to be two; see
 [entities.md](entities.md#edition_items) for what the second one was and why it went.
 
@@ -396,13 +397,13 @@ So it behaves like any other page. It turns on its own schedule, a re-roll is a 
 article read there greys in place and may give way to another at the next turn. It leaves the
 pool only when it is unsaved.
 
-**Saving reads.** Putting an article aside is dealing with it on the page it was found on, so the
-save writes a read mark too, and the card greys there and on every other page carrying it. That
-mark must not follow it to the saved page, where it has only just arrived — so there, and only
-there, a saved article counts as read when it was read *after* it was saved. The save stamps the
-read with its own moment, which is what makes the two tell apart: anything read later is a
-different, later stamp. A second save of something already saved writes nothing, or it would be
-that later stamp. Unsaving leaves the read mark alone.
+**Saving reads, and the saved page reads for itself.** Putting an article aside is dealing with it
+on the page it was found on, so the save writes the ordinary read mark, and the card greys there
+and on every other page carrying it. The saved page does not look at that mark. It keeps its own,
+on the save — `saved.read_at` — which reading there sets and nothing else does. So an article
+arrives on the saved page unread however it was found, reading it there leaves the Front Page
+alone, and the bands above are drawn from the saved page's mark. Unsaving leaves the ordinary
+mark alone; the saved page's goes with the save.
 
 **A save invalidates the page.** Its edition is dropped, and the next look at it — by its owner,
 or by anybody it is published to — composes a new one on the spot, where the new save is in the

@@ -17,6 +17,7 @@ import {
   useRegenerate,
   useSetRead,
   useSetSaved,
+  useSetSavedRead,
 } from "@app/queries/hooks";
 
 import { FeedActionsDialog } from "@app/apps/reader/FeedActionsDialog";
@@ -31,6 +32,7 @@ export function ReaderPage({ me }: { me: Me }) {
   const edition = useEdition(slug);
   const setRead = useSetRead();
   const setSaved = useSetSaved();
+  const setSavedRead = useSetSavedRead();
   const regenerate = useRegenerate(slug);
   const resetCompose = regenerate.reset;
   // Which page this is, for the empty state: a page filtered to nothing is empty for a
@@ -136,7 +138,12 @@ export function ReaderPage({ me }: { me: Me }) {
           <PageGrid
             editionID={page.id}
             items={page.items}
-            onRead={(id, read) => setRead.mutate({ id, read })}
+            // The page of saved articles keeps a read mark of its own; see useSetSavedRead.
+            onRead={(id, read) =>
+              current?.is_saved
+                ? setSavedRead.mutate({ id, read })
+                : setRead.mutate({ id, read })
+            }
             onSave={(id, saved) => setSaved.mutate({ id, saved })}
             onActions={setActingOn}
             gridRef={grid}

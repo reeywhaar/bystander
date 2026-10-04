@@ -126,7 +126,7 @@ func TestSavingAnArticlePutsItOnTheSavedPage(t *testing.T) {
 	}
 	// But not read on the page it was saved to, where it has only just arrived.
 	if later.Items[0].ReadAt != nil {
-		t.Errorf("the saved card arrived read (%d); the save's own read belongs to the Front Page", *later.Items[0].ReadAt)
+		t.Errorf("the saved card arrived read (%d); saving's read belongs to the Front Page", *later.Items[0].ReadAt)
 	}
 
 	// A second save is on the page the next time it is looked at, not at its next turn.
@@ -135,6 +135,28 @@ func TestSavingAnArticlePutsItOnTheSavedPage(t *testing.T) {
 	h.expect(h.do(http.MethodGet, "/api/edition?page="+saved.Slug, nil), http.StatusOK, &later)
 	if len(later.Items) != 2 {
 		t.Fatalf("after a second save the saved page holds %d articles, want 2", len(later.Items))
+	}
+
+	// Each page reads for itself: read on the saved page, unread on the Front Page, and both hold.
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+second.ID+"/saved/read", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodDelete, "/api/edition/items/"+second.ID+"/read", nil), http.StatusNoContent, nil)
+	readOn := func(path string) bool {
+		t.Helper()
+		var page editionBody
+		h.expect(h.do(http.MethodGet, path, nil), http.StatusOK, &page)
+		for _, item := range page.Items {
+			if item.ID == second.ID {
+				return item.ReadAt != nil
+			}
+		}
+		t.Fatalf("%q is not on %s", second.Title, path)
+		return false
+	}
+	if !readOn("/api/edition?page=" + saved.Slug) {
+		t.Error("read on the saved page, and it does not say so there")
+	}
+	if readOn("/api/edition") {
+		t.Error("reading on the saved page greyed it on the Front Page")
 	}
 
 	// Let go of, it stays on the page in front of you and says it is no longer kept. Unsaving

@@ -272,31 +272,27 @@ type ReadArticle struct {
 // mark greys a card on this page and dies with it; the record outlives the page by a month
 // — but they must never disagree about whether something was read.
 func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bool) error {
+	now := s.Now()
+
 	if read {
-		return s.markRead(ctx, principalID, itemID, s.Now())
+		// INSERT ... SELECT so the article's details are copied by the database rather than
+		// read out and written back. OR REPLACE because reading something, unreading it and
+		// reading it again should record the latest moment, not fail.
+		//
+		// A missing article writes nothing and says nothing, which is the right answer: it
+		// has been pruned, and there is no longer anything to have read.
+		_, err := s.derived.ExecContext(ctx,
+			`INSERT OR REPLACE INTO read_articles
+			   (principal_id, item_id, feed_id, title, link, published_at, read_at)
+			 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
+			   FROM items i WHERE i.id = ?`,
+			principalID, unix(now), itemID)
+		return err
 	}
 
 	_, err := s.derived.ExecContext(ctx,
 		`DELETE FROM read_articles WHERE principal_id = ? AND item_id = ?`,
 		principalID, itemID)
-	return err
-}
-
-// markRead records one article as read at a given moment.
-//
-// INSERT ... SELECT so the article's details are copied by the database rather than read out and
-// written back. OR REPLACE because reading something, unreading it and reading it again should
-// record the latest moment, not fail.
-//
-// A missing article writes nothing and says nothing, which is the right answer: it has been
-// pruned, and there is no longer anything to have read.
-func (s *Store) markRead(ctx context.Context, principalID, itemID string, at time.Time) error {
-	_, err := s.derived.ExecContext(ctx,
-		`INSERT OR REPLACE INTO read_articles
-		   (principal_id, item_id, feed_id, title, link, published_at, read_at)
-		 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
-		   FROM items i WHERE i.id = ?`,
-		principalID, unix(at), itemID)
 	return err
 }
 
@@ -342,27 +338,18 @@ func (s *Store) ReadArticles(ctx context.Context, principalID string) ([]*ReadAr
 // the two ways that can be missed: the delete is across two databases and so cannot be in one
 // transaction with the unsubscribe, and a feed the last follower drops is collected wholesale
 // by the sweep rather than one subscription at a time.
-//
-// Saved articles are spared, whoever saved them: a saved article outlives its feed on purpose,
-// and forgetting it was read would bring it back to the saved page unread.
 func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (int64, error) {
-	saved, err := s.savedItemIDs(ctx, "")
-	if err != nil {
-		return 0, err
+	if len(liveFeedIDs) == 0 {
+		res, err := s.derived.ExecContext(ctx, `DELETE FROM read_articles`)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
 	}
 
-	query, args := `DELETE FROM read_articles WHERE 1`, []any{}
-	if len(liveFeedIDs) > 0 {
-		in, marks := inList(liveFeedIDs)
-		query += ` AND feed_id NOT IN (` + marks + `)`
-		args = append(args, in...)
-	}
-	if len(saved) > 0 {
-		in, marks := inList(saved)
-		query += ` AND item_id NOT IN (` + marks + `)`
-		args = append(args, in...)
-	}
-	res, err := s.derived.ExecContext(ctx, query, args...)
+	args, placeholders := inList(liveFeedIDs)
+	res, err := s.derived.ExecContext(ctx,
+		`DELETE FROM read_articles WHERE feed_id NOT IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -372,26 +359,15 @@ func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (in
 // ForgetReadArticles drops what one person read on one feed.
 //
 // Called when they unfollow it. The record's job is to keep an article they have finished with
-// off their pages, and a feed they no longer follow has no pages to be kept off — except the
-// saved page, which keeps what they saved from it.
+// off their pages, and a feed they no longer follow has no pages to be kept off.
 func (s *Store) ForgetReadArticles(ctx context.Context, principalID, feedID string) (int64, error) {
-	saved, err := s.savedItemIDs(ctx, principalID)
-	if err != nil {
-		return 0, err
-	}
-	keep, args := "", []any{principalID, feedID, principalID}
-	if len(saved) > 0 {
-		in, marks := inList(saved)
-		keep = ` AND item_id NOT IN (` + marks + `)`
-		args = append(args, in...)
-	}
 	res, err := s.derived.ExecContext(ctx, currentEditions+`
 		DELETE FROM read_articles
 		 WHERE principal_id = ? AND feed_id = ?
 		   AND item_id NOT IN (
 		         SELECT ei.item_id FROM edition_items ei
 		           JOIN current c ON c.id = ei.edition_id
-		          WHERE c.principal_id = ?)`+keep, args...)
+		          WHERE c.principal_id = ?)`, principalID, feedID, principalID)
 	if err != nil {
 		return 0, err
 	}
