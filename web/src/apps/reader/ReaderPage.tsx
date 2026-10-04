@@ -16,6 +16,7 @@ import {
   usePages,
   useRegenerate,
   useSetRead,
+  useSetSaved,
 } from "@app/queries/hooks";
 
 import { FeedActionsDialog } from "@app/apps/reader/FeedActionsDialog";
@@ -29,6 +30,7 @@ export function ReaderPage({ me }: { me: Me }) {
 
   const edition = useEdition(slug);
   const setRead = useSetRead();
+  const setSaved = useSetSaved();
   const regenerate = useRegenerate(slug);
   const resetCompose = regenerate.reset;
   // Which page this is, for the empty state: a page filtered to nothing is empty for a
@@ -85,6 +87,9 @@ export function ReaderPage({ me }: { me: Me }) {
 
   const page = edition.data;
   const hasPage = page.items.length > 0;
+  const current = (pages.data ?? []).find((p) =>
+    slug ? p.slug === slug : p.is_main,
+  );
 
   return (
     <>
@@ -132,17 +137,15 @@ export function ReaderPage({ me }: { me: Me }) {
             editionID={page.id}
             items={page.items}
             onRead={(id, read) => setRead.mutate({ id, read })}
+            onSave={(id, saved) => setSaved.mutate({ id, saved })}
             onActions={setActingOn}
             gridRef={grid}
           />
         ) : (
           <EmptyPage
             hasFeeds={(feeds.data?.length ?? 0) > 0}
-            filtered={isFiltered(
-              (pages.data ?? []).find((p) =>
-                slug ? p.slug === slug : p.is_main,
-              ),
-            )}
+            filtered={isFiltered(current)}
+            saved={current?.is_saved ?? false}
             onCompose={() => regenerate.mutate()}
             composing={regenerate.isPending}
           />
@@ -150,18 +153,26 @@ export function ReaderPage({ me }: { me: Me }) {
 
         {hasPage ? (
           <footer className="mt-16 flex flex-wrap items-end justify-between gap-4 border-t border-rule pt-6 text-sm text-ink-muted">
-            <p className="max-w-lg">
-              The next page is due {until(page.next_edition_at)}. When it
-              arrives, this one is gone for good — articles and read marks
-              alike. What you have{" "}
-              <a
-                href="/manage/read"
-                className="underline underline-offset-2 hover:text-ink"
-              >
-                already read
-              </a>{" "}
-              is kept for as long as you follow the feed it came from.
-            </p>
+            {current?.is_saved ? (
+              <p className="max-w-lg">
+                The next page is due {until(page.next_edition_at)}, drawn again
+                from what you have saved. An article stays saved until you
+                unsave it.
+              </p>
+            ) : (
+              <p className="max-w-lg">
+                The next page is due {until(page.next_edition_at)}. When it
+                arrives, this one is gone for good — articles and read marks
+                alike. What you have{" "}
+                <a
+                  href="/manage/read"
+                  className="underline underline-offset-2 hover:text-ink"
+                >
+                  already read
+                </a>{" "}
+                is kept for as long as you follow the feed it came from.
+              </p>
+            )}
             {/* Left-aligned when it wraps under the paragraph, right-aligned when it sits
                 beside it. `items-end` alone left the button floating at an indent that
                 matched nothing on the page. */}
@@ -240,14 +251,34 @@ function isFiltered(page: Page | undefined): boolean {
 function EmptyPage({
   hasFeeds,
   filtered,
+  saved,
   onCompose,
   composing,
 }: {
   hasFeeds: boolean;
   filtered: boolean;
+  /** The page of saved articles, which is empty for want of saving rather than of feeds. */
+  saved: boolean;
   onCompose: () => void;
   composing: boolean;
 }) {
+  if (saved) {
+    return (
+      <div className="mx-auto max-w-lg py-20 text-center">
+        <h1 className="font-serif text-3xl text-ink">Nothing here yet</h1>
+        <p className="mt-3 text-ink-muted">
+          This page is made from what you save — Save is under every article. It
+          is composed on its own schedule, like any other page, or now.
+        </p>
+        <div className="mt-6">
+          <Button variant="primary" onClick={onCompose} disabled={composing}>
+            {composing ? "Composing…" : "Make this page now"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (hasFeeds && filtered) {
     return (
       <div className="mx-auto max-w-lg py-20 text-center">

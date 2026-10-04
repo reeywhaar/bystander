@@ -229,6 +229,8 @@ export interface Article {
   rank: number;
   slot: Slot;
   read_at: number | null;
+  /** When whoever is looking kept this for later, or null. Theirs, like `read_at`. */
+  saved_at: number | null;
   title: string;
   link: string;
   author: string;
@@ -379,6 +381,11 @@ export interface Page {
   /** Empty for the main page, which is at `/` rather than at `/f/:slug`. */
   slug: string;
   is_main: boolean;
+  /**
+   * The page of saved articles, made by the first save. It draws from what was saved rather
+   * than from feeds, so it has no filter and no window.
+   */
+  is_saved: boolean;
 
   /** Seconds. One of the four in `EDITION_INTERVALS`. */
   edition_interval: number;

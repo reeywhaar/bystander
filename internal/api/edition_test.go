@@ -74,3 +74,56 @@ func TestUnfollowingAFeedLeavesThePageIntact(t *testing.T) {
 		t.Error("an article that had been read came back as unread")
 	}
 }
+
+// Saving from one page puts the article on a page of its own, made by the first save, and every
+// card says whether the person looking has saved it.
+func TestSavingAnArticlePutsItOnTheSavedPage(t *testing.T) {
+	h := newHarness(t)
+	feed := newFeedServer(t, 6)
+	h.signIn(store.RoleUser, "alice")
+	h.expect(h.do(http.MethodPost, "/api/feeds", map[string]string{"url": feed.URL}),
+		http.StatusCreated, nil)
+
+	var front editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate", nil), http.StatusOK, &front)
+	if len(front.Items) < 2 {
+		t.Fatal("not enough on the page to save one and leave one")
+	}
+	kept := front.Items[0]
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+kept.ID+"/saved", nil), http.StatusNoContent, nil)
+
+	var pages []pageBody
+	h.expect(h.do(http.MethodGet, "/api/pages", nil), http.StatusOK, &pages)
+	var saved *pageBody
+	for i := range pages {
+		if pages[i].IsSaved {
+			saved = &pages[i]
+		}
+	}
+	if saved == nil {
+		t.Fatalf("no page of saved articles among %+v", pages)
+	}
+
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &front)
+	for _, item := range front.Items {
+		if (item.SavedAt != nil) != (item.ID == kept.ID) {
+			t.Errorf("%q: saved_at %v, want it set on the saved article alone", item.Title, item.SavedAt)
+		}
+	}
+
+	var later editionBody
+	h.expect(h.do(http.MethodPost, "/api/edition/regenerate?page="+saved.Slug, nil), http.StatusOK, &later)
+	if len(later.Items) != 1 || later.Items[0].ID != kept.ID {
+		t.Fatalf("the saved page holds %+v, want only %q", later.Items, kept.Title)
+	}
+	if later.Items[0].SavedAt == nil || later.Items[0].Feed.Title == "" {
+		t.Errorf("the saved card is %+v, want it marked saved and named", later.Items[0])
+	}
+
+	// Let go of, it stays on the page in front of you and says it is no longer kept.
+	h.expect(h.do(http.MethodDelete, "/api/edition/items/"+kept.ID+"/saved", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodGet, "/api/edition?page="+saved.Slug, nil), http.StatusOK, &later)
+	if len(later.Items) != 1 || later.Items[0].SavedAt != nil {
+		t.Errorf("after unsaving, the page holds %+v, want the card still there and unsaved", later.Items)
+	}
+}

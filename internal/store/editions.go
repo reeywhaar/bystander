@@ -139,7 +139,28 @@ func (s *Store) AddEdition(ctx context.Context, page *Page, seed int64, picks []
 	}
 	defer shown.Close()
 
+	// A saved article may have been pruned since it was saved, and the page is composed from the
+	// copy kept in main.db. Put back here, in the transaction that places it, so the sweep has
+	// no moment in which to take it again before the edition holds it.
+	var restore *sql.Stmt
+	if page.IsSaved {
+		restore, err = tx.PrepareContext(ctx,
+			`INSERT OR IGNORE INTO items (`+itemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return nil, err
+		}
+		defer restore.Close()
+	}
+
 	for _, pick := range picks {
+		if restore != nil {
+			a := pick.Item
+			if _, err := restore.ExecContext(ctx, a.ID, a.FeedID, a.GUID, a.Title, a.Link, a.Author,
+				a.Summary, a.ImageURL, a.ImageWidth, a.ImageHeight, unix(a.PublishedAt),
+				unix(a.FetchedAt)); err != nil {
+				return nil, fmt.Errorf("put back saved article %s: %w", a.ID, err)
+			}
+		}
 		if _, err := item.ExecContext(ctx, ed.ID, pick.Item.ID, pick.Rank, string(pick.Slot)); err != nil {
 			return nil, fmt.Errorf("place article %s: %w", pick.Item.ID, err)
 		}
@@ -317,18 +338,27 @@ func (s *Store) ReadArticles(ctx context.Context, principalID string) ([]*ReadAr
 // the two ways that can be missed: the delete is across two databases and so cannot be in one
 // transaction with the unsubscribe, and a feed the last follower drops is collected wholesale
 // by the sweep rather than one subscription at a time.
+//
+// Saved articles are spared, whoever saved them: a saved article outlives its feed on purpose,
+// and forgetting it was read would bring it back to the saved page unread.
 func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (int64, error) {
-	if len(liveFeedIDs) == 0 {
-		res, err := s.derived.ExecContext(ctx, `DELETE FROM read_articles`)
-		if err != nil {
-			return 0, err
-		}
-		return res.RowsAffected()
+	saved, err := s.savedItemIDs(ctx, "")
+	if err != nil {
+		return 0, err
 	}
 
-	args, placeholders := inList(liveFeedIDs)
-	res, err := s.derived.ExecContext(ctx,
-		`DELETE FROM read_articles WHERE feed_id NOT IN (`+placeholders+`)`, args...)
+	query, args := `DELETE FROM read_articles WHERE 1`, []any{}
+	if len(liveFeedIDs) > 0 {
+		in, marks := inList(liveFeedIDs)
+		query += ` AND feed_id NOT IN (` + marks + `)`
+		args = append(args, in...)
+	}
+	if len(saved) > 0 {
+		in, marks := inList(saved)
+		query += ` AND item_id NOT IN (` + marks + `)`
+		args = append(args, in...)
+	}
+	res, err := s.derived.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -338,15 +368,26 @@ func (s *Store) PruneReadArticles(ctx context.Context, liveFeedIDs []string) (in
 // ForgetReadArticles drops what one person read on one feed.
 //
 // Called when they unfollow it. The record's job is to keep an article they have finished with
-// off their pages, and a feed they no longer follow has no pages to be kept off.
+// off their pages, and a feed they no longer follow has no pages to be kept off — except the
+// saved page, which keeps what they saved from it.
 func (s *Store) ForgetReadArticles(ctx context.Context, principalID, feedID string) (int64, error) {
+	saved, err := s.savedItemIDs(ctx, principalID)
+	if err != nil {
+		return 0, err
+	}
+	keep, args := "", []any{principalID, feedID, principalID}
+	if len(saved) > 0 {
+		in, marks := inList(saved)
+		keep = ` AND item_id NOT IN (` + marks + `)`
+		args = append(args, in...)
+	}
 	res, err := s.derived.ExecContext(ctx, currentEditions+`
 		DELETE FROM read_articles
 		 WHERE principal_id = ? AND feed_id = ?
 		   AND item_id NOT IN (
 		         SELECT ei.item_id FROM edition_items ei
 		           JOIN current c ON c.id = ei.edition_id
-		          WHERE c.principal_id = ?)`, principalID, feedID, principalID)
+		          WHERE c.principal_id = ?)`+keep, args...)
 	if err != nil {
 		return 0, err
 	}

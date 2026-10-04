@@ -215,6 +215,17 @@ and a page that says it draws from one thing while showing another is a page tha
 until its next turn. Changing how often it turns does not: that describes the next composition,
 not the one you are reading.
 
+### Saving something for later
+
+**Save**, under every article, keeps it for later on a page of its own, **Read later**, which the
+first save makes. It is a front page like any other — it turns on its own schedule, holds as many
+as you set, and can be renamed or published — but it draws from what you saved rather than from
+your feeds, so it has no filter.
+
+Reading an article there greys it as it would anywhere, and the next turn may draw something
+else instead. It stays saved until you unsave it, including after you unfollow the feed it came
+from: what you saved is a copy, and yours.
+
 ### Typography
 
 A newspaper has never set every headline on a page in one face. It keeps a handful of
@@ -518,8 +529,8 @@ an archive whose passphrase is lost is an archive nobody can open.
 ## What it deliberately does not do
 
 - **No unread count.** Not on a tag, not on a feed, not in the title. This is the product.
-- **No archive and no search.** A front page, not a library. Anything worth keeping is
-  worth keeping somewhere that is not here.
+- **No archive and no search.** A front page, not a library. Saving keeps a few articles on a
+  page that turns like any other — a reading list, not a shelf.
 - **No push, email digest or mobile app.** The page is the product.
 - **No folders.** Tags nest and a feed can carry several of them, which a folder cannot.
 - **No web font fetched from anywhere else.** The headline faces are served from this

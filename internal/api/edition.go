@@ -22,10 +22,13 @@ type editionBody struct {
 // shows its source, the client would join every one of them anyway, and a page is sixty
 // rows.
 type articleBody struct {
-	ID       string `json:"id"`
-	Rank     int    `json:"rank"`
-	Slot     string `json:"slot"`
-	ReadAt   *int64 `json:"read_at"`
+	ID     string `json:"id"`
+	Rank   int    `json:"rank"`
+	Slot   string `json:"slot"`
+	ReadAt *int64 `json:"read_at"`
+	// SavedAt is when whoever is looking kept this for later, or null. The viewer's, like
+	// ReadAt: on somebody else's published page it is the visitor's own saving.
+	SavedAt  *int64 `json:"saved_at"`
 	Title    string `json:"title"`
 	Link     string `json:"link"`
 	Author   string `json:"author"`
@@ -111,6 +114,12 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 	// And for anything on the page whose feed this person no longer follows.
 	s.nameStrays(r.Context(), titles, items)
 
+	saved, err := s.store.SavedAmong(r.Context(), p.ID, itemIDs(items))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
 	body := editionBody{
 		ID:            ed.ID,
 		GeneratedAt:   ed.GeneratedAt.Unix(),
@@ -144,6 +153,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 			// leave a hole in a layout decided at generation time.
 			article.Feed = feedStub{ID: entry.Item.FeedID}
 		}
+		keptFor(&article, saved[entry.Item.ID])
 		body.Items = append(body.Items, article)
 	}
 	writeJSON(w, http.StatusOK, body)
@@ -219,6 +229,47 @@ func (s *Server) readArticles(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// keptFor marks an article as saved by whoever is looking, and names its source from what they
+// kept when nothing else can: a saved article outlives its feed, and the feed's own row with it.
+func keptFor(article *articleBody, saved *store.SavedArticle) {
+	if saved == nil {
+		return
+	}
+	at := saved.SavedAt.Unix()
+	article.SavedAt = &at
+	if article.Feed.Title == "" {
+		article.Feed.ID = saved.FeedID
+		article.Feed.Title = saved.SourceTitle
+		article.Feed.SiteURL = saved.SourceURL
+	}
+}
+
+func itemIDs(items []*store.EditionItem) []string {
+	out := make([]string, len(items))
+	for i, entry := range items {
+		out[i] = entry.Item.ID
+	}
+	return out
+}
+
+func (s *Server) saveArticle(w http.ResponseWriter, r *http.Request) {
+	// Any article that still exists, and no check that it is on a page of yours — for the
+	// reason setRead gives. Saving is a fact about the person doing it.
+	if err := s.store.SaveArticle(r.Context(), principalOf(r).ID, r.PathValue("id")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (s *Server) unsaveArticle(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.UnsaveArticle(r.Context(), principalOf(r).ID, r.PathValue("id")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 func (s *Server) markRead(w http.ResponseWriter, r *http.Request)   { s.setRead(w, r, true) }

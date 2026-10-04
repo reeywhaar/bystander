@@ -230,7 +230,10 @@ export function PageDialog({
     if (page) {
       const changes = page.is_main
         ? body
-        : { ...body, name: name.trim(), slug };
+        : page.is_saved
+          ? // It draws from what was saved, so there is no filter to send.
+            { name: name.trim(), slug }
+          : { ...body, name: name.trim(), slug };
       const saved = await update.mutateAsync({ id: page.id, changes });
       onClose(saved);
       return;
@@ -300,43 +303,52 @@ export function PageDialog({
           </>
         )}
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-ink">Tags</span>
-          <p className="text-xs text-ink-faint">
-            Leave a tag alone and it says nothing. Push one right and this page
-            draws only from tags pushed right; push one left and it drops what
-            carries that tag afterwards — which is how a finance page loses the
-            crypto half of itself.
+        {page?.is_saved ? (
+          <p className="text-sm text-ink-muted">
+            This page is made from what you save, so there is nothing here to
+            filter. Save is under every article.
           </p>
-          <StanceList
-            items={(tags.data ?? []).map((tag: Tag) => ({
-              id: tag.id,
-              label: tag.name,
-            }))}
-            include={tagSides.include}
-            exclude={tagSides.exclude}
-            onChange={setTag}
-            says={TAG_SAYS}
-            empty="You have no tags yet. Tag a few feeds and they will show up here."
-          />
-        </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-ink">Tags</span>
+              <p className="text-xs text-ink-faint">
+                Leave a tag alone and it says nothing. Push one right and this
+                page draws only from tags pushed right; push one left and it
+                drops what carries that tag afterwards — which is how a finance
+                page loses the crypto half of itself.
+              </p>
+              <StanceList
+                items={(tags.data ?? []).map((tag: Tag) => ({
+                  id: tag.id,
+                  label: tag.name,
+                }))}
+                include={tagSides.include}
+                exclude={tagSides.exclude}
+                onChange={setTag}
+                says={TAG_SAYS}
+                empty="You have no tags yet. Tag a few feeds and they will show up here."
+              />
+            </div>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-ink">Feeds</span>
-          <p className="text-xs text-ink-faint">
-            A feed overrules the tags. Right is always on this page, left is
-            never, and left alone it follows the tags — the word beside it says
-            where that lands it.
-          </p>
-          <StanceList
-            items={feedRows}
-            include={feedSides.include}
-            exclude={feedSides.exclude}
-            onChange={setFeed}
-            says={FEED_SAYS}
-            empty="You follow no feeds yet."
-          />
-        </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-ink">Feeds</span>
+              <p className="text-xs text-ink-faint">
+                A feed overrules the tags. Right is always on this page, left is
+                never, and left alone it follows the tags — the word beside it
+                says where that lands it.
+              </p>
+              <StanceList
+                items={feedRows}
+                include={feedSides.include}
+                exclude={feedSides.exclude}
+                onChange={setFeed}
+                says={FEED_SAYS}
+                empty="You follow no feeds yet."
+              />
+            </div>
+          </>
+        )}
 
         {error ? <Alert>{error.message}</Alert> : null}
       </div>

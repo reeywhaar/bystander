@@ -65,6 +65,7 @@ var released = []struct{ name, sha string }{
 	{"20260903013756_derived_backup_state", "3f14af74dcbe2077c25d14a0bcb3ee0fabd87fbf234af6dd465b29d7e0989245"},
 	{"20260906005826_main_proxies", "65b70fb97ece7eec80416b748fd62bbbbd698123d7cfd16aafb1e418724fca4e"},
 	{"20260906011118_derived_proxy_routes", "8c7f8ae4f70c07180830e2df6b10f035bdcadc66f9bf3a94afb65b8428e71fdc"},
+	{"20261004105013_main_saved", "463669c60e8cd0e813af0897c23454cc398250682889c7f8f79bb13bd65c20ba"},
 }
 
 func all() []Migration {

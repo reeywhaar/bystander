@@ -22,6 +22,7 @@ export function PageGrid({
   editionID,
   items,
   onRead,
+  onSave,
   onActions,
   gridRef,
 }: {
@@ -33,6 +34,8 @@ export function PageGrid({
    * an account would let you do.
    */
   onRead?: (id: string, read: boolean) => void;
+  /** Keep one for later, or let it go. Left out where `onRead` is. */
+  onSave?: (id: string, saved: boolean) => void;
   /** Open what can be done about the feed one of them came from. */
   onActions?: (article: Article) => void;
   gridRef?: RefObject<HTMLDivElement | null>;
@@ -62,6 +65,7 @@ export function PageGrid({
             style={styles[i]!}
             voice={voices[i]!}
             onRead={onRead}
+            onSave={onSave}
             onActions={onActions ? () => onActions(article) : undefined}
           />
         );

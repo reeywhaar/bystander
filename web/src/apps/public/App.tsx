@@ -12,7 +12,7 @@ import { Boundary } from "@app/components/Boundary";
 import { Colophon } from "@app/components/Colophon";
 import { Spinner } from "@app/components/ui/Spinner";
 import { useMasonry } from "@app/lib/masonry";
-import { useMe, useSetRead } from "@app/queries/hooks";
+import { useMe, useSetRead, useSetSaved } from "@app/queries/hooks";
 
 /**
  * Somebody's published page, to anybody at all.
@@ -64,6 +64,7 @@ function PublicPage({ person, page }: { person: string; page: string }) {
   // wherever it sits on your own pages, which is the rule that already held between two of
   // your own.
   const setRead = useSetRead();
+  const setSaved = useSetSaved();
   const client = useQueryClient();
 
   // Greyed the moment it is pressed, as it is on the reader. The shared hook writes its
@@ -88,6 +89,27 @@ function PublicPage({ person, page }: { person: string; page: string }) {
         : current,
     );
     setRead.mutate({ id, read });
+  };
+
+  // Kept for later, by the visitor and onto their own page of saved articles — with the same
+  // courtesy as marking, for the same reason.
+  const keep = (id: string, saved: boolean) => {
+    client.setQueryData<PublicPage>(cacheKey, (current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((article) =>
+              article.id === id
+                ? {
+                    ...article,
+                    saved_at: saved ? Math.floor(Date.now() / 1000) : null,
+                  }
+                : article,
+            ),
+          }
+        : current,
+    );
+    setSaved.mutate({ id, saved });
   };
 
   useMasonry(grid, [
@@ -139,6 +161,7 @@ function PublicPage({ person, page }: { person: string; page: string }) {
               // somebody else's page records it against *you* — reading is a fact about a
               // person and an article, and whose page it was seen on does not come into it.
               onRead={published.data.signed_in ? mark : undefined}
+              onSave={published.data.signed_in ? keep : undefined}
               gridRef={grid}
             />
           </>

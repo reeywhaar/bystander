@@ -13,6 +13,7 @@ function article(priority = 50, subscriptionID = "s_1"): Article {
     rank: 0,
     slot: "standard",
     read_at: null,
+    saved_at: null,
     title: "A story about a thing",
     link: "https://example.com/1",
     author: "",

@@ -35,9 +35,11 @@ import {
 import { getMe } from "@app/api/actions/auth";
 import {
   deleteEditionItemsByIdRead,
+  deleteEditionItemsByIdSaved,
   getEdition,
   postEditionRegenerate,
   putEditionItemsByIdRead,
+  putEditionItemsByIdSaved,
 } from "@app/api/actions/edition";
 import {
   deleteFeedsById,
@@ -213,6 +215,54 @@ export function useSetRead() {
     // because its ordering and its retention are the server's to decide.
     onSettled: () => {
       void client.invalidateQueries({ queryKey: qk.read });
+    },
+  });
+}
+
+/**
+ * Keeps an article for later, or lets it go, optimistically and on every page held — the same
+ * shape as [useSetRead], because saving is the same kind of fact: about a person and an article.
+ */
+export function useSetSaved() {
+  const callApi = useApiCall();
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, saved }: { id: string; saved: boolean }) =>
+      callApi(
+        saved ? putEditionItemsByIdSaved(id) : deleteEditionItemsByIdSaved(id),
+      ),
+
+    onMutate: async ({ id, saved }) => {
+      await client.cancelQueries({ queryKey: qk.edition });
+      const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
+      client.setQueriesData<Edition>({ queryKey: qk.edition }, (current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((article: Article) =>
+                article.id === id
+                  ? {
+                      ...article,
+                      saved_at: saved ? Math.floor(Date.now() / 1000) : null,
+                    }
+                  : article,
+              ),
+            }
+          : current,
+      );
+      return { previous };
+    },
+
+    onError: (_error, _variables, context) => {
+      for (const [key, edition] of context?.previous ?? []) {
+        client.setQueryData(key, edition);
+      }
+    },
+
+    // The first save makes a page, and the strip should have its tab.
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: qk.pages });
     },
   });
 }

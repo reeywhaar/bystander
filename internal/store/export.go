@@ -65,6 +65,7 @@ type ExportedPage struct {
 	Name            string   `json:"name"`
 	Slug            string   `json:"slug"`
 	IsMain          bool     `json:"is_main"`
+	IsSaved         bool     `json:"is_saved"`
 	EditionInterval int64    `json:"edition_interval"`
 	EditionSize     int      `json:"edition_size"`
 	MaxArticleAge   int64    `json:"max_article_age"`
@@ -225,7 +226,7 @@ func (s *Store) ExportPages(ctx context.Context, principalID string) ([]Exported
 	}
 
 	rows, err := s.main.QueryContext(ctx,
-		`SELECT id, name, slug, is_main, edition_interval, edition_size, max_article_age,
+		`SELECT id, name, slug, is_main, is_saved, edition_interval, edition_size, max_article_age,
 		        published, publish_slug, indexable, created_at
 		   FROM pages WHERE principal_id = ?
 		  ORDER BY is_main DESC, created_at`,
@@ -238,16 +239,18 @@ func (s *Store) ExportPages(ctx context.Context, principalID string) ([]Exported
 	out := []ExportedPage{}
 	for rows.Next() {
 		var (
-			id                          string
-			isMain, published, indexing int
-			page                        ExportedPage
+			id                         string
+			isMain, isSaved, published int
+			indexing                   int
+			page                       ExportedPage
 		)
-		if err := rows.Scan(&id, &page.Name, &page.Slug, &isMain, &page.EditionInterval,
+		if err := rows.Scan(&id, &page.Name, &page.Slug, &isMain, &isSaved, &page.EditionInterval,
 			&page.EditionSize, &page.MaxArticleAge, &published, &page.PublishSlug,
 			&indexing, &page.CreatedAt); err != nil {
 			return nil, fmt.Errorf("export pages: %w", err)
 		}
 		page.IsMain = isMain == 1
+		page.IsSaved = isSaved == 1
 		page.Published = published == 1
 		page.Indexable = indexing == 1
 		page.IncludeTags = orEmpty(tags[filterKey{id, "include"}])
@@ -255,6 +258,40 @@ func (s *Store) ExportPages(ctx context.Context, principalID string) ([]Exported
 		page.IncludeFeeds = orEmpty(feeds[filterKey{id, "include"}])
 		page.ExcludeFeeds = orEmpty(feeds[filterKey{id, "exclude"}])
 		out = append(out, page)
+	}
+	return out, rows.Err()
+}
+
+// ExportedSaved is one article somebody kept for later, with where it came from by name rather
+// than by id, for the reason ExportedTag gives.
+type ExportedSaved struct {
+	Title       string `json:"title"`
+	Link        string `json:"link"`
+	Source      string `json:"source"`
+	SourceURL   string `json:"source_url"`
+	PublishedAt int64  `json:"published_at"`
+	SavedAt     int64  `json:"saved_at"`
+}
+
+// ExportSaved is everything somebody has kept for later, newest first. Held at once rather than
+// read in batches: it is a list somebody curates by hand, not a history that grows by itself.
+func (s *Store) ExportSaved(ctx context.Context, principalID string) ([]ExportedSaved, error) {
+	rows, err := s.main.QueryContext(ctx,
+		`SELECT title, link, source_title, source_url, published_at, saved_at
+		   FROM saved WHERE principal_id = ?
+		  ORDER BY saved_at DESC`, principalID)
+	if err != nil {
+		return nil, fmt.Errorf("export saved: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ExportedSaved{}
+	for rows.Next() {
+		var a ExportedSaved
+		if err := rows.Scan(&a.Title, &a.Link, &a.Source, &a.SourceURL, &a.PublishedAt, &a.SavedAt); err != nil {
+			return nil, fmt.Errorf("export saved: %w", err)
+		}
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }

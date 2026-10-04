@@ -246,6 +246,22 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		titles[sub.FeedID] = feedStub{ID: sub.FeedID, Title: sub.Title(), SiteURL: sub.Feed.SiteURL}
 	}
 
+	// The visitor's saving, for the control on each card. And, on a published page of saved
+	// articles, the owner's — for the one thing it holds that is not private: where an article
+	// whose feed has gone came from.
+	visitorSaved, err := s.store.SavedAmong(r.Context(), viewerID, itemIDs(items))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ownerSaved := map[string]*store.SavedArticle{}
+	if page.IsSaved {
+		if ownerSaved, err = s.store.SavedAmong(r.Context(), page.PrincipalID, itemIDs(items)); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+
 	body.ID = ed.ID
 	body.GeneratedAt = ed.GeneratedAt.Unix()
 	for _, entry := range items {
@@ -269,6 +285,13 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		if entry.Read() {
 			at := entry.ReadAt.Unix()
 			article.ReadAt = &at
+		}
+		if source := ownerSaved[entry.Item.ID]; source != nil && article.Feed.Title == "" {
+			article.Feed = feedStub{ID: source.FeedID, Title: source.SourceTitle, SiteURL: source.SourceURL}
+		}
+		if mine := visitorSaved[entry.Item.ID]; mine != nil {
+			at := mine.SavedAt.Unix()
+			article.SavedAt = &at
 		}
 		body.Items = append(body.Items, article)
 	}

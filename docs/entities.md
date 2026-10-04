@@ -356,6 +356,8 @@ CREATE TABLE pages (
   name             TEXT    NOT NULL,
   slug             TEXT    NOT NULL,                        -- empty for the Front Page
   is_main          INTEGER NOT NULL DEFAULT 0 CHECK (is_main IN (0, 1)),
+  is_saved         INTEGER NOT NULL DEFAULT 0
+                     CHECK (is_saved IN (0, 1) AND NOT (is_saved = 1 AND is_main = 1)),
   edition_interval INTEGER NOT NULL DEFAULT 86400
                      CHECK (edition_interval IN (3600, 21600, 86400, 604800)),
   edition_size     INTEGER NOT NULL DEFAULT 60
@@ -370,6 +372,7 @@ CREATE TABLE pages (
   UNIQUE (principal_id, slug)
 ) STRICT;
 CREATE UNIQUE INDEX pages_main ON pages(principal_id) WHERE is_main = 1;
+CREATE UNIQUE INDEX pages_saved ON pages(principal_id) WHERE is_saved = 1;
 CREATE INDEX pages_principal ON pages(principal_id, created_at);
 CREATE INDEX pages_due ON pages(next_edition_at);
 CREATE UNIQUE INDEX pages_publish_slug ON pages(principal_id, publish_slug) WHERE publish_slug <> '';
@@ -384,6 +387,13 @@ A row is created with the principal, so the scheduler never has to cope with its
 the partial unique index says every person has exactly one Front Page. The interval is a closed
 set — hourly, six-hourly, daily, weekly — because an arbitrary cron expression is a support
 burden with no matching demand.
+
+`is_saved` marks the **page of saved articles**: at most one per person, made by their first
+save, and drawing from `saved` below rather than from feeds — so it refuses a filter and a
+`max_article_age`, and is otherwise a page like any other, renamed, scheduled, published or
+deleted. Deleting it keeps what was saved, and the next save makes it again. It is not counted
+against `MaxPages`: nobody asked for it by name, and refusing a save because somebody already
+keeps twenty pages would be refusing the wrong thing.
 
 `max_article_age` sits over the top of each feed's own window and the tighter of the two wins.
 The feed's window says how long that publisher stays worth reading; a page's says how current
@@ -448,6 +458,44 @@ A feed's row is not a narrower tag rule — it beats the tags outright. Include 
 the page whatever the tags decided; exclude keeps it off whatever they decided. Otherwise the
 two useful things anybody wants to say about one publisher, "this one as well" and "this one
 never", would depend on working out a tag rule first.
+
+### `saved`
+
+```sql
+CREATE TABLE saved (
+  principal_id TEXT    NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+  item_id      TEXT    NOT NULL,                 -- derived.db items.id; no FK across databases
+  feed_id      TEXT    NOT NULL,
+  guid         TEXT    NOT NULL,
+  title        TEXT    NOT NULL,
+  link         TEXT    NOT NULL,
+  author       TEXT    NOT NULL DEFAULT '',
+  summary      TEXT    NOT NULL DEFAULT '',        -- sanitized HTML, as items holds it
+  image_url    TEXT    NOT NULL DEFAULT '',
+  image_width  INTEGER NOT NULL DEFAULT 0,
+  image_height INTEGER NOT NULL DEFAULT 0,
+  published_at INTEGER NOT NULL,
+  source_title TEXT    NOT NULL DEFAULT '',
+  source_url   TEXT    NOT NULL DEFAULT '',
+  saved_at     INTEGER NOT NULL,
+  PRIMARY KEY (principal_id, item_id)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX saved_when ON saved(principal_id, saved_at DESC);
+```
+
+What somebody kept to read later. In this database because a save is something a person did,
+and the article it names does not last: `items` is pruned with its feed, thirty days at the
+floor and at once when nobody follows the feed any more. So the row is a **copy of everything a
+card needs**, and composing the saved page puts the article back into `items` from it, in the
+same transaction that places it — see `AddEdition`. The id is the article's own derived id, so
+what is put back is the same article, with the same read mark.
+
+`feed_id` is not a foreign key, and the source's title and address are copied, for the same
+reason: unfollowing a feed must not take back what somebody saved from it, and once the last
+follower has gone the feed row is collected and can no longer say what it was called.
+
+Saving is a fact about a person and an article, like reading, so an article can be saved from any
+page it is on — including somebody else's published one.
 
 ### `instance_settings`
 
@@ -729,7 +777,9 @@ pages as *new* again — it falls to the last band, behind everything unread —
 stops a story coming back a year later as though it were fresh. A month-long memory forgets, and
 forgetting is the one thing it must not do.
 
-What ends it is unfollowing the feed, and `DeleteSubscription` does that in the same call. The
+What ends it is unfollowing the feed, and `DeleteSubscription` does that in the same call —
+except for articles the person has saved, whose read marks stay with them for as long as they
+are saved; the sweep spares those too, whoever saved them. The
 sweep is the safety net for the two ways that can be missed: the delete crosses the two
 databases and so cannot share a transaction with the unsubscribe, and a feed the last follower
 drops is collected wholesale rather than one subscription at a time.

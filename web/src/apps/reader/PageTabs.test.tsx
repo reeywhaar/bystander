@@ -13,6 +13,7 @@ function page(overrides: Partial<Page> = {}): Page {
     name: "Front Page",
     slug: "",
     is_main: true,
+    is_saved: false,
     edition_interval: 86400,
     edition_size: 60,
     next_edition_at: 1_787_000_000,

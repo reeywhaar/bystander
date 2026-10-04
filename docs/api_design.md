@@ -121,6 +121,8 @@ GET    /api/edition?page=                → the live edition of one front page
 POST   /api/edition/regenerate?page=     → the new edition
 PUT    /api/edition/items/{id}/read      → 204
 DELETE /api/edition/items/{id}/read      → 204
+PUT    /api/edition/items/{id}/saved     → 204
+DELETE /api/edition/items/{id}/saved     → 204
 ```
 
 `?page=` names one of the caller's front pages, by slug or by id. **Absent is the Front Page**,
@@ -130,6 +132,11 @@ particular and gets the right thing, and nothing had to learn about pages to kee
 Marking read is not addressed by page, and that is the point: reading is a fact about a person
 and an article, so it lands on every one of that person's live editions at once. The same
 article greyed on one tab is greyed on the next.
+
+Saving works the same way and for the same reason: `PUT …/saved` keeps an article for whoever is
+calling, from any page it is on, including somebody else's published one. The first save also
+makes the page of saved articles — see [Front pages](#front-pages). `read_at` and `saved_at` on
+each item are both the viewer's.
 
 `GET /api/edition` answers `200` with an empty `items` array before the first page is
 generated. Not a `404`: "your page has not been made yet" is a state the reader renders,
@@ -146,7 +153,8 @@ It refuses in two different ways, because they are two different situations:
 - `409` — everything on the page has been read and the feeds have published nothing since.
   A re-roll cannot help with that. The page on screen stands, and the message says so;
   answering `404` would tell somebody looking at a page that there is nothing to put on one.
-- `404` — there is nothing at all yet, and the message says to add a feed.
+- `404` — there is nothing at all yet, and the message says to add a feed — or, on the page of
+  saved articles, that nothing has been saved.
 
 ```jsonc
 // GET /api/edition
@@ -160,6 +168,7 @@ It refuses in two different ways, because they are two different situations:
       "rank": 0,
       "slot": "lead",
       "read_at": null,
+      "saved_at": null,
       "title": "…",
       "link": "https://…",
       "author": "",
@@ -271,7 +280,8 @@ sentence naming the tag that closes it.
 ### Front pages
 
 ```
-GET    /api/pages                        [{id, name, slug, is_main, edition_interval, edition_size,
+GET    /api/pages                        [{id, name, slug, is_main, is_saved,
+                                           edition_interval, edition_size,
                                            next_edition_at, max_article_age,
                                            include_tag_ids, exclude_tag_ids,
                                            include_feed_ids, exclude_feed_ids,
@@ -294,6 +304,11 @@ business either way.
 The main page — the **Front Page**, at `/` with an empty slug — refuses `name` and `slug` with
 `400`, and refuses `DELETE`. The interface shows no inputs for either rather than inputs that
 fail.
+
+The page of saved articles — `is_saved`, made by the first save — draws from what was saved
+rather than from feeds, so it refuses any of the four lists and a `max_article_age` with `400`.
+Everything else about it is an ordinary page's. Deleting it keeps the saved articles, and the next
+save makes it again.
 
 **Four lists and no mode.** This was `tag_filter`/`feed_filter` — a mode per side plus one list
 each — and the modes are gone. A page does not have a filter *state*; it has an opinion per tag

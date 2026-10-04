@@ -42,6 +42,7 @@ export function ArticleCard({
   style,
   voice,
   onRead,
+  onSave,
   onActions,
 }: {
   article: Article;
@@ -57,6 +58,8 @@ export function ArticleCard({
    * The card is otherwise identical, because what is being shown is the same page.
    */
   onRead?: (id: string, read: boolean) => void;
+  /** Keep this for later, or let it go. Left out where `onRead` is, for the same reason. */
+  onSave?: (id: string, saved: boolean) => void;
   /**
    * Open what can be done about the feed this came from.
    *
@@ -66,6 +69,7 @@ export function ArticleCard({
   onActions?: () => void;
 }) {
   const read = article.read_at !== null;
+  const saved = article.saved_at !== null;
   // Null for most of them: a box is punctuation, and the padding belongs to the box rather
   // than to every card that might have had one.
   const frame = style.frame;
@@ -277,6 +281,16 @@ export function ArticleCard({
             >
               {read ? "Mark unread" : "Mark read"}
             </button>
+
+            {onSave ? (
+              <button
+                type="button"
+                onClick={() => onSave(article.id, !saved)}
+                className="text-xs text-ink-faint opacity-50"
+              >
+                {saved ? "Unsave" : "Save"}
+              </button>
+            ) : null}
 
             {/* A mark and no word, at the same weight as the words beside it.
             

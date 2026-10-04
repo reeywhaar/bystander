@@ -45,8 +45,8 @@ type Item struct {
 // than a date. How long each feed is kept comes from its own followers — see
 // ItemRetentionByFeed in settings.go.
 //
-// Items are a pool, not an archive: this is a front page, and anything worth keeping is worth
-// keeping somewhere that is not here.
+// Items are a pool, not an archive. What somebody wants to keep they save, and the copy lives in
+// main.db rather than here — see saved.go.
 const MinItemRetention = 30 * 24 * time.Hour
 
 // SaveItems writes what a fetch produced and reports how many were new.

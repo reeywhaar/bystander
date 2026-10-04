@@ -110,6 +110,7 @@ The words below mean one thing each, in code, in the API and in the interface:
 | **edition** | The fixed set of items on a front page right now |
 | **slot** | How prominently an item is laid out: lead, feature, standard, brief |
 | **principal** | An account, admin or user |
+| **saved** | An article somebody kept for later, and the page that shows them — *Read later* until renamed |
 
 "Article" is the reader-facing word for an item, and appears only in interface copy.
 Never "post", never "entry", never "story".

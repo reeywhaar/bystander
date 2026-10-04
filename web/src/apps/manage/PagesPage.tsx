@@ -263,6 +263,7 @@ export function PagesPage() {
 
 /** What a page draws from, in a sentence, for the line under its name. */
 function describe(page: Page): string {
+  if (page.is_saved) return "what you have saved";
   const parts: string[] = [];
   const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
@@ -360,35 +361,39 @@ function PageControls({ page }: { page: Page }) {
         />
       </section>
 
-      <section>
-        <h3 className="font-serif text-xl text-ink">How current it is</h3>
-        <p className="mt-1 mb-4 text-sm text-ink-muted">
-          Over the top of each feed&rsquo;s own reach, and the tighter of the
-          two wins. A page about what is happening today wants a day; one you
-          read at the weekend can reach back further.
-        </p>
+      {/* Not on the page of saved articles: it draws from what was saved, however old, and
+          the server refuses a window there. */}
+      {page.is_saved ? null : (
+        <section>
+          <h3 className="font-serif text-xl text-ink">How current it is</h3>
+          <p className="mt-1 mb-4 text-sm text-ink-muted">
+            Over the top of each feed&rsquo;s own reach, and the tighter of the
+            two wins. A page about what is happening today wants a day; one you
+            read at the weekend can reach back further.
+          </p>
 
-        <div className="flex flex-wrap gap-2">
-          {ARTICLE_WINDOWS.map((window) => {
-            const on = window.seconds === page.max_article_age;
-            return (
-              <button
-                key={window.seconds}
-                type="button"
-                onClick={() => change({ max_article_age: window.seconds })}
-                disabled={update.isPending}
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  on
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-rule text-ink-muted hover:text-ink"
-                }`}
-              >
-                {window.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+          <div className="flex flex-wrap gap-2">
+            {ARTICLE_WINDOWS.map((window) => {
+              const on = window.seconds === page.max_article_age;
+              return (
+                <button
+                  key={window.seconds}
+                  type="button"
+                  onClick={() => change({ max_article_age: window.seconds })}
+                  disabled={update.isPending}
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    on
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-rule text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  {window.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section>
         <h3 className="font-serif text-xl text-ink">Make a page now</h3>

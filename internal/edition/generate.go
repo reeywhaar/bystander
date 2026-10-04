@@ -54,7 +54,55 @@ func (g *Generator) compose(ctx context.Context, pageID string) (*store.Edition,
 	}
 	principalID := page.PrincipalID
 
-	subs, err := g.store.ListSubscriptions(ctx, principalID)
+	var sources map[string]*Source
+	if page.IsSaved {
+		sources, err = g.saved(ctx, page)
+	} else {
+		sources, err = g.followed(ctx, page)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(sources) == 0 {
+		return nil, nil
+	}
+
+	// One seed, drawn once and stored with the edition. Drawing it twice would leave the
+	// recorded seed unable to reproduce the page it is recorded against, which is the
+	// only thing the column is for.
+	s := seed()
+	picks := Select(sources, page.EditionSize, s)
+	if len(picks) == 0 {
+		return nil, nil
+	}
+
+	ed, err := g.store.AddEdition(ctx, page, s, picks)
+	if err != nil {
+		return nil, err
+	}
+	g.log.Info("composed a page", "page", page.ID, "principal", principalID,
+		"articles", len(picks), "sources", len(sources), "asked_for", page.EditionSize)
+	return ed, nil
+}
+
+// saved is what the page of saved articles draws from: each article a source of its own, at one
+// weight. See "The page of saved articles" in docs/edition.md.
+func (g *Generator) saved(ctx context.Context, page *store.Page) (map[string]*Source, error) {
+	queues, err := g.store.SavedQueues(ctx, page.ID, page.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	sources := make(map[string]*Source, len(queues))
+	for id, q := range queues {
+		sources[id] = &Source{Priority: 1, Fresh: q.Fresh, Unread: q.Unread, Read: q.Read}
+	}
+	return sources, nil
+}
+
+// followed is what an ordinary page draws from: the feeds its owner follows, through its
+// filter, each at the priority they gave it.
+func (g *Generator) followed(ctx context.Context, page *store.Page) (map[string]*Source, error) {
+	subs, err := g.store.ListSubscriptions(ctx, page.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,28 +134,11 @@ func (g *Generator) compose(ctx context.Context, pageID string) (*store.Edition,
 			notOlderThan[sub.FeedID] = now.Add(-window)
 		}
 	}
-	queues, err := g.store.Queues(ctx, page.ID, principalID, feedIDs, candidateDepth, notOlderThan)
+	queues, err := g.store.Queues(ctx, page.ID, page.PrincipalID, feedIDs, candidateDepth, notOlderThan)
 	if err != nil {
 		return nil, err
 	}
-	sources := plan(subs, queues)
-
-	// One seed, drawn once and stored with the edition. Drawing it twice would leave the
-	// recorded seed unable to reproduce the page it is recorded against, which is the
-	// only thing the column is for.
-	s := seed()
-	picks := Select(sources, page.EditionSize, s)
-	if len(picks) == 0 {
-		return nil, nil
-	}
-
-	ed, err := g.store.AddEdition(ctx, page, s, picks)
-	if err != nil {
-		return nil, err
-	}
-	g.log.Info("composed a page", "page", page.ID, "principal", principalID,
-		"articles", len(picks), "feeds", len(sources), "asked_for", page.EditionSize)
-	return ed, nil
+	return plan(subs, queues), nil
 }
 
 // eligible is the subscriptions one page may draw from.
@@ -252,6 +283,9 @@ func (g *Generator) Regenerate(ctx context.Context, pageID string, now time.Time
 		// The only way here now: no feed this page can draw from has produced a single
 		// article it can reach. Not "everything is read" — read articles are drawn like
 		// anything else, just last.
+		if page.IsSaved {
+			return nil, store.NotFound("nothing has been saved yet — Save, under any article, keeps it here")
+		}
 		return nil, store.NotFound("there is nothing to put on a page yet — add a feed, and give it a moment to fetch")
 	}
 	if err := g.store.ScheduleNextEdition(ctx, pageID, now.Add(page.EditionInterval)); err != nil {

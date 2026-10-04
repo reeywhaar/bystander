@@ -44,6 +44,20 @@ export function putEditionItemsByIdRead(id: string): ApiAction<void> {
   );
 }
 
+/** `PUT /api/edition/items/{id}/saved` — the first save also makes the page that shows them. */
+export function putEditionItemsByIdSaved(id: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "PUT", path: `/api/edition/items/${seg(id)}/saved` }),
+  );
+}
+
+/** `DELETE /api/edition/items/{id}/saved` */
+export function deleteEditionItemsByIdSaved(id: string): ApiAction<void> {
+  return createApiAction((d) =>
+    d.call({ method: "DELETE", path: `/api/edition/items/${seg(id)}/saved` }),
+  );
+}
+
 /** `DELETE /api/edition/items/{id}/read` */
 export function deleteEditionItemsByIdRead(id: string): ApiAction<void> {
   return createApiAction((d) =>

@@ -19,6 +19,9 @@ type pageBody struct {
 	Name   string `json:"name"`
 	Slug   string `json:"slug"`
 	IsMain bool   `json:"is_main"`
+	// IsSaved is the page of saved articles, which draws from what its owner saved rather than
+	// from feeds, so it has no filter and no window to show.
+	IsSaved bool `json:"is_saved"`
 
 	EditionInterval int64 `json:"edition_interval"` // seconds
 	EditionSize     int   `json:"edition_size"`
@@ -49,6 +52,7 @@ func pageOf(page *store.Page) pageBody {
 		Name:            page.Name,
 		Slug:            page.Slug,
 		IsMain:          page.IsMain,
+		IsSaved:         page.IsSaved,
 		EditionInterval: int64(page.EditionInterval.Seconds()),
 		EditionSize:     page.EditionSize,
 		NextEditionAt:   page.NextEditionAt.Unix(),

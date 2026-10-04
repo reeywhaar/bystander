@@ -63,6 +63,11 @@ func (s *Server) exportArchive(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	saved, err := s.store.ExportSaved(ctx, p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	// Articles live in derived.db and feeds in main.db, and the two are never ATTACHed, so
 	// an article's feed is named in Go rather than in SQL.
 	names, err := s.store.FeedNames(ctx, p.ID)
@@ -109,6 +114,7 @@ func (s *Server) exportArchive(w http.ResponseWriter, r *http.Request) {
 	doc.member("tags", tags)
 	doc.member("feeds", feeds)
 	doc.member("pages", pages)
+	doc.member("saved", saved)
 	streamMember(doc, "read", s.pager(names, extend, func(after *store.ExportCursor) ([]store.ExportedArticle, error) {
 		return s.store.ExportRead(ctx, p.ID, after, store.ExportBatch)
 	}, func(a store.ExportedArticle) int64 { return a.ReadAt }))

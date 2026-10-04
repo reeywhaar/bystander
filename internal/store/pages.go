@@ -42,6 +42,9 @@ type Page struct {
 	// Slug is empty for the main page, which is served at / rather than at /f/:slug.
 	Slug   string
 	IsMain bool
+	// IsSaved marks the page that draws from what its owner saved rather than from feeds. One
+	// per person, made by their first save; see saved.go.
+	IsSaved bool
 
 	EditionInterval time.Duration
 	EditionSize     int
@@ -272,6 +275,15 @@ func (s *Store) UpdatePage(ctx context.Context, id string, patch PagePatch) erro
 		return err
 	}
 
+	// The saved page draws from what somebody saved, and a filter over feeds or a window over
+	// publication dates would be a setting that does nothing. Refused rather than stored, so
+	// the page never claims to be narrowed by something it ignores.
+	if current.IsSaved && (len(patch.IncludeTagIDs) > 0 || len(patch.ExcludeTagIDs) > 0 ||
+		len(patch.IncludeFeedIDs) > 0 || len(patch.ExcludeFeedIDs) > 0 ||
+		(patch.ArticleWindow != nil && *patch.ArticleWindow != 0)) {
+		return Invalid("the page of saved articles draws from what you saved, not from feeds")
+	}
+
 	if patch.Name != nil {
 		name := strings.TrimSpace(*patch.Name)
 		// The main page's name and address are fixed, so the interface shows no inputs for
@@ -478,7 +490,7 @@ func (s *Store) ScheduleNextEdition(ctx context.Context, pageID string, at time.
 	return err
 }
 
-const pageColumns = `id, principal_id, name, slug, is_main, edition_interval, edition_size, next_edition_at, max_article_age, publish_slug, published, indexable, created_at`
+const pageColumns = `id, principal_id, name, slug, is_main, is_saved, edition_interval, edition_size, next_edition_at, max_article_age, publish_slug, published, indexable, created_at`
 
 func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 	var (
@@ -489,7 +501,7 @@ func scanPage(row interface{ Scan(...any) error }) (*Page, error) {
 		window   int64
 		created  int64
 	)
-	if err := row.Scan(&page.ID, &page.PrincipalID, &page.Name, &page.Slug, &isMain,
+	if err := row.Scan(&page.ID, &page.PrincipalID, &page.Name, &page.Slug, &isMain, &page.IsSaved,
 		&interval, &page.EditionSize, &next, &window,
 		&page.PublishSlug, &page.Published, &page.Indexable, &created); err != nil {
 		return nil, err

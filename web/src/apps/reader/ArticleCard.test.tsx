@@ -14,6 +14,7 @@ function article(overrides: Partial<Article> = {}): Article {
     rank: 0,
     slot: "standard",
     read_at: null,
+    saved_at: null,
     title: "A headline",
     link: "https://example.com/story",
     author: "",
@@ -497,6 +498,39 @@ describe("ArticleCard", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Mark unread" }));
     expect(onRead).toHaveBeenCalledWith("a_1", false);
+  });
+
+  it("saves for later, and lets go again", async () => {
+    const onSave = vi.fn();
+    const { rerender } = render(
+      <ArticleCard
+        article={article()}
+        style={plain()}
+        voice="didone"
+        onRead={() => {}}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith("a_1", true);
+
+    rerender(
+      <ArticleCard
+        article={article({ saved_at: 1_787_000_100 })}
+        style={plain()}
+        voice="didone"
+        onRead={() => {}}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Unsave" }));
+    expect(onSave).toHaveBeenCalledWith("a_1", false);
+  });
+
+  // A stranger on a published page has nowhere to save anything to.
+  it("offers no save where nobody can keep anything", () => {
+    render(<ArticleCard article={article()} style={plain()} voice="didone" />);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 
   // A read card recedes without moving. Where an article sits is how somebody remembers

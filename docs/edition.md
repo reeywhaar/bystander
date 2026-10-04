@@ -374,7 +374,7 @@ unread-count problem wearing a different hat.
 **A mark is a fact about a person and an article**, and nothing else — not about the edition it
 was made on, not about the page. So it survives the page turning, it greys the article on every
 other page currently carrying it, and it works on a page somebody else published, because the
-join is against whoever is looking. It ends when the feed is unfollowed. There is one endpoint
+join is against whoever is looking. It ends when the feed is unfollowed, unless the article is saved. There is one endpoint
 for all of that and there used to be two; see
 [entities.md](entities.md#edition_items) for what the second one was and why it went.
 
@@ -382,6 +382,23 @@ It has a second job beyond greying a card: an article somebody has read is never
 of their pages as *new* again — it drops to the last band, behind everything unread — which is
 what stops a story coming back a year later as though it were fresh. It can still return as a
 repeat when a page has nothing else, and it arrives greyed when it does.
+
+## The page of saved articles
+
+The same sampler, over a different pool. Where an ordinary page has one source per feed, at the
+priority it was given, the saved page has **one source per saved article, all at one weight**.
+The sampler takes a source's articles in order, so one queue holding everything saved would put
+the same articles on every page and a re-roll would only move them about. As sources of one, the
+fill round draws among them evenly, and the bands still hold: what this page has not shown yet
+comes first, then what it showed and nobody read, then what has been read.
+
+So it behaves like any other page. It turns on its own schedule, a re-roll is a re-roll, and an
+article read there greys in place and may give way to another at the next turn. It leaves the
+pool only when it is unsaved. A new save waits for the next turn like a new article from a feed
+does, or for a re-roll.
+
+An article picked from the saved copy because its row was pruned is put back into `items` by
+`AddEdition`, in the transaction that places it — see [entities.md](entities.md#saved).
 
 ## Open questions
 

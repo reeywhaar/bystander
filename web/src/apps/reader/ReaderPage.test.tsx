@@ -21,6 +21,7 @@ function article(id: string, overrides: Partial<Article> = {}): Article {
     rank: 0,
     slot: "standard",
     read_at: null,
+    saved_at: null,
     title: `Story ${id}`,
     link: `https://example.com/${id}`,
     author: "",
@@ -57,6 +58,7 @@ function page(overrides: Partial<Page> = {}): Page {
     name: "Front Page",
     slug: "",
     is_main: true,
+    is_saved: false,
     edition_interval: 86400,
     edition_size: 60,
     next_edition_at: 1_787_000_000,
@@ -250,6 +252,70 @@ describe("ReaderPage", () => {
         }),
       ),
     );
+  });
+
+  // The first save makes a page, so the strip is asked again for its tabs.
+  it("saves an article and asks for the tabs again", async () => {
+    const { transport } = renderWith(
+      <MemoryRouter>
+        <ReaderPage me={me} />
+      </MemoryRouter>,
+      {
+        "GET /api/pages": { body: [page()] },
+        "GET /api/edition": { body: edition([article("a_1")]) },
+        "PUT /api/edition/items/a_1/saved": { status: 204 },
+      },
+    );
+    const asked = () =>
+      transport.calls.filter((c) => c.path === "/api/pages").length;
+
+    await screen.findByRole("link", { name: "Story a_1" });
+    await waitFor(() => expect(asked()).toBeGreaterThan(0));
+    const before = asked();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Unsave" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(asked()).toBeGreaterThan(before));
+    expect(transport.calls).toContainEqual(
+      expect.objectContaining({
+        method: "PUT",
+        path: "/api/edition/items/a_1/saved",
+      }),
+    );
+  });
+
+  // Empty for want of saving, which is not the same sentence as empty for want of feeds.
+  it("says what the page of saved articles is made from when it is empty", async () => {
+    renderWith(
+      <MemoryRouter initialEntries={["/f/later"]}>
+        <Routes>
+          <Route path="/f/:slug" element={<ReaderPage me={me} />} />
+        </Routes>
+      </MemoryRouter>,
+      {
+        "GET /api/pages": {
+          body: [
+            page(),
+            page({
+              id: "pg_2",
+              name: "Read later",
+              slug: "later",
+              is_main: false,
+              is_saved: true,
+            }),
+          ],
+        },
+        "GET /api/edition": { body: edition([]) },
+        "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
+      },
+    );
+
+    expect(
+      await screen.findByText(/made from what you save/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Your feeds are being fetched/)).toBeNull();
   });
 
   // Composing no longer refuses when everything has been read — it shuffles instead — but a
