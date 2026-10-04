@@ -497,6 +497,9 @@ follower has gone the feed row is collected and can no longer say what it was ca
 Saving is a fact about a person and an article, like reading, so an article can be saved from any
 page it is on — including somebody else's published one.
 
+Saving also writes a `read_articles` row stamped with `saved_at`, and the saved page counts only a
+read stamped later — see [edition.md](edition.md#the-page-of-saved-articles).
+
 ### `instance_settings`
 
 ```sql

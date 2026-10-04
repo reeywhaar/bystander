@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"bystander/internal/store"
 )
@@ -75,7 +76,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID, p.ID)
+	ed, items, err := s.liveEdition(r.Context(), page, p.ID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Not a 404. "Your page has not been generated yet" is a state the reader
@@ -153,7 +154,7 @@ func (s *Server) edition(w http.ResponseWriter, r *http.Request) {
 			// leave a hole in a layout decided at generation time.
 			article.Feed = feedStub{ID: entry.Item.FeedID}
 		}
-		keptFor(&article, saved[entry.Item.ID])
+		keptFor(&article, saved[entry.Item.ID], page.IsSaved)
 		body.Items = append(body.Items, article)
 	}
 	writeJSON(w, http.StatusOK, body)
@@ -231,14 +232,40 @@ func (s *Server) readArticles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// liveEdition is a page's current edition, composing the page of saved articles on the spot when
+// it has none. A save drops that page's edition, so the next look at it — by its owner or by
+// anybody it is published to — has what was saved on it, without waiting for the page's turn or
+// moving its clock. Nothing saved is still nothing: the not-found comes back as it was.
+func (s *Server) liveEdition(ctx context.Context, page *store.Page, viewerID string) (*store.Edition, []*store.EditionItem, error) {
+	ed, items, err := s.store.CurrentEdition(ctx, page.ID, viewerID)
+	if !page.IsSaved || !errors.Is(err, store.ErrNotFound) {
+		return ed, items, err
+	}
+	composed, genErr := s.gen.Generate(ctx, page.ID)
+	if genErr != nil {
+		return nil, nil, genErr
+	}
+	if composed == nil {
+		return nil, nil, err
+	}
+	return s.store.CurrentEdition(ctx, page.ID, viewerID)
+}
+
 // keptFor marks an article as saved by whoever is looking, and names its source from what they
 // kept when nothing else can: a saved article outlives its feed, and the feed's own row with it.
-func keptFor(article *articleBody, saved *store.SavedArticle) {
+//
+// On their page of saved articles it also drops the read mark that saving made, which belongs to
+// the page the article was saved from. See store.ReadOnSavedPage.
+func keptFor(article *articleBody, saved *store.SavedArticle, onSavedPage bool) {
 	if saved == nil {
 		return
 	}
 	at := saved.SavedAt.Unix()
 	article.SavedAt = &at
+	if onSavedPage && article.ReadAt != nil &&
+		!store.ReadOnSavedPage(time.Unix(*article.ReadAt, 0), saved.SavedAt) {
+		article.ReadAt = nil
+	}
 	if article.Feed.Title == "" {
 		article.Feed.ID = saved.FeedID
 		article.Feed.Title = saved.SourceTitle

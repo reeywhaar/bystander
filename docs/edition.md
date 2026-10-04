@@ -394,8 +394,21 @@ comes first, then what it showed and nobody read, then what has been read.
 
 So it behaves like any other page. It turns on its own schedule, a re-roll is a re-roll, and an
 article read there greys in place and may give way to another at the next turn. It leaves the
-pool only when it is unsaved. A new save waits for the next turn like a new article from a feed
-does, or for a re-roll.
+pool only when it is unsaved.
+
+**Saving reads.** Putting an article aside is dealing with it on the page it was found on, so the
+save writes a read mark too, and the card greys there and on every other page carrying it. That
+mark must not follow it to the saved page, where it has only just arrived — so there, and only
+there, a saved article counts as read when it was read *after* it was saved. The save stamps the
+read with its own moment, which is what makes the two tell apart: anything read later is a
+different, later stamp. A second save of something already saved writes nothing, or it would be
+that later stamp. Unsaving leaves the read mark alone.
+
+**A save invalidates the page.** Its edition is dropped, and the next look at it — by its owner,
+or by anybody it is published to — composes a new one on the spot, where the new save is in the
+first band because the page has never shown it. The page's clock is not moved: the scheduled
+turn still comes when it was due. Unsaving drops nothing; the card stays until the page next
+turns, as a read one does.
 
 An article picked from the saved copy because its row was pruned is put back into `items` by
 `AddEdition`, in the transaction that places it — see [entities.md](entities.md#saved).

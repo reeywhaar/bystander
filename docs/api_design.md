@@ -135,11 +135,13 @@ article greyed on one tab is greyed on the next.
 
 Saving works the same way and for the same reason: `PUT …/saved` keeps an article for whoever is
 calling, from any page it is on, including somebody else's published one. The first save also
-makes the page of saved articles — see [Front pages](#front-pages). `read_at` and `saved_at` on
-each item are both the viewer's.
+makes the page of saved articles — see [Front pages](#front-pages) — and marks the article read,
+except on that page; see [edition.md](edition.md#the-page-of-saved-articles). `read_at` and
+`saved_at` on each item are both the viewer's.
 
 `GET /api/edition` answers `200` with an empty `items` array before the first page is
-generated. Not a `404`: "your page has not been made yet" is a state the reader renders,
+generated — except for the page of saved articles, which is composed on the spot when it has no
+edition, because a save drops it; see [edition.md](edition.md#the-page-of-saved-articles). Not a `404`: "your page has not been made yet" is a state the reader renders,
 and a `404` on the one endpoint the front page calls would send the interface into its
 failure path on a new account's very first visit.
 

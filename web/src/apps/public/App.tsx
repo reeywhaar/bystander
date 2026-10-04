@@ -92,8 +92,9 @@ function PublicPage({ person, page }: { person: string; page: string }) {
   };
 
   // Kept for later, by the visitor and onto their own page of saved articles — with the same
-  // courtesy as marking, for the same reason.
+  // courtesy as marking, for the same reason. Saving reads it too, as it does on the reader.
   const keep = (id: string, saved: boolean) => {
+    const now = Math.floor(Date.now() / 1000);
     client.setQueryData<PublicPage>(cacheKey, (current) =>
       current
         ? {
@@ -102,7 +103,8 @@ function PublicPage({ person, page }: { person: string; page: string }) {
               article.id === id
                 ? {
                     ...article,
-                    saved_at: saved ? Math.floor(Date.now() / 1000) : null,
+                    saved_at: saved ? now : null,
+                    read_at: saved ? now : article.read_at,
                   }
                 : article,
             ),

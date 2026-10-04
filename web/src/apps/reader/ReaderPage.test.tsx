@@ -255,7 +255,7 @@ describe("ReaderPage", () => {
   });
 
   // The first save makes a page, so the strip is asked again for its tabs.
-  it("saves an article and asks for the tabs again", async () => {
+  it("saves an article, reads it, and asks for the tabs again", async () => {
     const { transport } = renderWith(
       <MemoryRouter>
         <ReaderPage me={me} />
@@ -276,6 +276,10 @@ describe("ReaderPage", () => {
 
     expect(
       await screen.findByRole("button", { name: "Unsave" }),
+    ).toBeInTheDocument();
+    // Put aside is dealt with: it greys here, as the server records.
+    expect(
+      screen.getByRole("button", { name: "Mark unread" }),
     ).toBeInTheDocument();
     await waitFor(() => expect(asked()).toBeGreaterThan(before));
     expect(transport.calls).toContainEqual(

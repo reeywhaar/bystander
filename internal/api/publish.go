@@ -217,7 +217,7 @@ func (s *Server) publicPage(w http.ResponseWriter, r *http.Request) {
 		Items:     []articleBody{},
 	}
 
-	ed, items, err := s.store.CurrentEdition(r.Context(), page.ID, viewerID)
+	ed, items, err := s.liveEdition(r.Context(), page, viewerID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// A published page that has not been composed yet is a page with nothing on

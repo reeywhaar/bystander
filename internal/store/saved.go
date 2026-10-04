@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,11 +27,18 @@ type SavedArticle struct {
 	SavedAt     time.Time
 }
 
-// SaveArticle keeps an article for later, and makes the page that shows such things if this is
-// the person's first.
+// SaveArticle keeps an article for later, marks it read, and makes the page that shows such
+// things if this is the person's first.
 //
 // Any article that still exists, including one on somebody else's published page: saving it is
 // a fact about the person doing it, as reading it is. Saving it twice keeps the first time.
+//
+// Read, because putting something aside is dealing with it on the page it was found on. The mark
+// is stamped with the moment of the save, and the saved page counts only a read stamped after
+// it — see [ReadOnSavedPage] — so the article arrives there unread.
+//
+// And the saved page's edition is dropped, so the next look at it composes one that has the new
+// save on it rather than waiting for its turn. Its clock is left alone.
 func (s *Store) SaveArticle(ctx context.Context, principalID, itemID string) error {
 	item, err := s.ItemByID(ctx, itemID)
 	if err != nil {
@@ -52,21 +60,44 @@ func (s *Store) SaveArticle(ctx context.Context, principalID, itemID string) err
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx,
+	res, err := tx.ExecContext(ctx,
 		`INSERT OR IGNORE INTO saved
 		   (principal_id, item_id, feed_id, guid, title, link, author, summary, image_url,
 		    image_width, image_height, published_at, source_title, source_url, saved_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		principalID, item.ID, item.FeedID, item.GUID, item.Title, item.Link, item.Author,
 		item.Summary, item.ImageURL, item.ImageWidth, item.ImageHeight, unix(item.PublishedAt),
-		title, site, unix(now)); err != nil {
+		title, site, unix(now))
+	if err != nil {
 		return fmt.Errorf("save article %s: %w", itemID, err)
 	}
+	// Only a save that happened marks anything. A second PUT for an article already saved would
+	// otherwise stamp a read later than the save, and it would arrive on the saved page as read.
+	inserted, _ := res.RowsAffected()
 
-	if err := ensureSavedPage(ctx, tx, principalID, now); err != nil {
+	pageID, err := ensureSavedPage(ctx, tx, principalID, now)
+	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if inserted == 0 {
+		return nil
+	}
+	// After the commit, and in the other database: a failure here leaves an article saved and
+	// not yet on its page, which is the harmless way round.
+	if err := s.markRead(ctx, principalID, itemID, now); err != nil {
+		return err
+	}
+	return s.DropEditions(ctx, pageID)
+}
+
+// ReadOnSavedPage is whether a saved article counts as read on the page of saved articles: read
+// after it was saved. Saving marks it read at the moment of saving, so that it is dealt with on
+// the page it was found on, and that mark must not follow it to the page it was saved to.
+func ReadOnSavedPage(readAt, savedAt time.Time) bool {
+	return readAt.After(savedAt)
 }
 
 // ensureSavedPage makes the page of saved articles if this person has none.
@@ -75,15 +106,17 @@ func (s *Store) SaveArticle(ctx context.Context, principalID, itemID string) err
 // Due at once, like any new page, so the first save is on a page by the next tick rather than
 // tomorrow. Not counted against MaxPages: nobody asked for it by name, and refusing a save
 // because somebody already has twenty pages would be refusing the wrong thing.
-func ensureSavedPage(ctx context.Context, tx *sql.Tx, principalID string, now time.Time) error {
-	var exists bool
-	if err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM pages WHERE principal_id = ? AND is_saved = 1)`,
-		principalID).Scan(&exists); err != nil {
-		return err
+//
+// Returns the page's id, made or found.
+func ensureSavedPage(ctx context.Context, tx *sql.Tx, principalID string, now time.Time) (string, error) {
+	var id string
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM pages WHERE principal_id = ? AND is_saved = 1`, principalID).Scan(&id)
+	if err == nil {
+		return id, nil
 	}
-	if exists {
-		return nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
 	}
 
 	slug := savedPageSlug
@@ -92,7 +125,7 @@ func ensureSavedPage(ctx context.Context, tx *sql.Tx, principalID string, now ti
 		if err := tx.QueryRowContext(ctx,
 			`SELECT EXISTS (SELECT 1 FROM pages WHERE principal_id = ? AND slug = ?)`,
 			principalID, slug).Scan(&taken); err != nil {
-			return err
+			return "", err
 		}
 		if !taken {
 			break
@@ -100,16 +133,17 @@ func ensureSavedPage(ctx context.Context, tx *sql.Tx, principalID string, now ti
 		slug = fmt.Sprintf("%s-%d", savedPageSlug, n)
 	}
 
-	_, err := tx.ExecContext(ctx,
+	id = ids.New(ids.Page)
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO pages (id, principal_id, name, slug, is_main, is_saved,
 		                    edition_interval, edition_size, next_edition_at, created_at)
 		 VALUES (?, ?, ?, ?, 0, 1, ?, ?, ?, ?)`,
-		ids.New(ids.Page), principalID, SavedPageName, slug,
+		id, principalID, SavedPageName, slug,
 		int64((24 * time.Hour).Seconds()), 60, unix(now), unix(now))
 	if err != nil {
-		return fmt.Errorf("make the page of saved articles: %w", err)
+		return "", fmt.Errorf("make the page of saved articles: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 // UnsaveArticle lets go of something kept for later. Letting go of something never kept is not
@@ -206,20 +240,23 @@ func (s *Store) SavedQueues(ctx context.Context, pageID, principalID string) (ma
 		return nil, err
 	}
 
-	read := make(map[string]bool)
+	read := make(map[string]time.Time)
 	readRows, err := s.derived.QueryContext(ctx,
-		`SELECT item_id FROM read_articles WHERE principal_id = ? AND item_id IN (`+marks+`)`,
+		`SELECT item_id, read_at FROM read_articles WHERE principal_id = ? AND item_id IN (`+marks+`)`,
 		append([]any{principalID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
 	for readRows.Next() {
-		var id string
-		if err := readRows.Scan(&id); err != nil {
+		var (
+			id string
+			at int64
+		)
+		if err := readRows.Scan(&id, &at); err != nil {
 			readRows.Close()
 			return nil, err
 		}
-		read[id] = true
+		read[id] = time.Unix(at, 0).UTC()
 	}
 	readRows.Close()
 	if err := readRows.Err(); err != nil {
@@ -256,8 +293,9 @@ func (s *Store) SavedQueues(ctx context.Context, pageID, principalID string) (ma
 			item = &copied
 		}
 		q := &Queue{}
+		readAt, wasRead := read[item.ID]
 		switch {
-		case read[item.ID]:
+		case wasRead && ReadOnSavedPage(readAt, a.SavedAt):
 			q.Read = []*Item{item}
 		case shown[item.FeedID+"\x00"+string(GUIDHash(item.GUID))]:
 			q.Unread = []*Item{item}

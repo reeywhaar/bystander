@@ -75,6 +75,7 @@ import type {
   Article,
   Edition,
   ImportSelection,
+  Page,
   ProxyForm,
   Role,
   Session,
@@ -222,6 +223,9 @@ export function useSetRead() {
 /**
  * Keeps an article for later, or lets it go, optimistically and on every page held — the same
  * shape as [useSetRead], because saving is the same kind of fact: about a person and an article.
+ *
+ * Saving also reads it, as the server does: greyed on every page held but the saved page, where
+ * the save's own read does not count — see store.ReadOnSavedPage. Unsaving leaves reading alone.
  */
 export function useSetSaved() {
   const callApi = useApiCall();
@@ -236,21 +240,28 @@ export function useSetSaved() {
     onMutate: async ({ id, saved }) => {
       await client.cancelQueries({ queryKey: qk.edition });
       const previous = client.getQueriesData<Edition>({ queryKey: qk.edition });
-      client.setQueriesData<Edition>({ queryKey: qk.edition }, (current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.map((article: Article) =>
-                article.id === id
-                  ? {
-                      ...article,
-                      saved_at: saved ? Math.floor(Date.now() / 1000) : null,
-                    }
-                  : article,
-              ),
-            }
-          : current,
-      );
+      const now = Math.floor(Date.now() / 1000);
+      const savedPage = client
+        .getQueryData<Page[]>(qk.pages)
+        ?.find((page) => page.is_saved);
+
+      for (const [key, current] of previous) {
+        if (!current) continue;
+        const onSavedPage =
+          savedPage !== undefined && key[1] === savedPage.slug;
+        client.setQueryData<Edition>(key, {
+          ...current,
+          items: current.items.map((article: Article) =>
+            article.id === id
+              ? {
+                  ...article,
+                  saved_at: saved ? now : null,
+                  read_at: saved && !onSavedPage ? now : article.read_at,
+                }
+              : article,
+          ),
+        });
+      }
       return { previous };
     },
 
@@ -260,9 +271,21 @@ export function useSetSaved() {
       }
     },
 
-    // The first save makes a page, and the strip should have its tab.
-    onSettled: () => {
+    // The first save makes a page, and the strip should have its tab. Saving reads, which
+    // Recently read lists. And the server composes the saved page afresh after a save, so the
+    // copy held of it is a page that no longer exists.
+    onSettled: (_data, _error, { saved }) => {
       void client.invalidateQueries({ queryKey: qk.pages });
+      void client.invalidateQueries({ queryKey: qk.read });
+      const savedPage = client
+        .getQueryData<Page[]>(qk.pages)
+        ?.find((page) => page.is_saved);
+      if (saved && savedPage) {
+        void client.invalidateQueries({
+          queryKey: qk.editionOf(savedPage.slug),
+          exact: true,
+        });
+      }
     },
   });
 }

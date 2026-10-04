@@ -272,27 +272,31 @@ type ReadArticle struct {
 // mark greys a card on this page and dies with it; the record outlives the page by a month
 // — but they must never disagree about whether something was read.
 func (s *Store) SetRead(ctx context.Context, principalID, itemID string, read bool) error {
-	now := s.Now()
-
 	if read {
-		// INSERT ... SELECT so the article's details are copied by the database rather than
-		// read out and written back. OR REPLACE because reading something, unreading it and
-		// reading it again should record the latest moment, not fail.
-		//
-		// A missing article writes nothing and says nothing, which is the right answer: it
-		// has been pruned, and there is no longer anything to have read.
-		_, err := s.derived.ExecContext(ctx,
-			`INSERT OR REPLACE INTO read_articles
-			   (principal_id, item_id, feed_id, title, link, published_at, read_at)
-			 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
-			   FROM items i WHERE i.id = ?`,
-			principalID, unix(now), itemID)
-		return err
+		return s.markRead(ctx, principalID, itemID, s.Now())
 	}
 
 	_, err := s.derived.ExecContext(ctx,
 		`DELETE FROM read_articles WHERE principal_id = ? AND item_id = ?`,
 		principalID, itemID)
+	return err
+}
+
+// markRead records one article as read at a given moment.
+//
+// INSERT ... SELECT so the article's details are copied by the database rather than read out and
+// written back. OR REPLACE because reading something, unreading it and reading it again should
+// record the latest moment, not fail.
+//
+// A missing article writes nothing and says nothing, which is the right answer: it has been
+// pruned, and there is no longer anything to have read.
+func (s *Store) markRead(ctx context.Context, principalID, itemID string, at time.Time) error {
+	_, err := s.derived.ExecContext(ctx,
+		`INSERT OR REPLACE INTO read_articles
+		   (principal_id, item_id, feed_id, title, link, published_at, read_at)
+		 SELECT ?, i.id, i.feed_id, i.title, i.link, i.published_at, ?
+		   FROM items i WHERE i.id = ?`,
+		principalID, unix(at), itemID)
 	return err
 }
 
@@ -581,6 +585,9 @@ func (s *Store) PruneOldEditions(ctx context.Context) (int64, error) {
 // under the old filter and may hold nothing the new one would have picked, so leaving it up
 // would be showing somebody a page they have just told the program not to want. Empty is the
 // honest answer, and it is the same empty a page has before its first composition.
+//
+// And for the page of saved articles after a save, which is composed again on its next look —
+// see SaveArticle.
 func (s *Store) DropEditions(ctx context.Context, pageID string) error {
 	_, err := s.derived.ExecContext(ctx, `DELETE FROM editions WHERE page_id = ?`, pageID)
 	return err

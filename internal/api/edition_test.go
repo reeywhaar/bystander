@@ -104,26 +104,55 @@ func TestSavingAnArticlePutsItOnTheSavedPage(t *testing.T) {
 		t.Fatalf("no page of saved articles among %+v", pages)
 	}
 
+	// Saved and read where it was found: putting something aside is dealing with it here.
 	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &front)
 	for _, item := range front.Items {
 		if (item.SavedAt != nil) != (item.ID == kept.ID) {
 			t.Errorf("%q: saved_at %v, want it set on the saved article alone", item.Title, item.SavedAt)
 		}
+		if (item.ReadAt != nil) != (item.ID == kept.ID) {
+			t.Errorf("%q: read_at %v, want saving to have read the saved article alone", item.Title, item.ReadAt)
+		}
 	}
 
+	// Composed on the first look, without anybody asking for a new page.
 	var later editionBody
-	h.expect(h.do(http.MethodPost, "/api/edition/regenerate?page="+saved.Slug, nil), http.StatusOK, &later)
+	h.expect(h.do(http.MethodGet, "/api/edition?page="+saved.Slug, nil), http.StatusOK, &later)
 	if len(later.Items) != 1 || later.Items[0].ID != kept.ID {
 		t.Fatalf("the saved page holds %+v, want only %q", later.Items, kept.Title)
 	}
 	if later.Items[0].SavedAt == nil || later.Items[0].Feed.Title == "" {
 		t.Errorf("the saved card is %+v, want it marked saved and named", later.Items[0])
 	}
+	// But not read on the page it was saved to, where it has only just arrived.
+	if later.Items[0].ReadAt != nil {
+		t.Errorf("the saved card arrived read (%d); the save's own read belongs to the Front Page", *later.Items[0].ReadAt)
+	}
 
-	// Let go of, it stays on the page in front of you and says it is no longer kept.
+	// A second save is on the page the next time it is looked at, not at its next turn.
+	second := front.Items[1]
+	h.expect(h.do(http.MethodPut, "/api/edition/items/"+second.ID+"/saved", nil), http.StatusNoContent, nil)
+	h.expect(h.do(http.MethodGet, "/api/edition?page="+saved.Slug, nil), http.StatusOK, &later)
+	if len(later.Items) != 2 {
+		t.Fatalf("after a second save the saved page holds %d articles, want 2", len(later.Items))
+	}
+
+	// Let go of, it stays on the page in front of you and says it is no longer kept. Unsaving
+	// leaves the read mark alone: it was read where it was found, and still was.
 	h.expect(h.do(http.MethodDelete, "/api/edition/items/"+kept.ID+"/saved", nil), http.StatusNoContent, nil)
 	h.expect(h.do(http.MethodGet, "/api/edition?page="+saved.Slug, nil), http.StatusOK, &later)
-	if len(later.Items) != 1 || later.Items[0].SavedAt != nil {
-		t.Errorf("after unsaving, the page holds %+v, want the card still there and unsaved", later.Items)
+	if len(later.Items) != 2 {
+		t.Fatalf("unsaving took the page from 2 articles to %d; it should wait for the next one", len(later.Items))
+	}
+	for _, item := range later.Items {
+		if item.ID == kept.ID && item.SavedAt != nil {
+			t.Errorf("%q still says it is saved after unsaving", item.Title)
+		}
+	}
+	h.expect(h.do(http.MethodGet, "/api/edition", nil), http.StatusOK, &front)
+	for _, item := range front.Items {
+		if item.ID == kept.ID && item.ReadAt == nil {
+			t.Error("unsaving took the read mark away")
+		}
 	}
 }
