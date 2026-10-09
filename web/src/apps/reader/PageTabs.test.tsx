@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -45,6 +45,32 @@ describe("PageTabs", () => {
     await waitFor(() => {
       expect(container.querySelector("nav")).toBeNull();
     });
+  });
+
+  // The fade says there is more past the edge, so scrolled to the end it has to go — it used to
+  // stay whenever the strip overflowed at all, and faded out the last tab with nothing beyond it.
+  it("fades the edge only while there is more past it", async () => {
+    renderWith(
+      <MemoryRouter>
+        <PageTabs />
+      </MemoryRouter>,
+      { "GET /api/pages": { body: [page(), art] } },
+    );
+    const strip = (await screen.findByRole("link", { name: "Art" }))
+      .parentElement!;
+
+    // jsdom lays nothing out, so the strip is told how wide it is.
+    let scrolled = 0;
+    Object.defineProperty(strip, "scrollWidth", { value: 500 });
+    Object.defineProperty(strip, "clientWidth", { value: 300 });
+    Object.defineProperty(strip, "scrollLeft", { get: () => scrolled });
+
+    fireEvent.scroll(strip);
+    expect(strip).toHaveClass("tab-strip-more");
+
+    scrolled = 200;
+    fireEvent.scroll(strip);
+    expect(strip).not.toHaveClass("tab-strip-more");
   });
 
   it("links each page to where it is read", async () => {

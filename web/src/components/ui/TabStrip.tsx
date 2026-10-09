@@ -23,7 +23,7 @@ export interface Tab {
  * showing you somewhere you are not.
  */
 export function TabStrip({ tabs }: { tabs: Tab[] }) {
-  const { strip, overflowing } = useScrollingStrip<HTMLElement>(tabs.length);
+  const { strip, more } = useScrollingStrip<HTMLElement>(tabs.length);
 
   return (
     // The rule belongs to the wrapper rather than to the strip, so it runs the full width and
@@ -32,7 +32,7 @@ export function TabStrip({ tabs }: { tabs: Tab[] }) {
       <nav
         ref={strip}
         className={`tab-strip flex gap-1 overflow-x-auto ${
-          overflowing ? "tab-strip-more" : ""
+          more ? "tab-strip-more" : ""
         }`}
       >
         {tabs.map((tab) => (
@@ -64,8 +64,8 @@ export function TabStrip({ tabs }: { tabs: Tab[] }) {
 }
 
 /**
- * What makes a row of tabs scroll sideways well: whether it holds more than fits, for the
- * `tab-strip-more` fade, and the tab somebody is on kept in view. Put `strip` on the element
+ * What makes a row of tabs scroll sideways well: whether there is more of it past the edge, for
+ * the `tab-strip-more` fade, and the tab somebody is on kept in view. Put `strip` on the element
  * that scrolls; `count` is how many tabs there are, so a tab added or removed is measured again.
  *
  * Shared by this strip and the reader's strip of front pages, which look different and scroll
@@ -73,16 +73,23 @@ export function TabStrip({ tabs }: { tabs: Tab[] }) {
  */
 export function useScrollingStrip<T extends HTMLElement>(count: number) {
   const strip = useRef<T>(null);
-  const [overflowing, setOverflowing] = useState(false);
+  const [more, setMore] = useState(false);
   const { pathname } = useLocation();
 
   useEffect(() => {
     const node = strip.current;
     if (!node) return;
 
+    // More *past the edge*, not merely more than fits: measured on scroll as well as on resize.
+    // A strip that overflows at all used to fade for good, so scrolled to its end it still faded
+    // out its last tab and said there was more when there was none. `abs` because a right-to-left
+    // strip scrolls from zero into the negatives.
     const measure = () =>
-      setOverflowing(node.scrollWidth > node.clientWidth + 1);
+      setMore(
+        Math.abs(node.scrollLeft) + node.clientWidth < node.scrollWidth - 1,
+      );
     measure();
+    node.addEventListener("scroll", measure, { passive: true });
 
     // The tab somebody is on, brought into the strip. `nearest` so a strip that already shows
     // it is left alone — scrolling a visible thing into view moves the page under a reader for
@@ -96,11 +103,16 @@ export function useScrollingStrip<T extends HTMLElement>(count: number) {
     // Guarded: jsdom has no ResizeObserver, and a test rendering a section should see the
     // section rather than a crash. What a test loses is the response to a resize, and nothing
     // resizes in jsdom.
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(node);
+    return () => {
+      node.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
   }, [pathname, count]);
 
-  return { strip, overflowing };
+  return { strip, more };
 }

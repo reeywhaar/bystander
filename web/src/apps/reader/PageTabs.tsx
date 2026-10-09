@@ -28,7 +28,7 @@ export function addressOf(page: Page): string {
 export function PageTabs() {
   const pages = usePages();
   const all = pages.data ?? [];
-  const { strip, overflowing } = useScrollingStrip<HTMLDivElement>(all.length);
+  const { strip, more } = useScrollingStrip<HTMLDivElement>(all.length);
   if (all.length < 2) return null;
 
   return (
@@ -39,7 +39,7 @@ export function PageTabs() {
         <div
           ref={strip}
           className={`tab-strip flex items-center gap-x-5 overflow-x-auto py-2 text-sm ${
-            overflowing ? "tab-strip-more" : ""
+            more ? "tab-strip-more" : ""
           }`}
         >
           {all.map((page) => (
