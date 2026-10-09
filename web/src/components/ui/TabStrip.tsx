@@ -23,33 +23,7 @@ export interface Tab {
  * showing you somewhere you are not.
  */
 export function TabStrip({ tabs }: { tabs: Tab[] }) {
-  const strip = useRef<HTMLElement>(null);
-  const [overflowing, setOverflowing] = useState(false);
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    const node = strip.current;
-    if (!node) return;
-
-    const measure = () =>
-      setOverflowing(node.scrollWidth > node.clientWidth + 1);
-    measure();
-
-    // The tab somebody is on, brought into the strip. `nearest` so a strip that already shows
-    // it is left alone — scrolling a visible thing into view moves the page under a reader for
-    // no reason.
-    node
-      .querySelector<HTMLElement>('[aria-current="page"]')
-      ?.scrollIntoView({ inline: "nearest", block: "nearest" });
-
-    // Guarded: jsdom has no ResizeObserver, and a test rendering a section should see the
-    // section rather than a crash. What a test loses is the response to a resize, and nothing
-    // resizes in jsdom.
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [pathname, tabs.length]);
+  const { strip, overflowing } = useScrollingStrip<HTMLElement>(tabs.length);
 
   return (
     // The rule belongs to the wrapper rather than to the strip, so it runs the full width and
@@ -87,4 +61,46 @@ export function TabStrip({ tabs }: { tabs: Tab[] }) {
       </nav>
     </div>
   );
+}
+
+/**
+ * What makes a row of tabs scroll sideways well: whether it holds more than fits, for the
+ * `tab-strip-more` fade, and the tab somebody is on kept in view. Put `strip` on the element
+ * that scrolls; `count` is how many tabs there are, so a tab added or removed is measured again.
+ *
+ * Shared by this strip and the reader's strip of front pages, which look different and scroll
+ * for the same reasons — see TabStrip.
+ */
+export function useScrollingStrip<T extends HTMLElement>(count: number) {
+  const strip = useRef<T>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const node = strip.current;
+    if (!node) return;
+
+    const measure = () =>
+      setOverflowing(node.scrollWidth > node.clientWidth + 1);
+    measure();
+
+    // The tab somebody is on, brought into the strip. `nearest` so a strip that already shows
+    // it is left alone — scrolling a visible thing into view moves the page under a reader for
+    // no reason.
+    //
+    // Called only where it exists, which jsdom is not, for the reason ResizeObserver is guarded.
+    node
+      .querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+
+    // Guarded: jsdom has no ResizeObserver, and a test rendering a section should see the
+    // section rather than a crash. What a test loses is the response to a resize, and nothing
+    // resizes in jsdom.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [pathname, count]);
+
+  return { strip, overflowing };
 }

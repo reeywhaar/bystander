@@ -96,32 +96,37 @@ describe("a published page", () => {
   // stable — a visitor saw the same thing on every reload — and completely unlike what the
   // owner saw. Stability was never the property that was wanted.
   it("draws its cards exactly as the owner's own page does", async () => {
-    const { unmount } = renderWith(<ReaderPage me={me} />, {
-      "GET /api/pages": {
-        body: [
-          {
-            id: "pg_1",
-            name: "Comics",
-            slug: "",
-            is_main: true,
-            is_saved: false,
-            edition_interval: 86400,
-            edition_size: 60,
-            next_edition_at: 1_787_000_000,
-            max_article_age: 0,
-            include_tag_ids: [],
-            exclude_tag_ids: [],
-            include_feed_ids: [],
-            exclude_feed_ids: [],
-            publish_slug: "comics",
-            published: true,
-            indexable: false,
-          },
-        ],
+    const { unmount } = renderWith(
+      <ReaderPage me={me} />,
+      {
+        "GET /api/pages": {
+          body: [
+            {
+              id: "pg_1",
+              name: "Comics",
+              slug: "",
+              is_main: true,
+              is_saved: false,
+              edition_interval: 86400,
+              edition_size: 60,
+              next_edition_at: 1_787_000_000,
+              max_article_age: 0,
+              include_tag_ids: [],
+              exclude_tag_ids: [],
+              include_feed_ids: [],
+              exclude_feed_ids: [],
+              publish_slug: "comics",
+              published: true,
+              indexable: false,
+            },
+          ],
+        },
+        "GET /api/edition": { body: edition },
+        "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
       },
-      "GET /api/edition": { body: edition },
-      "GET /api/feeds": { body: [{ id: "s_1", title: "The Example" }] },
-    });
+      // Under a router, as the reader always is.
+      { route: "/" },
+    );
 
     await waitFor(() => expect(looks()).toHaveLength(ITEMS.length));
     const owner = looks();
